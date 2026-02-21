@@ -35,7 +35,11 @@ class GameStep(str, Enum):
 
 @dataclass
 class InteractiveSession:
-    """インタラクティブゲームセッション。"""
+    """インタラクティブゲームセッション（可変オブジェクト）。
+
+    ステップ進行関数がフィールドを直接変更する。
+    ドメイン層の frozen dataclass とは異なり、インフラ層のセッション管理として可変設計。
+    """
 
     game_id: str
     game: GameState
@@ -154,15 +158,10 @@ class InteractiveSessionStore:
 # --- ステップ進行関数群 ---
 
 
-def _find_alive_player(game: GameState, name: str) -> Player | None:
-    for p in game.alive_players:
-        if p.name == name:
-            return p
-    return None
-
-
-def _find_player_by_name(game: GameState, name: str) -> Player | None:
-    for p in game.players:
+def _find_player(game: GameState, name: str, *, alive_only: bool = False) -> Player | None:
+    """プレイヤーを検索する。alive_only=True の場合は生存者のみ。"""
+    players = game.alive_players if alive_only else game.players
+    for p in players:
         if p.name == name:
             return p
     return None
@@ -210,7 +209,7 @@ def _notify_divine_result(game: GameState) -> GameState:
         return game
 
     last_target_name = history[-1]
-    last_target = _find_player_by_name(game, last_target_name)
+    last_target = _find_player(game, last_target_name)
     if last_target is not None:
         is_werewolf = last_target.role == Role.WEREWOLF
         result_text = "人狼" if is_werewolf else "人狼ではない"
@@ -221,7 +220,7 @@ def _notify_divine_result(game: GameState) -> GameState:
 
 def handle_user_discuss(session: InteractiveSession, message: str) -> None:
     """ユーザー発言を記録し、VOTE ステップへ遷移する。"""
-    human = _find_alive_player(session.game, session.human_player_name)
+    human = _find_player(session.game, session.human_player_name, alive_only=True)
     if human is not None:
         session.game = session.game.add_log(f"[発言] {human.name}: {message}")
     session.step = GameStep.VOTE
@@ -233,12 +232,12 @@ def skip_to_vote(session: InteractiveSession) -> None:
 
 
 def handle_user_vote(session: InteractiveSession, target_name: str) -> None:
-    """ユーザー投票を処理し、AI投票→集計→処刑→勝利判定を行う。"""
+    """ユーザー投票を処理し、AI投票→集計→処刑→勝利判定を行う。セッションを直接変更する。"""
     game = session.game
     votes: dict[str, str] = {}
 
     # ユーザーの投票
-    human = _find_alive_player(game, session.human_player_name)
+    human = _find_player(game, session.human_player_name, alive_only=True)
     if human is not None:
         votes[human.name] = target_name
         game = game.add_log(f"[投票] {human.name} → {target_name}")
@@ -253,13 +252,18 @@ def handle_user_vote(session: InteractiveSession, target_name: str) -> None:
         votes[player.name] = ai_target
         game = game.add_log(f"[投票] {player.name} → {ai_target}")
 
+    if not votes:
+        session.game = game
+        session.step = GameStep.EXECUTION_RESULT
+        return
+
     # 集計・処刑
     vote_counts = Counter(votes.values())
     max_votes = max(vote_counts.values())
     top_candidates = [name for name, count in vote_counts.items() if count == max_votes]
     executed_name = session.rng.choice(top_candidates) if len(top_candidates) > 1 else top_candidates[0]
 
-    target = _find_alive_player(game, executed_name)
+    target = _find_player(game, executed_name, alive_only=True)
     if target is not None:
         dead_player = target.killed()
         game = game.replace_player(target, dead_player)
@@ -277,7 +281,7 @@ def handle_user_vote(session: InteractiveSession, target_name: str) -> None:
 
 
 def handle_auto_vote(session: InteractiveSession) -> None:
-    """ユーザー死亡時に AI のみで投票を行う。"""
+    """ユーザー死亡時に AI のみで投票を行う。セッションを直接変更する。"""
     game = session.game
     votes: dict[str, str] = {}
 
@@ -290,12 +294,17 @@ def handle_auto_vote(session: InteractiveSession) -> None:
         votes[player.name] = ai_target
         game = game.add_log(f"[投票] {player.name} → {ai_target}")
 
+    if not votes:
+        session.game = game
+        session.step = GameStep.EXECUTION_RESULT
+        return
+
     vote_counts = Counter(votes.values())
     max_votes = max(vote_counts.values())
     top_candidates = [name for name, count in vote_counts.items() if count == max_votes]
     executed_name = session.rng.choice(top_candidates) if len(top_candidates) > 1 else top_candidates[0]
 
-    target = _find_alive_player(game, executed_name)
+    target = _find_player(game, executed_name, alive_only=True)
     if target is not None:
         dead_player = target.killed()
         game = game.replace_player(target, dead_player)
@@ -327,7 +336,7 @@ def execute_night_phase(session: InteractiveSession) -> None:
     # 襲撃を実行
     game, attack_target_name = _resolve_attack(session, game)
     if attack_target_name is not None:
-        attack_target = _find_alive_player(game, attack_target_name)
+        attack_target = _find_player(game, attack_target_name, alive_only=True)
         if attack_target is not None:
             dead_player = attack_target.killed()
             game = game.replace_player(attack_target, dead_player)
@@ -378,7 +387,7 @@ def _resolve_divine(session: InteractiveSession, game: GameState) -> tuple[GameS
         provider = RandomActionProvider(rng=session.rng)
     target_name = provider.divine(game, seer, candidates)
 
-    target = _find_alive_player(game, target_name)
+    target = _find_player(game, target_name, alive_only=True)
     if target is None:
         return None
 
@@ -405,7 +414,7 @@ def _resolve_attack(session: InteractiveSession, game: GameState) -> tuple[GameS
         provider = RandomActionProvider(rng=session.rng)
     target_name = provider.attack(game, werewolf, candidates)
 
-    target = _find_alive_player(game, target_name)
+    target = _find_player(game, target_name, alive_only=True)
     if target is None:
         return game, None
 

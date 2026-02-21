@@ -170,16 +170,25 @@ async def advance_game(game_id: str) -> RedirectResponse:
     human_player = _get_human_player(session)
     human_is_alive = human_player is not None and human_player.is_alive
 
+    advanced = False
     if session.step == GameStep.ROLE_REVEAL:
         advance_to_discussion(session)
+        advanced = True
     elif session.step == GameStep.DISCUSSION and not human_is_alive:
         skip_to_vote(session)
+        advanced = True
     elif session.step == GameStep.VOTE and not human_is_alive:
         handle_auto_vote(session)
+        advanced = True
     elif session.step == GameStep.EXECUTION_RESULT:
         execute_night_phase(session)
+        advanced = True
     elif session.step == GameStep.NIGHT_RESULT:
         advance_to_discussion(session)
+        advanced = True
+
+    if not advanced:
+        raise HTTPException(status_code=400, detail="このステップでは /next を使用できません")
 
     interactive_store.save(session)
     return RedirectResponse(url=f"/play/{game_id}", status_code=303)
