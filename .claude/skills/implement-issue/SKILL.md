@@ -64,9 +64,7 @@ EnterPlanMode を使って実装計画をユーザーに提示する。計画に
 
 ```bash
 uv run ruff format .
-uv run ruff check .
-uv run mypy src/
-uv run pytest
+uv run tox
 ```
 
 pytest がテストファイル未検出で exit code 5 を返す場合、テストがまだないだけなので問題ない。
@@ -103,4 +101,11 @@ EOF
 
 - `Closes #<番号>` でマージ時に Issue を自動クローズする
 - PR の URL をユーザーに報告する
-- 完了後、`/review-pr` でレビューすることを提案する
+
+### Step 8: レビュー
+
+PR 作成後、`/review-pr` スキルを実行してコードレビューを行う。
+
+### Step 9: レビュー指摘対応
+
+レビューで指摘があれば `/fix-review` スキルを実行して修正を対応する。
