@@ -35,3 +35,43 @@ uv run ruff format .     # フォーマット
 uv run mypy src/         # 型チェック
 uv run pytest            # テスト実行
 ```
+
+## 開発ワークフロー
+
+### ブランチ運用
+
+- `master` が本流ブランチ。直接コミットしない
+- 機能追加: `feature/<issue番号>-<短い説明>` (例: `feature/3-add-voting-phase`)
+- バグ修正: `fix/<issue番号>-<短い説明>` (例: `fix/7-fix-role-assignment`)
+- PR のマージ先は常に `master`
+
+### コミット前チェック（必須）
+
+以下を全て通してからコミットすること:
+
+```bash
+uv run ruff format .       # フォーマット適用
+uv run ruff check .        # リントエラーがないこと
+uv run mypy src/           # 型チェック通過
+uv run pytest              # テスト全件パス（テストがある場合）
+```
+
+### 標準作業フロー
+
+1. GitHub Issue を確認し、要件を把握する
+2. `feature/` または `fix/` ブランチを作成する
+3. プランモードで設計 → ユーザー承認後に実装
+4. リント・テストを通してからコミット・プッシュ
+5. `gh pr create` で PR を作成する
+6. `/review-pr` で PR レビュー（結果は PR コメントに投稿） → `/fix-review` で指摘修正
+7. ユーザー確認後にマージ
+
+### GitHub CLI リファレンス
+
+```bash
+gh issue view <番号>                                          # Issue 参照
+gh pr create --title "..." --body "..."                       # PR 作成
+gh pr diff                                                    # PR 差分
+gh pr comment <番号> --body "..."                              # PR コメント投稿
+gh api repos/{owner}/{repo}/pulls/{number}/comments           # PRコメント取得
+```
