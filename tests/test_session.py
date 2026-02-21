@@ -18,6 +18,14 @@ class TestGameSessionStore:
         assert len(game.players) == REQUIRED_PLAYER_COUNT
         assert len(game.log) > 0
 
+    def test_create_without_rng(self) -> None:
+        store = self._make_store()
+        game_id, game = store.create(PLAYER_NAMES)
+        assert isinstance(game_id, str)
+        assert len(game_id) == 8
+        assert len(game.players) == REQUIRED_PLAYER_COUNT
+        assert len(game.log) > 0
+
     def test_get_returns_saved_state(self) -> None:
         store = self._make_store()
         game_id, game = store.create(PLAYER_NAMES, rng=random.Random(42))

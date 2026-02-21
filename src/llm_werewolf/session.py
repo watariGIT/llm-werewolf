@@ -31,7 +31,7 @@ class GameSessionStore:
         Returns:
             (ゲームID, 最終GameState) のタプル
         """
-        game_id = uuid.uuid4().hex[:8]
+        game_id = self._generate_unique_id()
         initial_state = create_game(player_names, rng=rng)
 
         # 全プレイヤーに RandomActionProvider を割り当て
@@ -41,6 +41,14 @@ class GameSessionStore:
 
         self._sessions[game_id] = final_state
         return game_id, final_state
+
+    def _generate_unique_id(self) -> str:
+        """衝突しない一意なゲームIDを生成する。"""
+        for _ in range(10):
+            game_id = uuid.uuid4().hex[:8]
+            if game_id not in self._sessions:
+                return game_id
+        raise RuntimeError("Failed to generate unique game_id")
 
     def get(self, game_id: str) -> GameState | None:
         """ゲーム状態を取得する。"""

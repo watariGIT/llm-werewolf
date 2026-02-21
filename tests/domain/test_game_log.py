@@ -2,13 +2,14 @@ import random
 
 import pytest
 
+from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.game_log import format_log_for_context
 from llm_werewolf.domain.services import create_game
 from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.random_provider import RandomActionProvider
 
 
-def _run_game(seed: int = 42) -> tuple[list[str], ...]:
+def _run_game(seed: int = 42) -> tuple[list[str], GameState]:
     """テスト用にゲームを実行し、(player_names, game) を返す。"""
     rng = random.Random(seed)
     player_names = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
@@ -16,7 +17,7 @@ def _run_game(seed: int = 42) -> tuple[list[str], ...]:
     providers = {p.name: RandomActionProvider(rng=rng) for p in game.players}
     engine = GameEngine(game, providers, rng=rng)
     final = engine.run()
-    return player_names, final  # type: ignore[return-value]
+    return player_names, final
 
 
 class TestFormatLogForContext:
