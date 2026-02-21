@@ -26,6 +26,7 @@
 - LLMのAPIキーはすべて環境変数経由で取得する（ハードコード禁止）
 - ゲームルールの詳細は [docs/game-rules.md](docs/game-rules.md) を参照
 - 専門用語の定義は [docs/glossary.md](docs/glossary.md) を参照
+- アーキテクチャ設計は [docs/architecture.md](docs/architecture.md) を参照
 
 ## 現在の開発フェーズ
 
