@@ -18,16 +18,18 @@ PR レビューの指摘事項を修正するスキル。レビューコメン�
 
 2つのソースから指摘を集める:
 
-**GitHub のレビューコメント:**
+**GitHub の PR コメント・レビューコメント:**
 
 ```bash
-gh pr view --json number,title,url
+gh pr view --json number,title,url,comments
 gh api repos/{owner}/{repo}/pulls/<番号>/comments
 gh api repos/{owner}/{repo}/pulls/<番号>/reviews
 ```
 
+`/review-pr` が投稿したレビューコメント（「コードレビュー結果」セクション）も PR コメントとして取得できる。
+
 **チャット履歴:**
-直前の `/review-pr` の結果がチャット履歴にあれば、そこに記載された「必須修正」「推奨修正」も指摘として取り込む。
+直前の `/review-pr` の結果がチャット履歴にあれば、補足情報として参照する。
 
 ### Step 2: 指摘の分類とユーザー確認
 
