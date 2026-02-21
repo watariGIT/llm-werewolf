@@ -30,6 +30,8 @@ def assign_roles(player_names: list[str], rng: random.Random | None = None) -> l
     """
     if len(player_names) != REQUIRED_PLAYER_COUNT:
         raise ValueError(f"Player count must be {REQUIRED_PLAYER_COUNT}, got {len(player_names)}")
+    if len(set(player_names)) != len(player_names):
+        raise ValueError("player_names must be unique")
 
     if rng is None:
         rng = random.Random()
@@ -63,6 +65,8 @@ def create_game_with_role(
     """
     if len(player_names) != REQUIRED_PLAYER_COUNT:
         raise ValueError(f"Player count must be {REQUIRED_PLAYER_COUNT}, got {len(player_names)}")
+    if len(set(player_names)) != len(player_names):
+        raise ValueError("player_names must be unique")
     if fixed_player not in player_names:
         raise ValueError(f"{fixed_player} is not in player_names")
     if fixed_role not in DEFAULT_ROLE_COMPOSITION:

@@ -107,8 +107,8 @@ src/llm_werewolf/
 | クラス/Enum | 説明 |
 |-------------|------|
 | `GameSessionStore` | 一括実行ゲームの CRUD 管理。ゲームID → GameState のマッピングを保持 |
-| `GameStep` | インタラクティブゲームの進行ステップ（`role_reveal`, `discussion`, `vote`, `execution_result`, `night_action`, `night_result`, `game_over`） |
-| `InteractiveSession` | インタラクティブゲームの状態。GameState + 進行ステップ + AI providers を保持 |
+| `GameStep` | インタラクティブゲームの進行ステップ。遷移順: `role_reveal` → `discussion` → `vote` → `execution_result` → `night_action` → `night_result` → `discussion`（次の日）。勝利時は `game_over` へ遷移 |
+| `InteractiveSession` | インタラクティブゲームの状態。GameState + 進行ステップ + AI providers + `discussion_round`（議論ラウンド番号）を保持 |
 | `InteractiveSessionStore` | InteractiveSession のインメモリ CRUD |
 
 #### ステップ進行関数
@@ -117,8 +117,9 @@ src/llm_werewolf/
 
 | 関数 | 説明 |
 |------|------|
-| `advance_to_discussion` | AI 議論を実行し DISCUSSION ステップへ遷移 |
-| `handle_user_discuss` | ユーザー発言を記録し VOTE ステップへ遷移 |
+| `advance_to_discussion` | 1ラウンド分の AI 議論（ユーザーの発言順まで）を実行し DISCUSSION ステップへ遷移。`discussion_round` でラウンド管理 |
+| `handle_user_discuss` | ユーザー発言を記録し、後半 AI 発言を実行。ラウンド残りがあれば次ラウンドへ、なければ VOTE へ遷移 |
+| `skip_to_vote` | ユーザー死亡時に `discussion_round` をリセットし VOTE へスキップ |
 | `handle_user_vote` | ユーザー投票 + AI 投票 → 集計 → 処刑 → 勝利判定 |
 | `handle_auto_vote` | ユーザー死亡時の AI のみ投票 |
 | `start_night_phase` | 夜フェーズ開始。ユーザーが占い師/人狼なら NIGHT_ACTION へ、それ以外は即解決 |

@@ -275,6 +275,7 @@ def handle_user_discuss(session: InteractiveSession, message: str) -> None:
 
 def skip_to_vote(session: InteractiveSession) -> None:
     """ユーザー死亡時に VOTE ステップへスキップする。"""
+    session.discussion_round = 0
     session.step = GameStep.VOTE
 
 
@@ -404,6 +405,13 @@ def handle_night_action(session: InteractiveSession, target_name: str) -> None:
         resolve_night_phase(session)
         return
 
+    # ターゲットバリデーション
+    candidates = get_night_action_candidates(session)
+    candidate_names = {p.name for p in candidates}
+    if target_name not in candidate_names:
+        resolve_night_phase(session)
+        return
+
     if human.role == Role.SEER:
         resolve_night_phase(session, human_divine_target=target_name)
     elif human.role == Role.WEREWOLF:
@@ -488,7 +496,10 @@ def _resolve_divine(
     if target is None:
         return None
 
-    can_divine(game, seer, target)
+    try:
+        can_divine(game, seer, target)
+    except ValueError:
+        return None
     is_werewolf = target.role == Role.WEREWOLF
     game = game.add_log(f"[占い] {seer.name} が {target.name} を占った")
     return game, seer.name, target_name, is_werewolf
@@ -520,7 +531,10 @@ def _resolve_attack(
     if target is None:
         return game, None
 
-    can_attack(game, werewolf, target)
+    try:
+        can_attack(game, werewolf, target)
+    except ValueError:
+        return game, None
     return game, target_name
 
 

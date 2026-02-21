@@ -185,7 +185,10 @@ class GameEngine:
         if target is None:
             return game, None
 
-        can_divine(game, seer, target)
+        try:
+            can_divine(game, seer, target)
+        except ValueError:
+            return game, None
         is_werewolf = target.role == Role.WEREWOLF
         game = game.add_log(f"[占い] {seer.name} が {target.name} を占った")
         return game, (seer.name, target_name, is_werewolf)
@@ -207,7 +210,10 @@ class GameEngine:
         if target is None:
             return game, None
 
-        can_attack(game, werewolf, target)
+        try:
+            can_attack(game, werewolf, target)
+        except ValueError:
+            return game, None
         return game, target_name
 
     def _find_alive_player(self, game: GameState, name: str) -> Player | None:
