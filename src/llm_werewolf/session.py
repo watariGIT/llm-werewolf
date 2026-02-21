@@ -51,6 +51,7 @@ class InteractiveSession:
     current_discussion: list[str] = field(default_factory=list)
     current_votes: dict[str, str] = field(default_factory=dict)
     night_messages: list[str] = field(default_factory=list)
+    discussion_round: int = 0
     winner: Team | None = None
 
 
@@ -177,30 +178,51 @@ def _find_player(game: GameState, name: str, *, alive_only: bool = False) -> Pla
     return None
 
 
-def advance_to_discussion(session: InteractiveSession) -> None:
-    """AI 議論を実行し、DISCUSSION ステップへ遷移する。"""
+def _run_ai_discussion(session: InteractiveSession, players: list[Player]) -> list[str]:
+    """指定 AI プレイヤーの発言を実行し、発言メッセージリストを返す。"""
     game = session.game
-    game = game.add_log(f"--- Day {game.day} （昼フェーズ） ---")
-    game = replace(game, phase=Phase.DAY)
-
-    # 占い結果通知 (Day 2+)
-    game = _notify_divine_result(game)
-
-    rounds = 1 if game.day == 1 else 2
-    discussion_messages: list[str] = []
-
-    for round_num in range(1, rounds + 1):
-        game = game.add_log(f"[議論] ラウンド {round_num}")
-        for player in game.alive_players:
-            if player.name == session.human_player_name:
-                continue
-            provider = session.providers[player.name]
-            message = provider.discuss(game, player)
-            game = game.add_log(f"[発言] {player.name}: {message}")
-            discussion_messages.append(f"{player.name}: {message}")
-
+    messages: list[str] = []
+    for player in players:
+        provider = session.providers[player.name]
+        message = provider.discuss(game, player)
+        game = game.add_log(f"[発言] {player.name}: {message}")
+        messages.append(f"{player.name}: {message}")
     session.game = game
-    session.current_discussion = discussion_messages
+    return messages
+
+
+def advance_to_discussion(session: InteractiveSession) -> None:
+    """1ラウンド分の AI 議論（ユーザーの手番まで）を実行し、DISCUSSION ステップへ遷移する。"""
+    game = session.game
+
+    # 新しい日の最初のラウンドの場合のみ、日のヘッダーログと占い結果通知を行う
+    if session.discussion_round == 0:
+        game = game.add_log(f"--- Day {game.day} （昼フェーズ） ---")
+        game = replace(game, phase=Phase.DAY)
+        game = _notify_divine_result(game)
+        session.game = game
+        session.current_discussion = []
+
+    session.discussion_round += 1
+    round_num = session.discussion_round
+
+    session.game = session.game.add_log(f"[議論] ラウンド {round_num}")
+
+    # ユーザーの発言順を基準に、前半の AI 発言を実行
+    human = _find_player(session.game, session.human_player_name, alive_only=True)
+    alive = list(session.game.alive_players)
+
+    if human is None:
+        # ユーザー死亡時: 全 AI が発言
+        ai_players = [p for p in alive if p.name in session.providers]
+        msgs = _run_ai_discussion(session, ai_players)
+        session.current_discussion.extend(msgs)
+    else:
+        human_idx = next(i for i, p in enumerate(alive) if p.name == session.human_player_name)
+        before = [p for p in alive[:human_idx] if p.name in session.providers]
+        msgs = _run_ai_discussion(session, before)
+        session.current_discussion.extend(msgs)
+
     session.step = GameStep.DISCUSSION
 
 
@@ -229,11 +251,26 @@ def _notify_divine_result(game: GameState) -> GameState:
 
 
 def handle_user_discuss(session: InteractiveSession, message: str) -> None:
-    """ユーザー発言を記録し、VOTE ステップへ遷移する。"""
+    """ユーザー発言を記録し、後半 AI 発言を実行。ラウンドが残っていれば次ラウンドへ、なければ VOTE へ。"""
     human = _find_player(session.game, session.human_player_name, alive_only=True)
     if human is not None:
         session.game = session.game.add_log(f"[発言] {human.name}: {message}")
-    session.step = GameStep.VOTE
+        session.current_discussion.append(f"{human.name}: {message}")
+
+        # ユーザーの後ろの AI が発言
+        alive = list(session.game.alive_players)
+        human_idx = next(i for i, p in enumerate(alive) if p.name == session.human_player_name)
+        after = [p for p in alive[human_idx + 1 :] if p.name in session.providers]
+        msgs = _run_ai_discussion(session, after)
+        session.current_discussion.extend(msgs)
+
+    max_rounds = 1 if session.game.day == 1 else 2
+    if session.discussion_round < max_rounds:
+        # 次のラウンドへ
+        advance_to_discussion(session)
+    else:
+        session.discussion_round = 0
+        session.step = GameStep.VOTE
 
 
 def skip_to_vote(session: InteractiveSession) -> None:

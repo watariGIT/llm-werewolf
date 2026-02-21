@@ -80,7 +80,10 @@ class TestAdvanceToDiscussion:
     def test_generates_ai_discussion_messages(self) -> None:
         session = _create_session()
         advance_to_discussion(session)
-        assert len(session.current_discussion) > 0
+        handle_user_discuss(session, "test")
+        # ユーザー発言後に後半 AI の発言も追加されるため、AI のメッセージが含まれる
+        ai_msgs = [msg for msg in session.current_discussion if not msg.startswith(session.human_player_name)]
+        assert len(ai_msgs) > 0
 
     def test_does_not_include_human_discussion(self) -> None:
         session = _create_session(human_name="Alice")
@@ -406,6 +409,73 @@ class TestNightAction:
                 night_candidates = get_night_action_candidates(session)
                 handle_night_action(session, night_candidates[0].name)
                 assert session.step in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER)
+
+
+class TestDiscussionRounds:
+    def test_day1_one_round(self) -> None:
+        """Day 1 ではユーザー発言後に即 VOTE へ遷移する。"""
+        session = _create_session()
+        advance_to_discussion(session)
+        assert session.discussion_round == 1
+        handle_user_discuss(session, "こんにちは")
+        assert session.step == GameStep.VOTE
+        assert session.discussion_round == 0
+
+    def test_day2_two_rounds(self) -> None:
+        """Day 2 ではユーザーが2回発言できる。"""
+        for seed in range(50):
+            session = _create_session(seed=seed)
+            advance_to_discussion(session)
+            handle_user_discuss(session, "Day1 発言")
+            candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
+            handle_user_vote(session, candidates[0].name)
+            if session.step != GameStep.EXECUTION_RESULT:
+                continue
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_cands = get_night_action_candidates(session)
+                if night_cands:
+                    handle_night_action(session, night_cands[0].name)
+            if session.step != GameStep.NIGHT_RESULT:
+                continue
+
+            # Day 2 の議論開始
+            advance_to_discussion(session)
+            assert session.step == GameStep.DISCUSSION
+            assert session.discussion_round == 1
+
+            # ラウンド1のユーザー発言 → まだ DISCUSSION（ラウンド2）
+            handle_user_discuss(session, "Day2 ラウンド1")
+            assert session.step == GameStep.DISCUSSION
+            assert session.discussion_round == 2
+
+            # ラウンド2のユーザー発言 → VOTE
+            handle_user_discuss(session, "Day2 ラウンド2")
+            assert session.step == GameStep.VOTE
+            assert session.discussion_round == 0
+            return
+        pytest.skip("No seed found for day2 two rounds test")
+
+    def test_speaking_order_includes_human(self) -> None:
+        """ユーザーの発言が alive_players の順序通りに挿入される。"""
+        session = _create_session(human_name="Alice")
+        advance_to_discussion(session)
+        handle_user_discuss(session, "私の発言です")
+
+        # ユーザーの発言が current_discussion に含まれる
+        human_msgs = [msg for msg in session.current_discussion if msg.startswith("Alice:")]
+        assert len(human_msgs) == 1
+
+        # 発言順がプレイヤー順になっているか確認
+        alive_order = [p.name for p in session.game.alive_players]
+        human_name = "Alice"
+        human_idx = alive_order.index(human_name)
+
+        # ユーザーの前の AI の発言がユーザーの前にある
+        discussion_speakers = [msg.split(": ", 1)[0] for msg in session.current_discussion]
+        human_msg_idx = discussion_speakers.index(human_name)
+        for i, speaker in enumerate(discussion_speakers[:human_msg_idx]):
+            assert speaker in alive_order[:human_idx]
 
 
 class TestDeterminism:
