@@ -14,3 +14,4 @@ globs: src/llm_werewolf/domain/**
 - **外部ライブラリに依存しない**（Python 標準ライブラリのみ使用可）
 - 命名は `docs/glossary.md` の用語に準拠すること
 - ゲームロジックは `docs/game-rules.md` のルールに準拠すること
+- ドメインサービスの制約チェック関数は、違反時に `ValueError` を送出する
