@@ -77,3 +77,57 @@ def check_victory(game: GameState) -> Team | None:
         return Team.WEREWOLF
 
     return None
+
+
+def can_divine(game: GameState, seer: Player, target: Player) -> None:
+    """占い師が対象を占えるかチェックする。
+
+    制約違反時は ValueError を送出する。
+
+    Args:
+        game: 現在のゲーム状態
+        seer: 占い師のプレイヤー
+        target: 占い対象のプレイヤー
+
+    Raises:
+        ValueError: 制約違反の場合
+    """
+    if seer.role != Role.SEER:
+        raise ValueError(f"{seer.name} is not a seer")
+    if not seer.is_alive:
+        raise ValueError(f"{seer.name} is dead and cannot divine")
+    if target not in game.players:
+        raise ValueError(f"{target.name} is not in the game")
+    if not target.is_alive:
+        raise ValueError(f"{target.name} is dead and cannot be divined")
+    if seer.name == target.name:
+        raise ValueError(f"{seer.name} cannot divine themselves")
+    if target.name in game.get_divined_history(seer.name):
+        raise ValueError(f"{seer.name} has already divined {target.name}")
+
+
+def can_attack(game: GameState, werewolf: Player, target: Player) -> None:
+    """人狼が対象を襲撃できるかチェックする。
+
+    制約違反時は ValueError を送出する。
+
+    Args:
+        game: 現在のゲーム状態
+        werewolf: 人狼のプレイヤー
+        target: 襲撃対象のプレイヤー
+
+    Raises:
+        ValueError: 制約違反の場合
+    """
+    if werewolf.role != Role.WEREWOLF:
+        raise ValueError(f"{werewolf.name} is not a werewolf")
+    if not werewolf.is_alive:
+        raise ValueError(f"{werewolf.name} is dead and cannot attack")
+    if target not in game.players:
+        raise ValueError(f"{target.name} is not in the game")
+    if not target.is_alive:
+        raise ValueError(f"{target.name} is dead and cannot be attacked")
+    if werewolf.name == target.name:
+        raise ValueError(f"{werewolf.name} cannot attack themselves")
+    if target.role == Role.WEREWOLF:
+        raise ValueError(f"{werewolf.name} cannot attack another werewolf {target.name}")
