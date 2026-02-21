@@ -4,7 +4,6 @@
 
 - 日本語で応答すること
 - パッケージ管理には必ず **uv** を使用（pip禁止）
-- コマンド実行例: `uv sync`, `uv run pytest`, `uv run ruff check .`
 
 ## プロジェクト構成
 
@@ -13,20 +12,11 @@
 - LLM連携: LangChain → OpenAI API
 - Python 3.12
 
-## コーディング規約
+## リファレンス
 
-- Ruff でフォーマット・リント（line-length=120）
-- mypy で型チェック
-- テストは pytest（`tests/` ディレクトリ）
-- 変数名・関数名はスネークケース、クラス名はパスカルケース
-
-## 重要な制約
-
-- `.env` には秘密情報を含むため git にコミットしない
-- LLMのAPIキーはすべて環境変数経由で取得する（ハードコード禁止）
-- ゲームルールの詳細は [docs/game-rules.md](docs/game-rules.md) を参照
-- 専門用語の定義は [docs/glossary.md](docs/glossary.md) を参照
-- アーキテクチャ設計は [docs/architecture.md](docs/architecture.md) を参照
+- ゲームルール: [docs/game-rules.md](docs/game-rules.md)
+- 用語集: [docs/glossary.md](docs/glossary.md)
+- アーキテクチャ: [docs/architecture.md](docs/architecture.md)
 
 ## 現在の開発フェーズ
 
@@ -38,10 +28,7 @@
 
 ```bash
 uv sync                  # 依存関係インストール
-uv run ruff check .      # リント
-uv run ruff format .     # フォーマット
-uv run mypy src/         # 型チェック
-uv run pytest            # テスト実行
+uv run tox               # リント・型チェック・テスト一括実行
 ```
 
 ## 開発ワークフロー
@@ -55,13 +42,9 @@ uv run pytest            # テスト実行
 
 ### コミット前チェック（必須）
 
-以下を全て通してからコミットすること:
-
 ```bash
-uv run ruff format .       # フォーマット適用
-uv run ruff check .        # リントエラーがないこと
-uv run mypy src/           # 型チェック通過
-uv run pytest              # テスト全件パス（テストがある場合）
+uv run ruff format .     # フォーマット適用
+uv run tox               # リント・型チェック・テスト一括通過
 ```
 
 ### 標準作業フロー

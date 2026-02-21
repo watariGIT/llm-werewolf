@@ -51,9 +51,7 @@ gh api repos/{owner}/{repo}/pulls/<番号>/reviews
 
 ```bash
 uv run ruff format .
-uv run ruff check .
-uv run mypy src/
-uv run pytest
+uv run tox
 ```
 
 エラーがあれば修正して再実行。
