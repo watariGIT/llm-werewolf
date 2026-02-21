@@ -80,8 +80,8 @@ class GameEngine:
         game = replace(game, phase=Phase.NIGHT)
 
         # 占い・襲撃を実行
-        divine_result = self._resolve_divine(game)
-        attack_target_name = self._resolve_attack(game)
+        game, divine_result = self._resolve_divine(game)
+        game, attack_target_name = self._resolve_attack(game)
 
         # 襲撃処理
         if attack_target_name is not None:
@@ -166,52 +166,49 @@ class GameEngine:
 
         return game
 
-    def _resolve_divine(self, game: GameState) -> tuple[str, str, bool] | None:
-        """占いを実行し、結果を返す。(seer_name, target_name, is_werewolf) または None。"""
+    def _resolve_divine(self, game: GameState) -> tuple[GameState, tuple[str, str, bool] | None]:
+        """占いを実行し、更新された game と結果を返す。結果は (seer_name, target_name, is_werewolf) または None。"""
         seer_players = [p for p in game.alive_players if p.role == Role.SEER]
         if not seer_players:
-            return None
+            return game, None
 
         seer = seer_players[0]
         # 占い可能な対象を取得
         already_divined = set(game.get_divined_history(seer.name))
         candidates = tuple(p for p in game.alive_players if p.name != seer.name and p.name not in already_divined)
         if not candidates:
-            return None
+            return game, None
 
         provider = self._providers[seer.name]
         target_name = provider.divine(game, seer, candidates)
         target = self._find_alive_player(game, target_name)
         if target is None:
-            return None
+            return game, None
 
         can_divine(game, seer, target)
         is_werewolf = target.role == Role.WEREWOLF
-        game_with_log = game.add_log(f"[占い] {seer.name} が {target.name} を占った")
-        # ログ更新は呼び出し元で行うため、ここでは game を更新しない（_night_phase で管理）
-        # ただしログは追加しておく
-        self._game = game_with_log
-        return (seer.name, target_name, is_werewolf)
+        game = game.add_log(f"[占い] {seer.name} が {target.name} を占った")
+        return game, (seer.name, target_name, is_werewolf)
 
-    def _resolve_attack(self, game: GameState) -> str | None:
-        """襲撃を実行し、対象の名前を返す。"""
+    def _resolve_attack(self, game: GameState) -> tuple[GameState, str | None]:
+        """襲撃を実行し、更新された game と対象の名前を返す。"""
         werewolves = [p for p in game.alive_players if p.role == Role.WEREWOLF]
         if not werewolves:
-            return None
+            return game, None
 
         werewolf = werewolves[0]
         candidates = tuple(p for p in game.alive_players if p.role != Role.WEREWOLF)
         if not candidates:
-            return None
+            return game, None
 
         provider = self._providers[werewolf.name]
         target_name = provider.attack(game, werewolf, candidates)
         target = self._find_alive_player(game, target_name)
         if target is None:
-            return None
+            return game, None
 
         can_attack(game, werewolf, target)
-        return target_name
+        return game, target_name
 
     def _find_alive_player(self, game: GameState, name: str) -> Player | None:
         for p in game.alive_players:

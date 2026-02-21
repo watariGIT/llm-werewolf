@@ -13,6 +13,10 @@ src/llm_werewolf/
     player.py              エンティティ
     game.py                集約ルート
     services.py            ドメインサービス
+  engine/              ← アプリケーション層（ゲーム進行エンジン）
+    action_provider.py     プレイヤー行動の抽象インターフェース
+    game_engine.py         ゲームループ管理
+    random_provider.py     ランダム行動プロバイダー（Mock版AI）
   main.py              ← インフラ層（FastAPI, Jinja2）
   templates/
 ```
@@ -20,11 +24,12 @@ src/llm_werewolf/
 ### 依存の方向
 
 ```
-インフラ層 (main.py) → ドメイン層 (domain/)
+インフラ層 (main.py) → アプリケーション層 (engine/) → ドメイン層 (domain/)
 ドメイン層 → Python 標準ライブラリのみ
 ```
 
 ドメイン層は FastAPI, Jinja2, LangChain 等の外部ライブラリに**一切依存しない**。
+アプリケーション層はドメイン層に依存し、ゲーム進行のユースケースを実装する。
 
 ## DDD 構成要素
 
@@ -64,6 +69,16 @@ src/llm_werewolf/
 | `assign_roles` | 配役ロジック（5人にランダムで役職を割り当て） |
 | `create_game` | ゲーム初期化ファクトリ |
 | `check_victory` | 勝利判定（人狼全滅→村人勝利、村人陣営≦人狼→人狼勝利） |
+
+## アプリケーション層 (`engine/`)
+
+ゲーム進行のユースケースを管理する層。ドメイン層のモデルとサービスを組み合わせてゲームループを実現する。
+
+| クラス/Protocol | 説明 |
+|-----------------|------|
+| `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃の行動を定義 |
+| `GameEngine` | ゲームループ管理。昼議論→投票→処刑→夜行動→勝利判定のサイクルを実行 |
+| `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 
 ## 命名規則
 
