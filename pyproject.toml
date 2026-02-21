@@ -18,6 +18,8 @@ dev = [
     "mypy",
     "pytest",
     "httpx",
+    "tox",
+    "tox-uv",
 ]
 
 [build-system]

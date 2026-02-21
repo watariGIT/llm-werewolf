@@ -1,0 +1,53 @@
+import pytest
+
+from llm_werewolf.domain.game import GameState
+from llm_werewolf.domain.player import Player
+from llm_werewolf.domain.value_objects import Phase, Role
+
+
+@pytest.fixture
+def players() -> list[Player]:
+    return [
+        Player(name="Alice", role=Role.VILLAGER),
+        Player(name="Bob", role=Role.SEER),
+        Player(name="Charlie", role=Role.VILLAGER),
+        Player(name="Dave", role=Role.VILLAGER),
+        Player(name="Eve", role=Role.WEREWOLF),
+    ]
+
+
+class TestGameState:
+    def test_defaults(self, players: list[Player]) -> None:
+        game = GameState(players=players)
+        assert game.phase == Phase.DAY
+        assert game.day == 1
+        assert game.log == []
+
+    def test_alive_players(self, players: list[Player]) -> None:
+        players[0].kill()
+        game = GameState(players=players)
+        assert len(game.alive_players) == 4
+        assert players[0] not in game.alive_players
+
+    def test_alive_werewolves(self, players: list[Player]) -> None:
+        game = GameState(players=players)
+        assert len(game.alive_werewolves) == 1
+        assert game.alive_werewolves[0].role == Role.WEREWOLF
+
+    def test_alive_village_team(self, players: list[Player]) -> None:
+        game = GameState(players=players)
+        village_team = game.alive_village_team
+        assert len(village_team) == 4
+        assert all(p.role != Role.WEREWOLF for p in village_team)
+
+    def test_alive_village_team_after_kill(self, players: list[Player]) -> None:
+        players[1].kill()  # seer killed
+        game = GameState(players=players)
+        assert len(game.alive_village_team) == 3
+
+    def test_add_log(self, players: list[Player]) -> None:
+        game = GameState(players=players)
+        game.add_log("Day 1 started")
+        game.add_log("Alice voted for Eve")
+        assert len(game.log) == 2
+        assert game.log[0] == "Day 1 started"
