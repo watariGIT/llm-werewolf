@@ -13,10 +13,12 @@ src/llm_werewolf/
     player.py              エンティティ
     game.py                集約ルート
     services.py            ドメインサービス
+    game_log.py            ゲームログのフィルタリング・整形
   engine/              ← アプリケーション層（ゲーム進行エンジン）
     action_provider.py     プレイヤー行動の抽象インターフェース
     game_engine.py         ゲームループ管理
     random_provider.py     ランダム行動プロバイダー（Mock版AI）
+  session.py           ← インフラ層（セッション管理）
   main.py              ← インフラ層（FastAPI, Jinja2）
   templates/
 ```
@@ -24,7 +26,7 @@ src/llm_werewolf/
 ### 依存の方向
 
 ```
-インフラ層 (main.py) → アプリケーション層 (engine/) → ドメイン層 (domain/)
+インフラ層 (main.py, session.py) → アプリケーション層 (engine/) → ドメイン層 (domain/)
 ドメイン層 → Python 標準ライブラリのみ
 ```
 
@@ -70,6 +72,12 @@ src/llm_werewolf/
 | `create_game` | ゲーム初期化ファクトリ |
 | `check_victory` | 勝利判定（人狼全滅→村人勝利、村人陣営≦人狼→人狼勝利） |
 
+### ゲームログサービス (`game_log.py`)
+
+| 関数 | 説明 |
+|------|------|
+| `format_log_for_context` | プレイヤー視点でフィルタリングしたゲームログを生成（Step 2 の LLM コンテキスト用） |
+
 ## アプリケーション層 (`engine/`)
 
 ゲーム進行のユースケースを管理する層。ドメイン層のモデルとサービスを組み合わせてゲームループを実現する。
@@ -79,6 +87,16 @@ src/llm_werewolf/
 | `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃の行動を定義 |
 | `GameEngine` | ゲームループ管理。昼議論→投票→処刑→夜行動→勝利判定のサイクルを実行 |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
+
+## インフラ層
+
+### セッション管理 (`session.py`)
+
+リクエストをまたいでゲーム状態を保持するインメモリストア。
+
+| クラス | 説明 |
+|--------|------|
+| `GameSessionStore` | ゲームセッションの CRUD 管理。ゲームID → GameState のマッピングを保持 |
 
 ## 命名規則
 

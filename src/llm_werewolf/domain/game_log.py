@@ -1,0 +1,59 @@
+"""ゲームログのフィルタリング・整形（ドメインサービス）。
+
+Step 2 で LLM に渡すコンテキスト用に、プレイヤー視点でログをフィルタリングする。
+"""
+
+from __future__ import annotations
+
+from llm_werewolf.domain.game import GameState
+from llm_werewolf.domain.player import Player
+from llm_werewolf.domain.value_objects import Role
+
+
+def _find_player(game: GameState, name: str) -> Player | None:
+    for p in game.players:
+        if p.name == name:
+            return p
+    return None
+
+
+def _is_visible(log_entry: str, player: Player) -> bool:
+    """ログエントリがプレイヤーに見えるかどうか判定する。
+
+    フィルタリングルール:
+    - [配役]: 自分の配役のみ見える
+    - [占い結果]: 占い師本人のみ見える
+    - [占い]: 占い師本人のみ見える
+    - その他: 全員に見える
+    """
+    if log_entry.startswith("[配役]"):
+        return player.name in log_entry
+
+    if log_entry.startswith("[占い結果]"):
+        return player.role == Role.SEER and player.name in log_entry
+
+    if log_entry.startswith("[占い]"):
+        return player.role == Role.SEER and player.name in log_entry
+
+    return True
+
+
+def format_log_for_context(game: GameState, player_name: str) -> str:
+    """プレイヤー視点でフィルタリングしたゲームログを返す。
+
+    Args:
+        game: ゲーム状態
+        player_name: 視点プレイヤーの名前
+
+    Returns:
+        フィルタリング済みのログ文字列（改行区切り）
+
+    Raises:
+        ValueError: 指定された名前のプレイヤーが存在しない場合
+    """
+    player = _find_player(game, player_name)
+    if player is None:
+        raise ValueError(f"Player '{player_name}' not found in game")
+
+    visible_logs = [entry for entry in game.log if _is_visible(entry, player)]
+    return "\n".join(visible_logs)
