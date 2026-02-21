@@ -59,9 +59,25 @@ cp .env.example .env
 uv run uvicorn src.llm_werewolf.main:app --reload
 ```
 
-### リント・型チェック
+### リント・型チェック・テスト
 
 ```bash
-uv run ruff check .
-uv run mypy src/
+uv run tox               # リント・型チェック・テスト一括実行
 ```
+
+## ドキュメント
+
+| ドキュメント | 内容 |
+|-------------|------|
+| [docs/game-rules.md](docs/game-rules.md) | ゲームルール詳細 |
+| [docs/glossary.md](docs/glossary.md) | 用語集 |
+| [docs/architecture.md](docs/architecture.md) | アーキテクチャ設計 |
+| [CLAUDE.md](CLAUDE.md) | プロジェクト指示書 |
+
+## Claude Code スキル
+
+| スキル | 説明 |
+|--------|------|
+| `/implement-issue` | GitHub Issue の実装からPR作成まで一気通貫で実行 |
+| `/review-pr` | PR の差分を6種のレビュアー観点で並列レビュー |
+| `/fix-review` | レビュー指摘の修正・プッシュ、対応困難な問題はIssue作成 |

@@ -51,9 +51,7 @@ gh api repos/{owner}/{repo}/pulls/<番号>/reviews
 
 ```bash
 uv run ruff format .
-uv run ruff check .
-uv run mypy src/
-uv run pytest
+uv run tox
 ```
 
 エラーがあれば修正して再実行。
@@ -84,7 +82,24 @@ EOF
 )"
 ```
 
-### Step 7: 結果報告
+### Step 7: PR に修正結果をコメント投稿
+
+修正内容を PR のコメントとして投稿する。記録として残すために、チャットでの報告だけでなく必ず PR にも投稿すること。
+
+```bash
+gh pr comment <番号> --body "$(cat <<'EOF'
+## レビュー指摘修正完了
+
+| 指摘 | 修正内容 |
+|------|---------|
+| <指摘内容> | <修正内容> |
+
+<マージ可能かどうかの判断>
+EOF
+)"
+```
+
+### Step 8: 結果報告
 
 以下をユーザーに報告する:
 
