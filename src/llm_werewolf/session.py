@@ -13,7 +13,7 @@ from enum import Enum
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
-from llm_werewolf.domain.services import can_attack, can_divine, check_victory, create_game
+from llm_werewolf.domain.services import can_attack, can_divine, check_victory, create_game, create_game_with_role
 from llm_werewolf.domain.value_objects import Phase, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
@@ -29,6 +29,7 @@ class GameStep(str, Enum):
     DISCUSSION = "discussion"
     VOTE = "vote"
     EXECUTION_RESULT = "execution_result"
+    NIGHT_ACTION = "night_action"
     NIGHT_RESULT = "night_result"
     GAME_OVER = "game_over"
 
@@ -111,11 +112,20 @@ class InteractiveSessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, InteractiveSession] = {}
 
-    def create(self, human_name: str, rng: random.Random | None = None) -> InteractiveSession:
-        """新規インタラクティブゲームを作成する。"""
+    def create(self, human_name: str, rng: random.Random | None = None, role: Role | None = None) -> InteractiveSession:
+        """新規インタラクティブゲームを作成する。
+
+        Args:
+            human_name: ユーザーのプレイヤー名
+            rng: テスト用の乱数生成器
+            role: ユーザーの役職（None の場合はランダム）
+        """
         rng = rng if rng is not None else random.Random()
         all_names = [human_name] + AI_NAMES
-        game = create_game(all_names, rng=rng)
+        if role is not None:
+            game = create_game_with_role(all_names, human_name, role, rng=rng)
+        else:
+            game = create_game(all_names, rng=rng)
 
         # 配役ログ
         game = game.add_log("=== ゲーム開始 ===")
@@ -320,21 +330,84 @@ def handle_auto_vote(session: InteractiveSession) -> None:
         session.step = GameStep.EXECUTION_RESULT
 
 
-def execute_night_phase(session: InteractiveSession) -> None:
-    """夜フェーズを実行する（占い + 襲撃 + 勝利判定）。"""
+def _human_has_night_action(session: InteractiveSession) -> bool:
+    """ユーザーが夜行動を持つか判定する（占い師 or 人狼で生存中）。"""
+    human = _find_player(session.game, session.human_player_name, alive_only=True)
+    if human is None:
+        return False
+    return human.role in (Role.SEER, Role.WEREWOLF)
+
+
+def get_night_action_type(session: InteractiveSession) -> str | None:
+    """ユーザーの夜行動タイプを返す。"divine" / "attack" / None。"""
+    human = _find_player(session.game, session.human_player_name, alive_only=True)
+    if human is None:
+        return None
+    if human.role == Role.SEER:
+        return "divine"
+    if human.role == Role.WEREWOLF:
+        return "attack"
+    return None
+
+
+def get_night_action_candidates(session: InteractiveSession) -> list[Player]:
+    """ユーザーの夜行動の対象候補を返す。"""
+    human = _find_player(session.game, session.human_player_name, alive_only=True)
+    if human is None:
+        return []
+    game = session.game
+    if human.role == Role.SEER:
+        already_divined = set(game.get_divined_history(human.name))
+        return [p for p in game.alive_players if p.name != human.name and p.name not in already_divined]
+    if human.role == Role.WEREWOLF:
+        return [p for p in game.alive_players if p.role != Role.WEREWOLF]
+    return []
+
+
+def start_night_phase(session: InteractiveSession) -> None:
+    """夜フェーズを開始する。ユーザーに夜行動があれば NIGHT_ACTION へ遷移、なければ即解決。"""
     game = session.game
     game = game.add_log(f"--- Night {game.day} （夜フェーズ） ---")
     game = replace(game, phase=Phase.NIGHT)
+    session.game = game
 
+    if _human_has_night_action(session) and get_night_action_candidates(session):
+        session.step = GameStep.NIGHT_ACTION
+    else:
+        resolve_night_phase(session)
+
+
+def handle_night_action(session: InteractiveSession, target_name: str) -> None:
+    """ユーザーの夜行動（占い or 襲撃対象選択）を処理し、夜フェーズを解決する。"""
+    human = _find_player(session.game, session.human_player_name, alive_only=True)
+    if human is None:
+        resolve_night_phase(session)
+        return
+
+    if human.role == Role.SEER:
+        resolve_night_phase(session, human_divine_target=target_name)
+    elif human.role == Role.WEREWOLF:
+        resolve_night_phase(session, human_attack_target=target_name)
+    else:
+        resolve_night_phase(session)
+
+
+def resolve_night_phase(
+    session: InteractiveSession,
+    human_divine_target: str | None = None,
+    human_attack_target: str | None = None,
+) -> None:
+    """夜フェーズを解決する（占い + 襲撃 + 勝利判定）。"""
+    game = session.game
     night_messages: list[str] = []
 
     # 占いを実行
-    divine_result = _resolve_divine(session, game)
+    divine_result = _resolve_divine(session, game, human_divine_target)
     if divine_result is not None:
         game, seer_name, target_name, _is_werewolf = divine_result
 
     # 襲撃を実行
-    game, attack_target_name = _resolve_attack(session, game)
+    game, attack_target_name = _resolve_attack(session, game, human_attack_target)
     if attack_target_name is not None:
         attack_target = _find_player(game, attack_target_name, alive_only=True)
         if attack_target is not None:
@@ -368,7 +441,9 @@ def execute_night_phase(session: InteractiveSession) -> None:
         session.step = GameStep.NIGHT_RESULT
 
 
-def _resolve_divine(session: InteractiveSession, game: GameState) -> tuple[GameState, str, str, bool] | None:
+def _resolve_divine(
+    session: InteractiveSession, game: GameState, human_target: str | None = None
+) -> tuple[GameState, str, str, bool] | None:
     """占いを実行する。結果は (game, seer_name, target_name, is_werewolf) または None。"""
     seer_players = [p for p in game.alive_players if p.role == Role.SEER]
     if not seer_players:
@@ -380,12 +455,14 @@ def _resolve_divine(session: InteractiveSession, game: GameState) -> tuple[GameS
     if not candidates:
         return None
 
-    # Mock版: 占い師がユーザーでも AI でもランダム実行
-    if seer.name in session.providers:
+    if human_target is not None and seer.name == session.human_player_name:
+        target_name = human_target
+    elif seer.name in session.providers:
         provider = session.providers[seer.name]
+        target_name = provider.divine(game, seer, candidates)
     else:
         provider = RandomActionProvider(rng=session.rng)
-    target_name = provider.divine(game, seer, candidates)
+        target_name = provider.divine(game, seer, candidates)
 
     target = _find_player(game, target_name, alive_only=True)
     if target is None:
@@ -397,7 +474,9 @@ def _resolve_divine(session: InteractiveSession, game: GameState) -> tuple[GameS
     return game, seer.name, target_name, is_werewolf
 
 
-def _resolve_attack(session: InteractiveSession, game: GameState) -> tuple[GameState, str | None]:
+def _resolve_attack(
+    session: InteractiveSession, game: GameState, human_target: str | None = None
+) -> tuple[GameState, str | None]:
     """襲撃を実行する。"""
     werewolves = [p for p in game.alive_players if p.role == Role.WEREWOLF]
     if not werewolves:
@@ -408,11 +487,14 @@ def _resolve_attack(session: InteractiveSession, game: GameState) -> tuple[GameS
     if not candidates:
         return game, None
 
-    if werewolf.name in session.providers:
+    if human_target is not None and werewolf.name == session.human_player_name:
+        target_name = human_target
+    elif werewolf.name in session.providers:
         provider = session.providers[werewolf.name]
+        target_name = provider.attack(game, werewolf, candidates)
     else:
         provider = RandomActionProvider(rng=session.rng)
-    target_name = provider.attack(game, werewolf, candidates)
+        target_name = provider.attack(game, werewolf, candidates)
 
     target = _find_player(game, target_name, alive_only=True)
     if target is None:

@@ -298,6 +298,45 @@
         </div>
         {% endif %}
 
+        <!-- NIGHT_ACTION: 夜行動選択 -->
+        {% if step == "night_action" %}
+        <div class="panel">
+            {% if night_action_type == "divine" %}
+            <h2>占い - Night {{ game.day }}</h2>
+            <p style="margin-bottom: 1rem;">占う対象を選んでください:</p>
+            <form action="/play/{{ game_id }}/night-action" method="post">
+                <div class="radio-group">
+                    {% for p in night_action_candidates %}
+                    <label>
+                        <input type="radio" name="target" value="{{ p.name }}" required>
+                        {{ p.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="actions">
+                    <button type="submit" class="btn">占う</button>
+                </div>
+            </form>
+            {% elif night_action_type == "attack" %}
+            <h2>襲撃 - Night {{ game.day }}</h2>
+            <p style="margin-bottom: 1rem;">襲撃する対象を選んでください:</p>
+            <form action="/play/{{ game_id }}/night-action" method="post">
+                <div class="radio-group">
+                    {% for p in night_action_candidates %}
+                    <label>
+                        <input type="radio" name="target" value="{{ p.name }}" required>
+                        {{ p.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="actions">
+                    <button type="submit" class="btn">襲撃する</button>
+                </div>
+            </form>
+            {% endif %}
+        </div>
+        {% endif %}
+
         <!-- NIGHT_RESULT: 夜フェーズ結果 -->
         {% if step == "night_result" %}
         <div class="panel">

@@ -9,18 +9,21 @@ from llm_werewolf.session import (
     InteractiveSession,
     InteractiveSessionStore,
     advance_to_discussion,
-    execute_night_phase,
+    get_night_action_candidates,
+    get_night_action_type,
     handle_auto_vote,
+    handle_night_action,
     handle_user_discuss,
     handle_user_vote,
     skip_to_vote,
+    start_night_phase,
 )
 
 
-def _create_session(seed: int = 42, human_name: str = "テスト太郎") -> InteractiveSession:
+def _create_session(seed: int = 42, human_name: str = "テスト太郎", role: Role | None = None) -> InteractiveSession:
     """テスト用にseed固定でセッションを生成する。"""
     store = InteractiveSessionStore()
-    return store.create(human_name, rng=random.Random(seed))
+    return store.create(human_name, rng=random.Random(seed), role=role)
 
 
 class TestInteractiveSessionStore:
@@ -181,7 +184,11 @@ class TestExecuteNightPhase:
         handle_user_vote(session, candidates[0].name)
 
         if session.step == GameStep.EXECUTION_RESULT:
-            execute_night_phase(session)
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                candidates = get_night_action_candidates(session)
+                if candidates:
+                    handle_night_action(session, candidates[0].name)
             assert session.step in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER)
 
     def test_increments_day_after_night(self) -> None:
@@ -193,7 +200,11 @@ class TestExecuteNightPhase:
         handle_user_vote(session, candidates[0].name)
 
         if session.step == GameStep.EXECUTION_RESULT:
-            execute_night_phase(session)
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                candidates = get_night_action_candidates(session)
+                if candidates:
+                    handle_night_action(session, candidates[0].name)
             assert session.game.day == initial_day + 1
 
     def test_night_attack_reduces_alive_count(self) -> None:
@@ -220,7 +231,11 @@ class TestExecuteNightPhase:
                 continue
 
             alive_before = len(session.game.alive_players)
-            execute_night_phase(session)
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                candidates = get_night_action_candidates(session)
+                if candidates:
+                    handle_night_action(session, candidates[0].name)
             alive_after = len(session.game.alive_players)
 
             # 夜の襲撃で1人減るはず（ゲーム終了でなければ）
@@ -260,13 +275,137 @@ class TestFullGameFlow:
                 else:
                     handle_auto_vote(session)
             elif session.step == GameStep.EXECUTION_RESULT:
-                execute_night_phase(session)
+                start_night_phase(session)
+                if session.step == GameStep.NIGHT_ACTION:
+                    candidates = get_night_action_candidates(session)
+                    if candidates:
+                        handle_night_action(session, candidates[0].name)
             elif session.step == GameStep.NIGHT_RESULT:
                 advance_to_discussion(session)
 
         assert session.step == GameStep.GAME_OVER
         assert session.winner is not None
         assert session.winner in (Team.VILLAGE, Team.WEREWOLF)
+
+
+class TestCreateWithRole:
+    def test_create_with_seer_role(self) -> None:
+        session = _create_session(human_name="Alice", role=Role.SEER)
+        human = next(p for p in session.game.players if p.name == "Alice")
+        assert human.role == Role.SEER
+
+    def test_create_with_werewolf_role(self) -> None:
+        session = _create_session(human_name="Alice", role=Role.WEREWOLF)
+        human = next(p for p in session.game.players if p.name == "Alice")
+        assert human.role == Role.WEREWOLF
+
+    def test_create_with_villager_role(self) -> None:
+        session = _create_session(human_name="Alice", role=Role.VILLAGER)
+        human = next(p for p in session.game.players if p.name == "Alice")
+        assert human.role == Role.VILLAGER
+
+    def test_create_with_random_role(self) -> None:
+        session = _create_session(human_name="Alice", role=None)
+        assert len(session.game.players) == 5
+
+    def test_all_roles_assigned_with_fixed_role(self) -> None:
+        session = _create_session(human_name="Alice", role=Role.SEER)
+        roles = [p.role for p in session.game.players]
+        assert roles.count(Role.SEER) == 1
+        assert roles.count(Role.WEREWOLF) == 1
+        assert roles.count(Role.VILLAGER) == 3
+
+
+class TestNightAction:
+    def test_seer_gets_night_action(self) -> None:
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice", role=Role.SEER)
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+            candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+            handle_user_vote(session, candidates[0].name)
+            if session.step != GameStep.EXECUTION_RESULT:
+                continue
+            # Alice が生存しているか確認
+            human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
+            if human is None:
+                continue
+            start_night_phase(session)
+            assert session.step == GameStep.NIGHT_ACTION
+            assert get_night_action_type(session) == "divine"
+            return
+        pytest.skip("No seed found for seer night action test")
+
+    def test_werewolf_gets_night_action(self) -> None:
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice", role=Role.WEREWOLF)
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+            candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+            handle_user_vote(session, candidates[0].name)
+            if session.step != GameStep.EXECUTION_RESULT:
+                continue
+            human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
+            if human is None:
+                continue
+            start_night_phase(session)
+            assert session.step == GameStep.NIGHT_ACTION
+            assert get_night_action_type(session) == "attack"
+            return
+        pytest.skip("No seed found for werewolf night action test")
+
+    def test_villager_skips_night_action(self) -> None:
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice", role=Role.VILLAGER)
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+            candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+            handle_user_vote(session, candidates[0].name)
+            if session.step != GameStep.EXECUTION_RESULT:
+                continue
+            start_night_phase(session)
+            assert session.step != GameStep.NIGHT_ACTION
+            return
+        pytest.skip("No seed found for villager skip test")
+
+    def test_seer_divine_candidates_exclude_self_and_divined(self) -> None:
+        session = _create_session(human_name="Alice", role=Role.SEER)
+        advance_to_discussion(session)
+        handle_user_discuss(session, "test")
+        candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+        handle_user_vote(session, candidates[0].name)
+        if session.step == GameStep.EXECUTION_RESULT:
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_candidates = get_night_action_candidates(session)
+                candidate_names = [p.name for p in night_candidates]
+                assert "Alice" not in candidate_names
+
+    def test_werewolf_attack_candidates_exclude_werewolves(self) -> None:
+        session = _create_session(human_name="Alice", role=Role.WEREWOLF)
+        advance_to_discussion(session)
+        handle_user_discuss(session, "test")
+        candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+        handle_user_vote(session, candidates[0].name)
+        if session.step == GameStep.EXECUTION_RESULT:
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_candidates = get_night_action_candidates(session)
+                for p in night_candidates:
+                    assert p.role != Role.WEREWOLF
+
+    def test_handle_night_action_resolves_night(self) -> None:
+        session = _create_session(human_name="Alice", role=Role.SEER)
+        advance_to_discussion(session)
+        handle_user_discuss(session, "test")
+        candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+        handle_user_vote(session, candidates[0].name)
+        if session.step == GameStep.EXECUTION_RESULT:
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_candidates = get_night_action_candidates(session)
+                handle_night_action(session, night_candidates[0].name)
+                assert session.step in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER)
 
 
 class TestDeterminism:

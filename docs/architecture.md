@@ -70,6 +70,7 @@ src/llm_werewolf/
 |------|------|
 | `assign_roles` | 配役ロジック（5人にランダムで役職を割り当て） |
 | `create_game` | ゲーム初期化ファクトリ |
+| `create_game_with_role` | 指定プレイヤーに指定役職を割り当ててゲーム初期化 |
 | `check_victory` | 勝利判定（人狼全滅→村人勝利、村人陣営≦人狼→人狼勝利） |
 
 ### ゲームログサービス (`game_log.py`)
@@ -106,7 +107,7 @@ src/llm_werewolf/
 | クラス/Enum | 説明 |
 |-------------|------|
 | `GameSessionStore` | 一括実行ゲームの CRUD 管理。ゲームID → GameState のマッピングを保持 |
-| `GameStep` | インタラクティブゲームの進行ステップ（`role_reveal`, `discussion`, `vote`, `execution_result`, `night_result`, `game_over`） |
+| `GameStep` | インタラクティブゲームの進行ステップ（`role_reveal`, `discussion`, `vote`, `execution_result`, `night_action`, `night_result`, `game_over`） |
 | `InteractiveSession` | インタラクティブゲームの状態。GameState + 進行ステップ + AI providers を保持 |
 | `InteractiveSessionStore` | InteractiveSession のインメモリ CRUD |
 
@@ -120,18 +121,21 @@ src/llm_werewolf/
 | `handle_user_discuss` | ユーザー発言を記録し VOTE ステップへ遷移 |
 | `handle_user_vote` | ユーザー投票 + AI 投票 → 集計 → 処刑 → 勝利判定 |
 | `handle_auto_vote` | ユーザー死亡時の AI のみ投票 |
-| `execute_night_phase` | 占い + 襲撃 → 勝利判定 |
+| `start_night_phase` | 夜フェーズ開始。ユーザーが占い師/人狼なら NIGHT_ACTION へ、それ以外は即解決 |
+| `handle_night_action` | ユーザーの夜行動（占い/襲撃対象選択）を処理 |
+| `resolve_night_phase` | AI の夜行動 + ユーザー選択を反映して夜を完了 |
 
 ### Web エンドポイント (`main.py`)
 
 | パス | メソッド | 説明 |
 |------|---------|------|
 | `/` | GET | トップページ（名前入力フォーム） |
-| `/play` | POST | インタラクティブゲーム作成 |
+| `/play` | POST | インタラクティブゲーム作成（名前 + 役職選択） |
 | `/play/{id}` | GET | ゲーム画面（現在ステップに応じた表示） |
 | `/play/{id}/next` | POST | 次ステップへ進む |
 | `/play/{id}/discuss` | POST | ユーザー発言送信 |
 | `/play/{id}/vote` | POST | ユーザー投票送信 |
+| `/play/{id}/night-action` | POST | ユーザー夜行動送信（占い/襲撃対象） |
 | `/games` | POST | 一括実行ゲーム作成（API） |
 | `/games` | GET | 一括実行ゲーム一覧（API） |
 | `/games/{id}` | GET | 一括実行ゲーム状態取得（API） |

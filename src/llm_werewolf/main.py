@@ -9,17 +9,21 @@ from pydantic import BaseModel, field_validator
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
+from llm_werewolf.domain.value_objects import Role
 from llm_werewolf.session import (
     GameSessionStore,
     GameStep,
     InteractiveSession,
     InteractiveSessionStore,
     advance_to_discussion,
-    execute_night_phase,
+    get_night_action_candidates,
+    get_night_action_type,
     handle_auto_vote,
+    handle_night_action,
     handle_user_discuss,
     handle_user_vote,
     skip_to_vote,
+    start_night_phase,
 )
 
 app = FastAPI(title="LLM人狼")
@@ -119,8 +123,15 @@ def _get_human_player(session: InteractiveSession) -> Player | None:
     return None
 
 
+ROLE_MAP: dict[str, Role] = {
+    "villager": Role.VILLAGER,
+    "seer": Role.SEER,
+    "werewolf": Role.WEREWOLF,
+}
+
+
 @app.post("/play")
-async def create_interactive_game(player_name: str = Form(...)) -> RedirectResponse:
+async def create_interactive_game(player_name: str = Form(...), role: str = Form("random")) -> RedirectResponse:
     """インタラクティブゲームを作成してリダイレクトする。"""
     name = player_name.strip()
     if not name:
@@ -128,7 +139,8 @@ async def create_interactive_game(player_name: str = Form(...)) -> RedirectRespo
     if len(name) > MAX_PLAYER_NAME_LENGTH:
         raise HTTPException(status_code=400, detail=f"名前は{MAX_PLAYER_NAME_LENGTH}文字以内で入力してください")
 
-    session = interactive_store.create(name)
+    selected_role = ROLE_MAP.get(role) if role != "random" else None
+    session = interactive_store.create(name, role=selected_role)
     return RedirectResponse(url=f"/play/{session.game_id}", status_code=303)
 
 
@@ -145,6 +157,10 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     # 投票候補（自分以外の生存者）
     vote_candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
 
+    # 夜行動のコンテキスト
+    night_action_type = get_night_action_type(session) if session.step == GameStep.NIGHT_ACTION else None
+    night_action_candidates = get_night_action_candidates(session) if session.step == GameStep.NIGHT_ACTION else []
+
     return templates.TemplateResponse(
         request,
         "game.html",
@@ -155,6 +171,8 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
             "human_player": human_player,
             "human_is_alive": human_is_alive,
             "vote_candidates": vote_candidates,
+            "night_action_type": night_action_type,
+            "night_action_candidates": night_action_candidates,
             "game_id": game_id,
         },
     )
@@ -181,7 +199,7 @@ async def advance_game(game_id: str) -> RedirectResponse:
         handle_auto_vote(session)
         advanced = True
     elif session.step == GameStep.EXECUTION_RESULT:
-        execute_night_phase(session)
+        start_night_phase(session)
         advanced = True
     elif session.step == GameStep.NIGHT_RESULT:
         advance_to_discussion(session)
@@ -205,6 +223,27 @@ async def submit_discussion(game_id: str, message: str = Form("")) -> RedirectRe
         raise HTTPException(status_code=400, detail="Invalid step")
 
     handle_user_discuss(session, message.strip() or "...")
+    interactive_store.save(session)
+    return RedirectResponse(url=f"/play/{game_id}", status_code=303)
+
+
+@app.post("/play/{game_id}/night-action")
+async def submit_night_action(game_id: str, target: str = Form(...)) -> RedirectResponse:
+    """ユーザーの夜行動（占い or 襲撃対象）を送信する。"""
+    session = interactive_store.get(game_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if session.step != GameStep.NIGHT_ACTION:
+        raise HTTPException(status_code=400, detail="Invalid step")
+
+    # バリデーション: 対象が候補に含まれているか
+    candidates = get_night_action_candidates(session)
+    candidate_names = {p.name for p in candidates}
+    if target not in candidate_names:
+        raise HTTPException(status_code=400, detail="無効な対象です")
+
+    handle_night_action(session, target)
     interactive_store.save(session)
     return RedirectResponse(url=f"/play/{game_id}", status_code=303)
 

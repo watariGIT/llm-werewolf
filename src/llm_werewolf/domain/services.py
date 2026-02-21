@@ -40,6 +40,50 @@ def assign_roles(player_names: list[str], rng: random.Random | None = None) -> l
     return [Player(name=name, role=role) for name, role in zip(player_names, roles)]
 
 
+def create_game_with_role(
+    player_names: list[str],
+    fixed_player: str,
+    fixed_role: Role,
+    rng: random.Random | None = None,
+) -> GameState:
+    """指定プレイヤーに指定役職を割り当ててゲームを初期化する。
+
+    Args:
+        player_names: 5人のプレイヤー名リスト
+        fixed_player: 役職を固定するプレイヤー名
+        fixed_role: 割り当てる役職
+        rng: テスト用の乱数生成器
+
+    Returns:
+        初期化された GameState
+
+    Raises:
+        ValueError: プレイヤー数が5人でない場合、または固定プレイヤーがリストにない場合
+    """
+    if len(player_names) != REQUIRED_PLAYER_COUNT:
+        raise ValueError(f"Player count must be {REQUIRED_PLAYER_COUNT}, got {len(player_names)}")
+    if fixed_player not in player_names:
+        raise ValueError(f"{fixed_player} is not in player_names")
+
+    if rng is None:
+        rng = random.Random()
+
+    remaining_roles = list(DEFAULT_ROLE_COMPOSITION)
+    remaining_roles.remove(fixed_role)
+    rng.shuffle(remaining_roles)
+
+    players: list[Player] = []
+    remaining_idx = 0
+    for name in player_names:
+        if name == fixed_player:
+            players.append(Player(name=name, role=fixed_role))
+        else:
+            players.append(Player(name=name, role=remaining_roles[remaining_idx]))
+            remaining_idx += 1
+
+    return GameState(players=tuple(players))
+
+
 def create_game(player_names: list[str], rng: random.Random | None = None) -> GameState:
     """ゲーム初期化: 配役を行い GameState を生成する。
 
