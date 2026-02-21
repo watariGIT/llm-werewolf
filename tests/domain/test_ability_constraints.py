@@ -9,13 +9,13 @@ from llm_werewolf.domain.value_objects import Role
 @pytest.fixture
 def game() -> GameState:
     """役職が確定したゲーム状態"""
-    players = [
+    players = (
         Player(name="Alice", role=Role.SEER),
         Player(name="Bob", role=Role.VILLAGER),
         Player(name="Charlie", role=Role.VILLAGER),
         Player(name="Dave", role=Role.VILLAGER),
         Player(name="Eve", role=Role.WEREWOLF),
-    ]
+    )
     return GameState(players=players)
 
 
@@ -35,7 +35,7 @@ class TestCanDivine:
         seer = game.players[0]
         target = game.players[1]
         can_divine(game, seer, target)
-        game.add_divine_history(seer.name, target.name)
+        game = game.add_divine_history(seer.name, target.name)
 
         with pytest.raises(ValueError, match="has already divined"):
             can_divine(game, seer, target)
@@ -44,25 +44,27 @@ class TestCanDivine:
         """異なる対象を順次占える"""
         seer = game.players[0]
         can_divine(game, seer, game.players[1])
-        game.add_divine_history(seer.name, game.players[1].name)
+        game = game.add_divine_history(seer.name, game.players[1].name)
 
         can_divine(game, seer, game.players[2])
 
     def test_dead_seer_cannot_divine(self, game: GameState) -> None:
         """死亡した占い師は占えない"""
         seer = game.players[0]
-        seer.kill()
+        dead_seer = seer.killed()
+        game_with_dead_seer = GameState(players=(dead_seer,) + game.players[1:])
 
         with pytest.raises(ValueError, match="is dead and cannot divine"):
-            can_divine(game, seer, game.players[1])
+            can_divine(game_with_dead_seer, dead_seer, game_with_dead_seer.players[1])
 
     def test_cannot_divine_dead_target(self, game: GameState) -> None:
         """死亡した対象は占えない"""
         target = game.players[1]
-        target.kill()
+        dead_target = target.killed()
+        game_with_dead_target = GameState(players=(game.players[0], dead_target) + game.players[2:])
 
         with pytest.raises(ValueError, match="is dead and cannot be divined"):
-            can_divine(game, game.players[0], target)
+            can_divine(game_with_dead_target, game_with_dead_target.players[0], dead_target)
 
     def test_non_seer_cannot_divine(self, game: GameState) -> None:
         """占い師以外は占えない"""
@@ -89,13 +91,13 @@ class TestCanAttack:
 
     def test_cannot_attack_another_werewolf(self) -> None:
         """人狼は他の人狼を襲撃できない"""
-        players = [
+        players = (
             Player(name="Alice", role=Role.SEER),
             Player(name="Bob", role=Role.VILLAGER),
             Player(name="Charlie", role=Role.VILLAGER),
             Player(name="Dave", role=Role.WEREWOLF),
             Player(name="Eve", role=Role.WEREWOLF),
-        ]
+        )
         game = GameState(players=players)
 
         with pytest.raises(ValueError, match="cannot attack another werewolf"):
@@ -104,18 +106,20 @@ class TestCanAttack:
     def test_dead_werewolf_cannot_attack(self, game: GameState) -> None:
         """死亡した人狼は襲撃できない"""
         werewolf = game.players[4]
-        werewolf.kill()
+        dead_werewolf = werewolf.killed()
+        game_with_dead_wolf = GameState(players=game.players[:4] + (dead_werewolf,))
 
         with pytest.raises(ValueError, match="is dead and cannot attack"):
-            can_attack(game, werewolf, game.players[1])
+            can_attack(game_with_dead_wolf, dead_werewolf, game_with_dead_wolf.players[1])
 
     def test_cannot_attack_dead_target(self, game: GameState) -> None:
         """死亡した対象は襲撃できない"""
         target = game.players[1]
-        target.kill()
+        dead_target = target.killed()
+        game_with_dead_target = GameState(players=(game.players[0], dead_target) + game.players[2:])
 
         with pytest.raises(ValueError, match="is dead and cannot be attacked"):
-            can_attack(game, game.players[4], target)
+            can_attack(game_with_dead_target, game_with_dead_target.players[4], dead_target)
 
     def test_non_werewolf_cannot_attack(self, game: GameState) -> None:
         """人狼以外は襲撃できない"""
@@ -136,14 +140,14 @@ class TestCanAttack:
 class TestDivineHistory:
     def test_initial_history_is_empty(self, game: GameState) -> None:
         """初期状態では占い履歴が空"""
-        assert game.get_divined_history("Alice") == []
+        assert game.get_divined_history("Alice") == ()
 
     def test_add_and_get_history(self, game: GameState) -> None:
         """占い履歴の追加と取得"""
-        game.add_divine_history("Alice", "Bob")
-        game.add_divine_history("Alice", "Charlie")
-        assert game.get_divined_history("Alice") == ["Bob", "Charlie"]
+        game = game.add_divine_history("Alice", "Bob")
+        game = game.add_divine_history("Alice", "Charlie")
+        assert game.get_divined_history("Alice") == ("Bob", "Charlie")
 
     def test_default_divined_history(self, game: GameState) -> None:
-        """divined_history のデフォルト値は空の dict"""
-        assert game.divined_history == {}
+        """divined_history のデフォルト値は空の tuple"""
+        assert game.divined_history == ()
