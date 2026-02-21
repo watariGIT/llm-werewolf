@@ -24,7 +24,8 @@
 
 - `.env` には秘密情報を含むため git にコミットしない
 - LLMのAPIキーはすべて環境変数経由で取得する（ハードコード禁止）
-- ゲーム構成: 5人（村人3, 占い師1, 人狼1）
+- ゲームルールの詳細は [docs/game-rules.md](docs/game-rules.md) を参照
+- 専門用語の定義は [docs/glossary.md](docs/glossary.md) を参照
 
 ## 現在の開発フェーズ
 
