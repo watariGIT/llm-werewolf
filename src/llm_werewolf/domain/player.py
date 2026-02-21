@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from llm_werewolf.domain.value_objects import PlayerStatus, Role
 
 
-@dataclass
+@dataclass(frozen=True)
 class Player:
     """プレイヤーエンティティ"""
 
@@ -15,8 +15,8 @@ class Player:
     def is_alive(self) -> bool:
         return self.status == PlayerStatus.ALIVE
 
-    def kill(self) -> None:
-        """処刑または襲撃によりプレイヤーを死亡状態にする"""
+    def killed(self) -> "Player":
+        """処刑または襲撃により死亡した新しいプレイヤーを返す"""
         if not self.is_alive:
             raise ValueError(f"{self.name} is already dead")
-        self.status = PlayerStatus.DEAD
+        return Player(name=self.name, role=self.role, status=PlayerStatus.DEAD)

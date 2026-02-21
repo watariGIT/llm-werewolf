@@ -51,7 +51,7 @@ def create_game(player_names: list[str], rng: random.Random | None = None) -> Ga
         初期化された GameState
     """
     players = assign_roles(player_names, rng=rng)
-    return GameState(players=players)
+    return GameState(players=tuple(players))
 
 
 def check_victory(game: GameState) -> Team | None:

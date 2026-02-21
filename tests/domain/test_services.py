@@ -46,35 +46,35 @@ class TestCreateGame:
 
 class TestCheckVictory:
     def test_village_wins_when_werewolf_dead(self) -> None:
-        players = [
+        players = (
             Player(name="Alice", role=Role.VILLAGER),
             Player(name="Bob", role=Role.SEER),
             Player(name="Charlie", role=Role.VILLAGER),
             Player(name="Dave", role=Role.VILLAGER),
             Player(name="Eve", role=Role.WEREWOLF, status=PlayerStatus.DEAD),
-        ]
+        )
         game = GameState(players=players)
         assert check_victory(game) == Team.VILLAGE
 
     def test_werewolf_wins_when_villagers_lte_werewolves(self) -> None:
-        players = [
+        players = (
             Player(name="Alice", role=Role.VILLAGER, status=PlayerStatus.DEAD),
             Player(name="Bob", role=Role.SEER, status=PlayerStatus.DEAD),
             Player(name="Charlie", role=Role.VILLAGER, status=PlayerStatus.DEAD),
             Player(name="Dave", role=Role.VILLAGER),
             Player(name="Eve", role=Role.WEREWOLF),
-        ]
+        )
         game = GameState(players=players)
         assert check_victory(game) == Team.WEREWOLF
 
     def test_ongoing_game(self) -> None:
-        players = [
+        players = (
             Player(name="Alice", role=Role.VILLAGER),
             Player(name="Bob", role=Role.SEER),
             Player(name="Charlie", role=Role.VILLAGER, status=PlayerStatus.DEAD),
             Player(name="Dave", role=Role.VILLAGER),
             Player(name="Eve", role=Role.WEREWOLF),
-        ]
+        )
         game = GameState(players=players)
         assert check_victory(game) is None
 
