@@ -20,7 +20,7 @@ def assign_roles(player_names: list[str], rng: random.Random | None = None) -> l
 
     Args:
         player_names: 5人のプレイヤー名リスト
-        rng: テスト用の乱数生成器（None の場合はデフォルトを使用）
+        rng: テスト用の乱数生成器（None の場合は新規インスタンスを使用）
 
     Returns:
         役職が割り当てられた Player リスト
@@ -41,7 +41,15 @@ def assign_roles(player_names: list[str], rng: random.Random | None = None) -> l
 
 
 def create_game(player_names: list[str], rng: random.Random | None = None) -> GameState:
-    """ゲーム初期化: 配役を行い GameState を生成する。"""
+    """ゲーム初期化: 配役を行い GameState を生成する。
+
+    Args:
+        player_names: 5人のプレイヤー名リスト
+        rng: テスト用の乱数生成器（None の場合は新規インスタンスを使用）
+
+    Returns:
+        初期化された GameState
+    """
     players = assign_roles(player_names, rng=rng)
     return GameState(players=players)
 
@@ -49,11 +57,18 @@ def create_game(player_names: list[str], rng: random.Random | None = None) -> Ga
 def check_victory(game: GameState) -> Team | None:
     """勝利判定: 勝利陣営を返す。未決着なら None。
 
-    - 人狼が全滅 → Team.VILLAGE
-    - 村人陣営の生存者数 ≦ 人狼の生存者数 → Team.WEREWOLF
+    判定ルール:
+        - 人狼が全滅 → Team.VILLAGE
+        - 村人陣営の生存者数 ≦ 人狼の生存者数 → Team.WEREWOLF
+
+    Args:
+        game: 判定対象の GameState
+
+    Returns:
+        勝利した陣営（Team）。未決着なら None
     """
     alive_werewolf_count = len(game.alive_werewolves)
-    alive_village_count = len(game.alive_villagers_team)
+    alive_village_count = len(game.alive_village_team)
 
     if alive_werewolf_count == 0:
         return Team.VILLAGE

@@ -22,7 +22,7 @@ class GameState:
         return [p for p in self.alive_players if p.role == Role.WEREWOLF]
 
     @property
-    def alive_villagers_team(self) -> list[Player]:
+    def alive_village_team(self) -> list[Player]:
         """村人陣営（村人+占い師）の生存者"""
         return [p for p in self.alive_players if p.role != Role.WEREWOLF]
 
