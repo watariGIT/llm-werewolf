@@ -54,6 +54,17 @@ class TestGameState:
         assert len(game.log) == 2
         assert game.log[0] == "Day 1 started"
 
+    def test_replace_player(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        old_player = players[0]
+        dead_player = old_player.killed()
+        new_game = game.replace_player(old_player, dead_player)
+        assert len(new_game.alive_players) == 4
+        assert dead_player in new_game.players
+        assert old_player not in new_game.players
+        # 元の GameState は変更されない
+        assert len(game.alive_players) == 5
+
     def test_frozen(self, players: tuple[Player, ...]) -> None:
         game = GameState(players=players)
         with pytest.raises(AttributeError):

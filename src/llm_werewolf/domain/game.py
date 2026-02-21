@@ -27,6 +27,11 @@ class GameState:
         """村人陣営（村人+占い師）の生存者"""
         return tuple(p for p in self.alive_players if p.role != Role.WEREWOLF)
 
+    def replace_player(self, old: Player, new: Player) -> "GameState":
+        """プレイヤーを差し替えた新しい GameState を返す"""
+        players = tuple(new if p is old else p for p in self.players)
+        return replace(self, players=players)
+
     def add_log(self, message: str) -> "GameState":
         return replace(self, log=self.log + (message,))
 
