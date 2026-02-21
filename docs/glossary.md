@@ -55,5 +55,18 @@
 |--------|------|----------------|------|
 | ターン | Turn | `turn` | 昼+夜で1ターン（Day 1 + Night 1 = Turn 1） |
 | 巡 | Round | `round` | 議論での発言の一巡り |
+| 議論ラウンド | Discussion Round | `discussion_round` | 現在の議論ラウンド番号（Day 1: 1巡、Day 2+: 2巡） |
 | 発言順 | Speaking Order | `speaking_order` | 議論で発言する順番 |
 | 占い結果 | Divine Result | `divine_result` | 占い師が占いで得た情報（人狼か否か） |
+
+## インタラクティブゲーム
+
+| 日本語 | 英語 | コード上の名前 | 説明 |
+|--------|------|----------------|------|
+| ゲームステップ | Game Step | `game_step` | インタラクティブゲームの進行単位 |
+| 配役表示 | Role Reveal | `role_reveal` | ゲーム開始時にプレイヤーに役職を表示するステップ |
+| 処刑結果 | Execution Result | `execution_result` | 投票集計と処刑を表示するステップ |
+| 夜行動 | Night Action | `night_action` | 占い師・人狼のユーザーが夜行動の対象を選択するステップ |
+| 夜結果 | Night Result | `night_result` | 夜フェーズの襲撃・占い結果を表示するステップ |
+| ゲーム終了 | Game Over | `game_over` | 勝敗が決定したステップ |
+| インタラクティブセッション | Interactive Session | `interactive_session` | ユーザーがブラウザで対戦するゲームセッション |

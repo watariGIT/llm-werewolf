@@ -70,6 +70,7 @@ src/llm_werewolf/
 |------|------|
 | `assign_roles` | 配役ロジック（5人にランダムで役職を割り当て） |
 | `create_game` | ゲーム初期化ファクトリ |
+| `create_game_with_role` | 指定プレイヤーに指定役職を割り当ててゲーム初期化 |
 | `check_victory` | 勝利判定（人狼全滅→村人勝利、村人陣営≦人狼→人狼勝利） |
 
 ### ゲームログサービス (`game_log.py`)
@@ -90,13 +91,55 @@ src/llm_werewolf/
 
 ## インフラ層
 
+### ゲームモード
+
+本プロジェクトは2つのゲームモードをサポートする。
+
+| モード | 用途 | ストア |
+|--------|------|--------|
+| 一括実行モード | AI のみでゲームを最初から最後まで自動実行し、結果を JSON API で返す | `GameSessionStore` |
+| インタラクティブモード | ユーザーと AI が対戦し、ステップごとに進行する Web UI 版 | `InteractiveSessionStore` |
+
 ### セッション管理 (`session.py`)
 
 リクエストをまたいでゲーム状態を保持するインメモリストア。
 
-| クラス | 説明 |
-|--------|------|
-| `GameSessionStore` | ゲームセッションの CRUD 管理。ゲームID → GameState のマッピングを保持 |
+| クラス/Enum | 説明 |
+|-------------|------|
+| `GameSessionStore` | 一括実行ゲームの CRUD 管理。ゲームID → GameState のマッピングを保持 |
+| `GameStep` | インタラクティブゲームの進行ステップ。遷移順: `role_reveal` → `discussion` → `vote` → `execution_result` → `night_action` → `night_result` → `discussion`（次の日）。勝利時は `game_over` へ遷移 |
+| `InteractiveSession` | インタラクティブゲームの状態。GameState + 進行ステップ + AI providers + `discussion_round`（議論ラウンド番号）を保持 |
+| `InteractiveSessionStore` | InteractiveSession のインメモリ CRUD |
+
+#### ステップ進行関数
+
+インフラ層のモジュール関数として配置。GameState の変更は domain 層のメソッド（`add_log`, `replace_player` 等）と domain サービス（`check_victory`, `can_divine` 等）を呼び出して行う。
+
+| 関数 | 説明 |
+|------|------|
+| `advance_to_discussion` | 1ラウンド分の AI 議論（ユーザーの発言順まで）を実行し DISCUSSION ステップへ遷移。`discussion_round` でラウンド管理 |
+| `handle_user_discuss` | ユーザー発言を記録し、後半 AI 発言を実行。ラウンド残りがあれば次ラウンドへ、なければ VOTE へ遷移 |
+| `skip_to_vote` | ユーザー死亡時に `discussion_round` をリセットし VOTE へスキップ |
+| `handle_user_vote` | ユーザー投票 + AI 投票 → 集計 → 処刑 → 勝利判定 |
+| `handle_auto_vote` | ユーザー死亡時の AI のみ投票 |
+| `start_night_phase` | 夜フェーズ開始。ユーザーが占い師/人狼なら NIGHT_ACTION へ、それ以外は即解決 |
+| `handle_night_action` | ユーザーの夜行動（占い/襲撃対象選択）を処理 |
+| `resolve_night_phase` | AI の夜行動 + ユーザー選択を反映して夜を完了 |
+
+### Web エンドポイント (`main.py`)
+
+| パス | メソッド | 説明 |
+|------|---------|------|
+| `/` | GET | トップページ（名前入力フォーム） |
+| `/play` | POST | インタラクティブゲーム作成（名前 + 役職選択） |
+| `/play/{id}` | GET | ゲーム画面（現在ステップに応じた表示） |
+| `/play/{id}/next` | POST | 次ステップへ進む |
+| `/play/{id}/discuss` | POST | ユーザー発言送信 |
+| `/play/{id}/vote` | POST | ユーザー投票送信 |
+| `/play/{id}/night-action` | POST | ユーザー夜行動送信（占い/襲撃対象） |
+| `/games` | POST | 一括実行ゲーム作成（API） |
+| `/games` | GET | 一括実行ゲーム一覧（API） |
+| `/games/{id}` | GET | 一括実行ゲーム状態取得（API） |
 
 ## 命名規則
 

@@ -6,7 +6,7 @@
     <title>LLM人狼</title>
     <style>
         body {
-            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", sans-serif;
+            font-family: "Helvetica Neue", Arial, "Yu Gothic", "Hiragino Kaku Gothic ProN", "メイリオ", Meiryo, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -28,6 +28,23 @@
             color: #a0a0b0;
             margin-bottom: 2rem;
         }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        input[type="text"] {
+            padding: 0.8rem 1.2rem;
+            font-size: 1.1rem;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background-color: #16213e;
+            color: #e0e0e0;
+            width: 250px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus {
+            border-color: #e94560;
+        }
         .btn {
             display: inline-block;
             padding: 1rem 2.5rem;
@@ -43,13 +60,76 @@
         .btn:hover {
             background-color: #c73650;
         }
+        .role-select {
+            display: flex;
+            gap: 0.8rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .role-select label {
+            padding: 0.6rem 1.2rem;
+            border: 2px solid #333;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: border-color 0.2s, background-color 0.2s;
+            background-color: #16213e;
+            font-size: 1rem;
+        }
+        .role-select label:hover {
+            border-color: #e94560;
+        }
+        .role-select input[type="radio"] {
+            display: none;
+        }
+        .role-select input[type="radio"]:checked + span {
+            color: #e94560;
+            font-weight: bold;
+        }
+        .role-select label.selected {
+            border-color: #e94560;
+            background-color: #2a1a3e;
+        }
+        .role-select label:has(input:checked) {
+            border-color: #e94560;
+            background-color: #2a1a3e;
+        }
+        .form-label {
+            font-size: 0.95rem;
+            color: #a0a0b0;
+            margin-bottom: 0.6rem;
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>LLM人狼</h1>
         <p>AIと対戦する人狼ゲーム</p>
-        <a href="#" class="btn">ゲームを始める</a>
+        <form action="/play" method="post">
+            <div class="form-group">
+                <input type="text" name="player_name" placeholder="あなたの名前を入力" required maxlength="50">
+            </div>
+            <div class="form-group">
+                <span class="form-label">役職</span>
+                <div class="role-select">
+                    <label class="selected"><input type="radio" name="role" value="random" checked><span>ランダム</span></label>
+                    <label><input type="radio" name="role" value="villager"><span>村人</span></label>
+                    <label><input type="radio" name="role" value="seer"><span>占い師</span></label>
+                    <label><input type="radio" name="role" value="werewolf"><span>人狼</span></label>
+                </div>
+            </div>
+            <button type="submit" class="btn">ゲームを始める</button>
+        </form>
+        <script>
+            document.querySelectorAll('.role-select input[type="radio"]').forEach(function(radio) {
+                radio.addEventListener('change', function() {
+                    document.querySelectorAll('.role-select label').forEach(function(label) {
+                        label.classList.remove('selected');
+                    });
+                    this.parentElement.classList.add('selected');
+                });
+            });
+        </script>
     </div>
 </body>
 </html>

@@ -10,6 +10,7 @@ dependencies = [
     "langchain",
     "langchain-openai",
     "python-dotenv",
+    "python-multipart>=0.0.22",
 ]
 
 [dependency-groups]

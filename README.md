@@ -55,9 +55,11 @@ uv sync
 cp .env.example .env
 # .env を編集して OPENAI_API_KEY を設定
 
-# 開発サーバー起動（実装後）
-uv run uvicorn src.llm_werewolf.main:app --reload
+# 開発サーバー起動
+uv run uvicorn llm_werewolf.main:app --reload
 ```
+
+サーバー起動後、ブラウザで http://127.0.0.1:8000 にアクセスしてゲームをプレイできます。
 
 ### リント・型チェック・テスト
 
