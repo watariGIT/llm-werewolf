@@ -94,9 +94,38 @@ src/llm_werewolf/
 
 リクエストをまたいでゲーム状態を保持するインメモリストア。
 
-| クラス | 説明 |
-|--------|------|
-| `GameSessionStore` | ゲームセッションの CRUD 管理。ゲームID → GameState のマッピングを保持 |
+| クラス/Enum | 説明 |
+|-------------|------|
+| `GameSessionStore` | 一括実行ゲームの CRUD 管理。ゲームID → GameState のマッピングを保持 |
+| `GameStep` | インタラクティブゲームの進行ステップ（`role_reveal`, `discussion`, `vote`, `execution_result`, `night_result`, `game_over`） |
+| `InteractiveSession` | インタラクティブゲームの状態。GameState + 進行ステップ + AI providers を保持 |
+| `InteractiveSessionStore` | InteractiveSession のインメモリ CRUD |
+
+#### ステップ進行関数
+
+インフラ層のモジュール関数として配置。GameState の変更は domain 層のメソッド（`add_log`, `replace_player` 等）と domain サービス（`check_victory`, `can_divine` 等）を呼び出して行う。
+
+| 関数 | 説明 |
+|------|------|
+| `advance_to_discussion` | AI 議論を実行し DISCUSSION ステップへ遷移 |
+| `handle_user_discuss` | ユーザー発言を記録し VOTE ステップへ遷移 |
+| `handle_user_vote` | ユーザー投票 + AI 投票 → 集計 → 処刑 → 勝利判定 |
+| `handle_auto_vote` | ユーザー死亡時の AI のみ投票 |
+| `execute_night_phase` | 占い + 襲撃 → 勝利判定 |
+
+### Web エンドポイント (`main.py`)
+
+| パス | メソッド | 説明 |
+|------|---------|------|
+| `/` | GET | トップページ（名前入力フォーム） |
+| `/play` | POST | インタラクティブゲーム作成 |
+| `/play/{id}` | GET | ゲーム画面（現在ステップに応じた表示） |
+| `/play/{id}/next` | POST | 次ステップへ進む |
+| `/play/{id}/discuss` | POST | ユーザー発言送信 |
+| `/play/{id}/vote` | POST | ユーザー投票送信 |
+| `/games` | POST | 一括実行ゲーム作成（API） |
+| `/games` | GET | 一括実行ゲーム一覧（API） |
+| `/games/{id}` | GET | 一括実行ゲーム状態取得（API） |
 
 ## 命名規則
 

@@ -16,9 +16,9 @@
 
 ## リファレンス
 
-- ゲームルール: [docs/game-rules.md](docs/game-rules.md)
-- 用語集: [docs/glossary.md](docs/glossary.md)
-- アーキテクチャ: [docs/architecture.md](docs/architecture.md)
+@docs/game-rules.md
+@docs/glossary.md
+@docs/architecture.md
 
 ## 現在の開発フェーズ
 

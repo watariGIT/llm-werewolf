@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM人狼 - ゲーム</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", sans-serif;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .header {
+            background-color: #16213e;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e94560;
+        }
+        .header h1 { font-size: 1.5rem; }
+        .header .info { color: #a0a0b0; font-size: 0.9rem; }
+        .main {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .panel {
+            background-color: #16213e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .panel h2 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: #e94560;
+        }
+        .players {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+        }
+        .player-tag {
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            background-color: #1a1a2e;
+        }
+        .player-tag.alive { border-left: 3px solid #4ade80; }
+        .player-tag.dead { border-left: 3px solid #ef4444; color: #666; text-decoration: line-through; }
+        .player-tag.you { font-weight: bold; }
+        .role-badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-left: 0.3rem;
+        }
+        .role-villager { background-color: #2563eb; }
+        .role-seer { background-color: #7c3aed; }
+        .role-werewolf { background-color: #dc2626; }
+        .message-list { list-style: none; }
+        .message-list li {
+            padding: 0.6rem 0;
+            border-bottom: 1px solid #222;
+        }
+        .message-list li:last-child { border-bottom: none; }
+        .speaker { font-weight: bold; color: #e94560; }
+        .vote-list { list-style: none; }
+        .vote-list li { padding: 0.4rem 0; }
+        .vote-arrow { color: #e94560; margin: 0 0.3rem; }
+        textarea {
+            width: 100%;
+            padding: 0.8rem;
+            font-size: 1rem;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            resize: vertical;
+            min-height: 80px;
+            outline: none;
+        }
+        textarea:focus { border-color: #e94560; }
+        .btn {
+            display: inline-block;
+            padding: 0.8rem 2rem;
+            font-size: 1.1rem;
+            color: #fff;
+            background-color: #e94560;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            text-decoration: none;
+        }
+        .btn:hover { background-color: #c73650; }
+        .btn-secondary {
+            background-color: #333;
+        }
+        .btn-secondary:hover { background-color: #444; }
+        .radio-group label {
+            display: block;
+            padding: 0.7rem 1rem;
+            margin-bottom: 0.5rem;
+            background-color: #1a1a2e;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .radio-group label:hover { background-color: #222244; }
+        .radio-group input[type="radio"] { margin-right: 0.5rem; }
+        .result-box {
+            text-align: center;
+            padding: 2rem;
+        }
+        .result-box .winner {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+        }
+        .result-box .winner.village { color: #4ade80; }
+        .result-box .winner.werewolf { color: #ef4444; }
+        .event-msg {
+            padding: 0.8rem;
+            margin-bottom: 0.5rem;
+            border-radius: 6px;
+            background-color: #1a1a2e;
+        }
+        .event-msg.attack { border-left: 3px solid #ef4444; }
+        .event-msg.divine { border-left: 3px solid #7c3aed; }
+        .event-msg.execution { border-left: 3px solid #f59e0b; }
+        .actions {
+            text-align: center;
+            margin-top: 1.5rem;
+        }
+        .dead-notice {
+            text-align: center;
+            padding: 1rem;
+            color: #ef4444;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>LLM人狼</h1>
+        <div class="info">
+            Day {{ game.day }} /
+            {% if human_player %}
+                {{ human_player.name }}
+                {% if human_player.is_alive %}(生存){% else %}(死亡){% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="main">
+        <!-- プレイヤーパネル -->
+        <div class="panel">
+            <h2>プレイヤー</h2>
+            <div class="players">
+                {% for p in game.players %}
+                <div class="player-tag {{ 'alive' if p.is_alive else 'dead' }} {{ 'you' if p.name == session.human_player_name else '' }}">
+                    {{ p.name }}
+                    {% if p.name == session.human_player_name %}
+                        <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
+                    {% elif step == "game_over" %}
+                        <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- ROLE_REVEAL: 配役表示 -->
+        {% if step == "role_reveal" %}
+        <div class="panel">
+            <h2>配役結果</h2>
+            <p style="text-align: center; font-size: 1.3rem; margin: 1.5rem 0;">
+                あなたの役職は
+                <span class="role-badge role-{{ human_player.role.value }}" style="font-size: 1.2rem; padding: 0.4rem 0.8rem;">
+                    {% if human_player.role.value == "villager" %}村人
+                    {% elif human_player.role.value == "seer" %}占い師
+                    {% elif human_player.role.value == "werewolf" %}人狼
+                    {% endif %}
+                </span>
+                です
+            </p>
+            <div class="actions">
+                <form action="/play/{{ game_id }}/next" method="post">
+                    <button type="submit" class="btn">ゲーム開始</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- DISCUSSION: 議論フェーズ -->
+        {% if step == "discussion" %}
+        <div class="panel">
+            <h2>議論 - Day {{ game.day }}</h2>
+            {% if session.current_discussion %}
+            <ul class="message-list">
+                {% for msg in session.current_discussion %}
+                <li>
+                    <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                    {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+
+        {% if human_is_alive %}
+        <div class="panel">
+            <h2>あなたの発言</h2>
+            <form action="/play/{{ game_id }}/discuss" method="post">
+                <textarea name="message" placeholder="発言を入力してください..."></textarea>
+                <div class="actions">
+                    <button type="submit" class="btn">発言する</button>
+                </div>
+            </form>
+        </div>
+        {% else %}
+        <div class="dead-notice">あなたは死亡しているため発言できません</div>
+        <div class="actions">
+            <form action="/play/{{ game_id }}/next" method="post">
+                <button type="submit" class="btn btn-secondary">次へ</button>
+            </form>
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <!-- VOTE: 投票フェーズ -->
+        {% if step == "vote" %}
+        <div class="panel">
+            <h2>投票 - Day {{ game.day }}</h2>
+            {% if human_is_alive %}
+            <p style="margin-bottom: 1rem;">処刑する人を選んでください:</p>
+            <form action="/play/{{ game_id }}/vote" method="post">
+                <div class="radio-group">
+                    {% for p in vote_candidates %}
+                    <label>
+                        <input type="radio" name="target" value="{{ p.name }}" required>
+                        {{ p.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="actions">
+                    <button type="submit" class="btn">投票する</button>
+                </div>
+            </form>
+            {% else %}
+            <div class="dead-notice">あなたは死亡しているため投票できません</div>
+            <div class="actions">
+                <form action="/play/{{ game_id }}/next" method="post">
+                    <button type="submit" class="btn btn-secondary">次へ</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- EXECUTION_RESULT: 処刑結果 -->
+        {% if step == "execution_result" %}
+        <div class="panel">
+            <h2>投票結果 - Day {{ game.day }}</h2>
+            {% if session.current_votes %}
+            <ul class="vote-list">
+                {% for voter, target in session.current_votes.items() %}
+                <li>{{ voter }} <span class="vote-arrow">&rarr;</span> {{ target }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            <div style="margin-top: 1rem;">
+                {% for log_line in game.log %}
+                    {% if '[処刑]' in log_line %}
+                    <div class="event-msg execution">{{ log_line.replace('[処刑] ', '') }}</div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            <div class="actions">
+                <form action="/play/{{ game_id }}/next" method="post">
+                    <button type="submit" class="btn">夜へ</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- NIGHT_RESULT: 夜フェーズ結果 -->
+        {% if step == "night_result" %}
+        <div class="panel">
+            <h2>夜の結果 - Night {{ game.day - 1 }}</h2>
+            {% if session.night_messages %}
+                {% for msg in session.night_messages %}
+                <div class="event-msg attack">{{ msg }}</div>
+                {% endfor %}
+            {% else %}
+                <p>今夜は何も起きなかった...</p>
+            {% endif %}
+
+            {% if human_player and human_player.role.value == "seer" and human_player.is_alive %}
+                {% set history = game.get_divined_history(human_player.name) %}
+                {% if history %}
+                    {% set last_target = history[-1] %}
+                    {% for p in game.players %}
+                        {% if p.name == last_target %}
+                            <div class="event-msg divine" style="margin-top: 1rem;">
+                                占い結果: {{ last_target }} は
+                                {% if p.role.value == "werewolf" %}人狼{% else %}人狼ではない{% endif %}
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endif %}
+
+            <div class="actions">
+                <form action="/play/{{ game_id }}/next" method="post">
+                    <button type="submit" class="btn">次の日へ</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- GAME_OVER: ゲーム終了 -->
+        {% if step == "game_over" %}
+        <div class="panel">
+            <div class="result-box">
+                {% if session.winner and session.winner.value == "village" %}
+                <div class="winner village">村人陣営の勝利!</div>
+                {% elif session.winner and session.winner.value == "werewolf" %}
+                <div class="winner werewolf">人狼陣営の勝利!</div>
+                {% endif %}
+
+                <h2 style="margin: 1.5rem 0 1rem;">配役公開</h2>
+                <div class="players" style="justify-content: center;">
+                    {% for p in game.players %}
+                    <div class="player-tag {{ 'alive' if p.is_alive else 'dead' }}">
+                        {{ p.name }}
+                        <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="actions" style="margin-top: 2rem;">
+                    <a href="/" class="btn">トップに戻る</a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
