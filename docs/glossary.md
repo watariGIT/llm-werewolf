@@ -65,6 +65,7 @@
 | ゲームステップ | Game Step | `game_step` | インタラクティブゲームの進行単位 |
 | 配役表示 | Role Reveal | `role_reveal` | ゲーム開始時にプレイヤーに役職を表示するステップ |
 | 処刑結果 | Execution Result | `execution_result` | 投票集計と処刑を表示するステップ |
+| 夜行動 | Night Action | `night_action` | 占い師・人狼のユーザーが夜行動の対象を選択するステップ |
 | 夜結果 | Night Result | `night_result` | 夜フェーズの襲撃・占い結果を表示するステップ |
 | ゲーム終了 | Game Over | `game_over` | 勝敗が決定したステップ |
 | インタラクティブセッション | Interactive Session | `interactive_session` | ユーザーがブラウザで対戦するゲームセッション |

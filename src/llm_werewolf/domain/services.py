@@ -58,12 +58,15 @@ def create_game_with_role(
         初期化された GameState
 
     Raises:
-        ValueError: プレイヤー数が5人でない場合、または固定プレイヤーがリストにない場合
+        ValueError: プレイヤー数が5人でない場合、固定プレイヤーがリストにない場合、
+                    または指定役職が配役構成に存在しない場合
     """
     if len(player_names) != REQUIRED_PLAYER_COUNT:
         raise ValueError(f"Player count must be {REQUIRED_PLAYER_COUNT}, got {len(player_names)}")
     if fixed_player not in player_names:
         raise ValueError(f"{fixed_player} is not in player_names")
+    if fixed_role not in DEFAULT_ROLE_COMPOSITION:
+        raise ValueError(f"{fixed_role.value} is not in the default role composition")
 
     if rng is None:
         rng = random.Random()

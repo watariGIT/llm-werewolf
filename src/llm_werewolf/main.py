@@ -34,6 +34,7 @@ game_store = GameSessionStore()
 interactive_store = InteractiveSessionStore()
 
 MAX_PLAYER_NAME_LENGTH = 50
+MAX_MESSAGE_LENGTH = 500
 
 
 class CreateGameRequest(BaseModel):
@@ -139,6 +140,8 @@ async def create_interactive_game(player_name: str = Form(...), role: str = Form
     if len(name) > MAX_PLAYER_NAME_LENGTH:
         raise HTTPException(status_code=400, detail=f"名前は{MAX_PLAYER_NAME_LENGTH}文字以内で入力してください")
 
+    if role != "random" and role not in ROLE_MAP:
+        raise HTTPException(status_code=400, detail="無効な役職です")
     selected_role = ROLE_MAP.get(role) if role != "random" else None
     session = interactive_store.create(name, role=selected_role)
     return RedirectResponse(url=f"/play/{session.game_id}", status_code=303)
@@ -222,7 +225,10 @@ async def submit_discussion(game_id: str, message: str = Form("")) -> RedirectRe
     if session.step != GameStep.DISCUSSION:
         raise HTTPException(status_code=400, detail="Invalid step")
 
-    handle_user_discuss(session, message.strip() or "...")
+    text = message.strip() or "..."
+    if len(text) > MAX_MESSAGE_LENGTH:
+        text = text[:MAX_MESSAGE_LENGTH]
+    handle_user_discuss(session, text)
     interactive_store.save(session)
     return RedirectResponse(url=f"/play/{game_id}", status_code=303)
 

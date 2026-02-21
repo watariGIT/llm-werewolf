@@ -241,6 +241,35 @@ def skip_to_vote(session: InteractiveSession) -> None:
     session.step = GameStep.VOTE
 
 
+def _tally_and_execute(session: InteractiveSession, votes: dict[str, str]) -> None:
+    """投票を集計し、処刑を実行し、勝利判定を行う。"""
+    game = session.game
+
+    if not votes:
+        session.step = GameStep.EXECUTION_RESULT
+        return
+
+    vote_counts = Counter(votes.values())
+    max_votes = max(vote_counts.values())
+    top_candidates = [name for name, count in vote_counts.items() if count == max_votes]
+    executed_name = session.rng.choice(top_candidates) if len(top_candidates) > 1 else top_candidates[0]
+
+    target = _find_player(game, executed_name, alive_only=True)
+    if target is not None:
+        dead_player = target.killed()
+        game = game.replace_player(target, dead_player)
+        game = game.add_log(f"[処刑] {target.name} が処刑された（得票数: {vote_counts[executed_name]}）")
+
+    session.game = game
+    session.current_votes = votes
+
+    winner = check_victory(game)
+    if winner is not None:
+        _set_game_over(session, winner)
+    else:
+        session.step = GameStep.EXECUTION_RESULT
+
+
 def handle_user_vote(session: InteractiveSession, target_name: str) -> None:
     """ユーザー投票を処理し、AI投票→集計→処刑→勝利判定を行う。セッションを直接変更する。"""
     game = session.game
@@ -262,32 +291,8 @@ def handle_user_vote(session: InteractiveSession, target_name: str) -> None:
         votes[player.name] = ai_target
         game = game.add_log(f"[投票] {player.name} → {ai_target}")
 
-    if not votes:
-        session.game = game
-        session.step = GameStep.EXECUTION_RESULT
-        return
-
-    # 集計・処刑
-    vote_counts = Counter(votes.values())
-    max_votes = max(vote_counts.values())
-    top_candidates = [name for name, count in vote_counts.items() if count == max_votes]
-    executed_name = session.rng.choice(top_candidates) if len(top_candidates) > 1 else top_candidates[0]
-
-    target = _find_player(game, executed_name, alive_only=True)
-    if target is not None:
-        dead_player = target.killed()
-        game = game.replace_player(target, dead_player)
-        game = game.add_log(f"[処刑] {target.name} が処刑された（得票数: {vote_counts[executed_name]}）")
-
     session.game = game
-    session.current_votes = votes
-
-    # 勝利判定
-    winner = check_victory(game)
-    if winner is not None:
-        _set_game_over(session, winner)
-    else:
-        session.step = GameStep.EXECUTION_RESULT
+    _tally_and_execute(session, votes)
 
 
 def handle_auto_vote(session: InteractiveSession) -> None:
@@ -304,30 +309,8 @@ def handle_auto_vote(session: InteractiveSession) -> None:
         votes[player.name] = ai_target
         game = game.add_log(f"[投票] {player.name} → {ai_target}")
 
-    if not votes:
-        session.game = game
-        session.step = GameStep.EXECUTION_RESULT
-        return
-
-    vote_counts = Counter(votes.values())
-    max_votes = max(vote_counts.values())
-    top_candidates = [name for name, count in vote_counts.items() if count == max_votes]
-    executed_name = session.rng.choice(top_candidates) if len(top_candidates) > 1 else top_candidates[0]
-
-    target = _find_player(game, executed_name, alive_only=True)
-    if target is not None:
-        dead_player = target.killed()
-        game = game.replace_player(target, dead_player)
-        game = game.add_log(f"[処刑] {target.name} が処刑された（得票数: {vote_counts[executed_name]}）")
-
     session.game = game
-    session.current_votes = votes
-
-    winner = check_victory(game)
-    if winner is not None:
-        _set_game_over(session, winner)
-    else:
-        session.step = GameStep.EXECUTION_RESULT
+    _tally_and_execute(session, votes)
 
 
 def _human_has_night_action(session: InteractiveSession) -> bool:

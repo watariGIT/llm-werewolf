@@ -85,6 +85,10 @@
             color: #e94560;
             font-weight: bold;
         }
+        .role-select label.selected {
+            border-color: #e94560;
+            background-color: #2a1a3e;
+        }
         .role-select label:has(input:checked) {
             border-color: #e94560;
             background-color: #2a1a3e;
@@ -108,7 +112,7 @@
             <div class="form-group">
                 <span class="form-label">役職</span>
                 <div class="role-select">
-                    <label><input type="radio" name="role" value="random" checked><span>ランダム</span></label>
+                    <label class="selected"><input type="radio" name="role" value="random" checked><span>ランダム</span></label>
                     <label><input type="radio" name="role" value="villager"><span>村人</span></label>
                     <label><input type="radio" name="role" value="seer"><span>占い師</span></label>
                     <label><input type="radio" name="role" value="werewolf"><span>人狼</span></label>
@@ -116,6 +120,16 @@
             </div>
             <button type="submit" class="btn">ゲームを始める</button>
         </form>
+        <script>
+            document.querySelectorAll('.role-select input[type="radio"]').forEach(function(radio) {
+                radio.addEventListener('change', function() {
+                    document.querySelectorAll('.role-select label').forEach(function(label) {
+                        label.classList.remove('selected');
+                    });
+                    this.parentElement.classList.add('selected');
+                });
+            });
+        </script>
     </div>
 </body>
 </html>
