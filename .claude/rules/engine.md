@@ -4,8 +4,9 @@ globs: src/llm_werewolf/engine/**
 
 # Engine Layer (Application Layer) Rules
 
-- Dependencies allowed: Python standard library + domain layer + **LangChain / langchain-openai** only
+- Dependencies allowed: Python standard library + domain layer + **LangChain / langchain-openai / openai** only
   - LangChain dependency is limited to `ActionProvider` LLM implementations (Step 2 onwards)
+  - `openai` package direct usage is allowed for error handling (exception types for retry logic)
   - Domain layer (`domain/`) remains restricted to Python standard library only
 - Abstract actions via `ActionProvider` Protocol; implement in concrete classes
   - New AI implementations must satisfy the `ActionProvider` interface
