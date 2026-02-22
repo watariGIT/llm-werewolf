@@ -2,10 +2,10 @@
 globs: src/llm_werewolf/templates/**
 ---
 
-# テンプレート/UI ルール
+# Template / UI Rules
 
-- Jinja2 テンプレートを使用
-- デザインテーマを統一すること:
-  - 背景色: `#1a1a2e`
-  - テキスト色: `#e0e0e0`
-  - ボタン色: `#e94560`
+- Use Jinja2 templates
+- Maintain consistent design theme:
+  - Background: `#1a1a2e`
+  - Text: `#e0e0e0`
+  - Buttons: `#e94560`

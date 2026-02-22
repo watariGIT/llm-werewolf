@@ -2,9 +2,9 @@
 globs: tests/**
 ---
 
-# テストルール
+# Test Rules
 
-- pytest で記述
-- テストクラスは `Test` プレフィックス、テスト関数は `test_` プレフィックス
-- ドメインモデルの単体テストは `tests/domain/` に配置
-- テスト用の乱数は `random.Random(seed)` を注入して決定性を確保
+- Write tests with pytest
+- Test classes use `Test` prefix; test functions use `test_` prefix
+- Domain model unit tests go in `tests/domain/`
+- Inject `random.Random(seed)` for test determinism

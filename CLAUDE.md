@@ -1,70 +1,69 @@
-# CLAUDE.md — プロジェクト指示書
+# CLAUDE.md — Project Instructions
 
-## 基本ルール
+## Basic Rules
 
-- 日本語で応答すること
-- パッケージ管理には必ず **uv** を使用（pip禁止）
+- Respond in Japanese
+- Always use **uv** for package management (pip is prohibited)
+- Tests use pytest (`tests/` directory)
 
-- テストは pytest（`tests/` ディレクトリ）
+## Project Structure
 
-## プロジェクト構成
-
-- **src layout** を採用: `src/llm_werewolf/` がパッケージルート
-- Web FW: FastAPI + Jinja2（テンプレートは `src/llm_werewolf/templates/`）
-- LLM連携: LangChain → OpenAI API
+- **src layout**: `src/llm_werewolf/` is the package root
+- Web FW: FastAPI + Jinja2 (templates in `src/llm_werewolf/templates/`)
+- LLM integration: LangChain → OpenAI API
 - Python 3.12
 
-## リファレンス
+## References
 
 @docs/game-rules.md
 @docs/glossary.md
 @docs/architecture.md
 
-## 現在の開発フェーズ
+## Current Development Phase
 
-- **Step 1: Mock版** — AI はランダム行動。LLM は使わない
-- 詳細は README.md のロードマップを参照
-- 各 Step のタスクは着手時に GitHub Issues で管理する
+- **Step 1: Mock version** — AI uses random actions. No LLM involved
+- See README.md roadmap for details
+- Tasks for each Step are tracked via GitHub Issues
 
-## よく使うコマンド
+## Common Commands
 
 ```bash
-uv sync                  # 依存関係インストール
-uv run tox               # リント・型チェック・テスト一括実行
+uv sync                  # Install dependencies
+uv run tox               # Run lint, type check, and tests
 ```
 
-## 開発ワークフロー
+## Development Workflow
 
-### ブランチ運用
+### Branch Strategy
 
-- `master` が本流ブランチ。直接コミットしない
-- 機能追加: `feature/<issue番号>-<短い説明>` (例: `feature/3-add-voting-phase`)
-- バグ修正: `fix/<issue番号>-<短い説明>` (例: `fix/7-fix-role-assignment`)
-- PR のマージ先は常に `master`
+- `master` is the main branch. No direct commits
+- Features: `feature/<issue-number>-<short-description>` (e.g., `feature/3-add-voting-phase`)
+- Bug fixes: `fix/<issue-number>-<short-description>` (e.g., `fix/7-fix-role-assignment`)
+- PRs always merge into `master`
 
-### コミット前チェック（必須）
+### Pre-commit Checks (Required)
 
 ```bash
-uv run ruff format .     # フォーマット適用
-uv run tox               # リント・型チェック・テスト一括通過
+uv run ruff format .     # Apply formatting
+uv run tox               # Must pass lint, type check, and tests
 ```
 
-### 標準作業フロー
+### Standard Workflow
 
-1. GitHub Issue を確認し、要件を把握する
-2. `feature/` または `fix/` ブランチを作成する
-3. プランモードで設計 → ユーザー承認後に実装
-4. リント・テストを通してからコミット・プッシュ
-5. `gh pr create` で PR を作成する
-6. `/review-pr` で PR レビュー（結果は PR コメントに投稿） → `/fix-review` で指摘修正
-7. ユーザー確認後にマージ
+1. Review the GitHub Issue and understand requirements
+2. Create a `feature/` or `fix/` branch
+3. Design in plan mode → implement after user approval
+4. Pass lint and tests before committing and pushing
+5. Create PR with `gh pr create`
+6. `/review-pr` for code review (results posted as PR comment) → `/fix-review` to address feedback
+7. Merge after user confirmation
 
-### GitHub CLI リファレンス
+### GitHub CLI Reference
 
 ```bash
-gh issue view <番号>                                          # Issue 参照
-gh pr create --title "..." --body "..."                       # PR 作成
-gh pr diff                                                    # PR 差分
-gh pr comment <番号> --body "..."                              # PR コメント投稿
-gh api repos/{owner}/{repo}/pulls/{number}/comments           # PRコメント取得
+gh issue view <number>                                        # View issue
+gh pr create --title "..." --body "..."                       # Create PR
+gh pr diff                                                    # PR diff
+gh pr comment <number> --body "..."                           # Post PR comment
+gh api repos/{owner}/{repo}/pulls/{number}/comments           # Get PR comments
 ```

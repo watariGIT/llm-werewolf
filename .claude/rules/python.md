@@ -2,11 +2,11 @@
 globs: "**/*.py"
 ---
 
-# Python コーディング規約
+# Python Coding Conventions
 
-- 変数名・関数名はスネークケース、クラス名はパスカルケース
-- Ruff フォーマット・リント準拠（line-length=120）
-- mypy 型チェック通過必須
-- `.env` やAPIキーをハードコードしない（環境変数経由で取得）
-- `.env` は秘密情報を含むため git にコミットしない
-- パッケージ管理は uv を使用（pip 禁止）
+- Variables and functions: snake_case; classes: PascalCase
+- Must comply with Ruff formatting and linting (line-length=120)
+- Must pass mypy type checking
+- Never hardcode `.env` or API keys (use environment variables)
+- `.env` contains secrets and must not be committed to git
+- Use uv for package management (pip is prohibited)
