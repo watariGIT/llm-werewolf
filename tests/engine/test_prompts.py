@@ -55,6 +55,15 @@ class TestBuildSystemPrompt:
             assert "日本語" in result
             assert "投票は公開" in result
 
+    def test_all_roles_contain_glossary_terms(self) -> None:
+        for role in Role:
+            result = build_system_prompt(role)
+            assert "黒" in result
+            assert "白" in result
+            assert "処刑" in result
+            assert "襲撃" in result
+            assert "占い" in result
+
 
 class TestBuildDiscussPrompt:
     """build_discuss_prompt のテスト。"""
