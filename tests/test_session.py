@@ -1,7 +1,9 @@
 import random
 
+import pytest
+
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
-from llm_werewolf.session import GameSessionStore
+from llm_werewolf.session import GameSessionStore, SessionLimitExceeded
 
 PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
 
@@ -70,3 +72,18 @@ class TestGameSessionStore:
         sessions = store.list_sessions()
         sessions.clear()
         assert len(store.list_sessions()) == 1
+
+    def test_create_raises_when_max_sessions_reached(self) -> None:
+        store = GameSessionStore(max_sessions=3)
+        for i in range(3):
+            store.create(PLAYER_NAMES, rng=random.Random(i))
+        with pytest.raises(SessionLimitExceeded):
+            store.create(PLAYER_NAMES, rng=random.Random(999))
+
+    def test_create_after_delete_allows_new_session(self) -> None:
+        store = GameSessionStore(max_sessions=2)
+        id1, _ = store.create(PLAYER_NAMES, rng=random.Random(0))
+        store.create(PLAYER_NAMES, rng=random.Random(1))
+        store.delete(id1)
+        game_id, _ = store.create(PLAYER_NAMES, rng=random.Random(2))
+        assert game_id is not None

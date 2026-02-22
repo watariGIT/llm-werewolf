@@ -22,6 +22,12 @@ from llm_werewolf.engine.random_provider import RandomActionProvider
 
 AI_NAMES: list[str] = ["AI-1", "AI-2", "AI-3", "AI-4"]
 
+MAX_SESSIONS = 100
+
+
+class SessionLimitExceeded(Exception):
+    """セッション数が上限に達した場合の例外。"""
+
 
 class GameStep(str, Enum):
     """インタラクティブゲームの進行ステップ。"""
@@ -60,8 +66,9 @@ class InteractiveSession:
 class GameSessionStore:
     """ゲームセッションのインメモリストア。"""
 
-    def __init__(self) -> None:
+    def __init__(self, max_sessions: int = MAX_SESSIONS) -> None:
         self._sessions: dict[str, GameState] = {}
+        self._max_sessions = max_sessions
 
     def create(self, player_names: list[str], rng: random.Random | None = None) -> tuple[str, GameState]:
         """新規ゲームを作成し、一括実行して結果を保存する。
@@ -72,7 +79,12 @@ class GameSessionStore:
 
         Returns:
             (ゲームID, 最終GameState) のタプル
+
+        Raises:
+            SessionLimitExceeded: セッション数が上限に達した場合
         """
+        if len(self._sessions) >= self._max_sessions:
+            raise SessionLimitExceeded("セッション数が上限に達しました")
         game_id = self._generate_unique_id()
         initial_state = create_game(player_names, rng=rng)
 
@@ -112,8 +124,9 @@ class GameSessionStore:
 class InteractiveSessionStore:
     """インタラクティブゲームセッションのインメモリストア。"""
 
-    def __init__(self) -> None:
+    def __init__(self, max_sessions: int = MAX_SESSIONS) -> None:
         self._sessions: dict[str, InteractiveSession] = {}
+        self._max_sessions = max_sessions
 
     def create(self, human_name: str, rng: random.Random | None = None, role: Role | None = None) -> InteractiveSession:
         """新規インタラクティブゲームを作成する。
@@ -122,7 +135,12 @@ class InteractiveSessionStore:
             human_name: ユーザーのプレイヤー名
             rng: テスト用の乱数生成器
             role: ユーザーの役職（None の場合はランダム）
+
+        Raises:
+            SessionLimitExceeded: セッション数が上限に達した場合
         """
+        if len(self._sessions) >= self._max_sessions:
+            raise SessionLimitExceeded("セッション数が上限に達しました")
         rng = rng if rng is not None else random.Random()
         all_names = [human_name] + AI_NAMES
         if role is not None:

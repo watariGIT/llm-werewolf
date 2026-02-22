@@ -88,7 +88,7 @@ src/llm_werewolf/
 | クラス/Protocol/モジュール | 説明 |
 |---------------------------|------|
 | `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃の行動を定義 |
-| `game_logic` | 両エンジン共通のゲームロジック関数群。プレイヤー検索・占い結果通知・占い/襲撃実行・投票集計・発言順管理・議論ラウンド数判定を提供 |
+| `game_logic` | 両エンジン共通のゲームロジック関数群。占い結果通知・占い/襲撃実行・投票集計・発言順管理・議論ラウンド数判定を提供 |
 | `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑→夜行動→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用 |
 | `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動の各メソッドを提供し、`game_logic` の共通関数を利用 |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
@@ -110,6 +110,8 @@ src/llm_werewolf/
 
 | クラス/Enum | 説明 |
 |-------------|------|
+| `MAX_SESSIONS` | セッション数の上限定数（デフォルト100）。DoS 対策として両ストアで共有 |
+| `SessionLimitExceeded` | セッション数が上限に達した場合に発生する例外 |
 | `GameSessionStore` | 一括実行ゲームの CRUD 管理。ゲームID → GameState のマッピングを保持 |
 | `GameStep` | インタラクティブゲームの進行ステップ。遷移順: `role_reveal` → `discussion` → `vote` → `execution_result` → `night_action` → `night_result` → `discussion`（次の日）。勝利時は `game_over` へ遷移 |
 | `InteractiveSession` | インタラクティブゲームの状態。GameState + 進行ステップ + AI providers + `discussion_round`（議論ラウンド番号）+ `speaking_order`（発言順）を保持 |

@@ -9,7 +9,6 @@ from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
-    find_player,
     get_alive_speaking_order,
     get_attack_candidates,
     get_discussion_rounds,
@@ -99,7 +98,7 @@ class GameEngine:
 
         # 襲撃処理
         if attack_target_name is not None:
-            target = find_player(game, attack_target_name, alive_only=True)
+            target = game.find_player(attack_target_name, alive_only=True)
             if target is not None:
                 dead_player = target.killed()
                 game = game.replace_player(target, dead_player)
@@ -149,7 +148,7 @@ class GameEngine:
 
         # 処刑
         if executed_name is not None:
-            target = find_player(game, executed_name, alive_only=True)
+            target = game.find_player(executed_name, alive_only=True)
             if target is not None:
                 vote_counts = Counter(votes.values())
                 dead_player = target.killed()
