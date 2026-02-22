@@ -96,6 +96,7 @@ src/llm_werewolf/
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供 |
+| `prompts` | LLM 用プロンプトテンプレート生成。役職別システムプロンプトとアクション別ユーザープロンプト（discuss, vote, divine, attack）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う |
 
 ## インフラ層
 
