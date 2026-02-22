@@ -21,7 +21,7 @@
 
 ## Current Development Phase
 
-- **Step 1: Mock version** — AI uses random actions. No LLM involved
+- **Step 2: ChatGPT integration** — Replace random actions with LangChain + OpenAI API
 - See README.md roadmap for details
 - Tasks for each Step are tracked via GitHub Issues
 
