@@ -28,6 +28,14 @@ from llm_werewolf.session import (
 
 app = FastAPI(title="LLM人狼")
 
+
+@app.exception_handler(SessionLimitExceeded)
+async def session_limit_exceeded_handler(request: Request, exc: SessionLimitExceeded) -> JSONResponse:
+    return JSONResponse(
+        status_code=429, content={"detail": "セッション数が上限に達しました。しばらくしてから再試行してください。"}
+    )
+
+
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 game_store = GameSessionStore()
@@ -80,12 +88,7 @@ async def index(request: Request) -> HTMLResponse:
 @app.post("/games")
 async def create_game(body: CreateGameRequest) -> JSONResponse:
     """新規ゲームを作成し、一括実行して結果を返す。"""
-    try:
-        game_id, game = game_store.create(body.player_names)
-    except SessionLimitExceeded:
-        raise HTTPException(
-            status_code=429, detail="セッション数が上限に達しました。しばらくしてから再試行してください。"
-        )
+    game_id, game = game_store.create(body.player_names)
     return JSONResponse(content=_serialize_game(game_id, game), status_code=201)
 
 
@@ -140,12 +143,7 @@ async def create_interactive_game(player_name: str = Form(...), role: str = Form
     if role != "random" and role not in ROLE_MAP:
         raise HTTPException(status_code=400, detail="無効な役職です")
     selected_role = ROLE_MAP.get(role) if role != "random" else None
-    try:
-        session = interactive_store.create(name, role=selected_role)
-    except SessionLimitExceeded:
-        raise HTTPException(
-            status_code=429, detail="セッション数が上限に達しました。しばらくしてから再試行してください。"
-        )
+    session = interactive_store.create(name, role=selected_role)
     return RedirectResponse(url=f"/play/{session.game_id}", status_code=303)
 
 
