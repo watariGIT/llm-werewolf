@@ -25,19 +25,25 @@ gh issue view <番号>
 
 Issue のタイトル・本文・ラベルを読み取り、何を実装すべきか把握する。ラベルに `bug` があれば修正タスク、なければ機能追加と判断する。
 
-### Step 2: ブランチの作成
+### Step 2: worktree の作成
 
-master を最新にしてからブランチを切る。
+git worktree を使い、メインの作業ツリーを汚さずに独立した環境で作業する。
 
 ```bash
-git checkout master
-git pull origin master
-git checkout -b <prefix>/<issue番号>-<短い説明>
+# master を最新にする
+git fetch origin master
+
+# worktree を作成（origin/master ベースのブランチ付き）
+git worktree add .worktrees/<branch-name> -b <prefix>/<issue番号>-<短い説明> origin/master
+
+# 以降の全作業は worktree 内で行う
+cd .worktrees/<branch-name>
 ```
 
 - **機能追加**: `feature/<issue番号>-<説明>` (例: `feature/3-add-voting-phase`)
 - **バグ修正**: `fix/<issue番号>-<説明>` (例: `fix/7-fix-role-assignment`)
 - 説明は Issue タイトルから英語ケバブケースで作る
+- **以降の Step 3〜9 は全て worktree ディレクトリ内で実行する**
 
 ### Step 3: 設計と承認
 
@@ -67,9 +73,10 @@ EnterPlanMode を使って実装計画をユーザーに提示する。計画に
 
 ### Step 5: リント・テスト
 
-コミット前に全て通すこと。エラーがあれば修正して再実行:
+worktree 内で依存をインストールしてからチェックを実行する。エラーがあれば修正して再実行:
 
 ```bash
+uv sync
 uv run ruff format .
 uv run tox
 ```
@@ -119,3 +126,13 @@ PR 作成後、`/review-pr` スキルを実行してコードレビューを行�
 レビューで指摘があれば、ユーザーの確認を待たずに `/fix-review` スキルを実行して修正を対応する。
 
 ただし `/fix-review` 内の Step 2「指摘の分類とユーザー確認」も省略し、自動で分類・修正を進めること。implement-issue ワークフロー全体でユーザー確認が必要なのは Step 3（設計と承認）のみ。
+
+### Step 10: worktree のクリーンアップ
+
+マージ完了後、worktree を削除する。
+
+```bash
+# メインのリポジトリルートに戻る
+cd <元のリポジトリルート>
+git worktree remove .worktrees/<branch-name>
+```
