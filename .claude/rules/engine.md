@@ -4,7 +4,9 @@ globs: src/llm_werewolf/engine/**
 
 # Engine Layer (Application Layer) Rules
 
-- **No external library dependencies** (only Python standard library + domain layer allowed)
+- 依存は Python 標準ライブラリ + ドメイン層 + **LangChain / langchain-openai** のみ許可
+  - LangChain 依存は `ActionProvider` の LLM 実装（Step 2 以降）に限定して使用する
+  - ドメイン層（`domain/`）は引き続き Python 標準ライブラリのみ
 - Abstract actions via `ActionProvider` Protocol; implement in concrete classes
   - New AI implementations must satisfy the `ActionProvider` interface
 - `GameEngine` and `InteractiveGameEngine` must not mutate GameState directly; use `dataclasses.replace` or GameState methods to produce new instances
