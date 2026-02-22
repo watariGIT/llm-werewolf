@@ -154,7 +154,7 @@ def main() -> None:
     if args.output:
         output_path = Path(args.output)
     else:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
         output_path = project_root / "benchmark_results" / f"result_{timestamp}.json"
 
     all_results: dict[str, Any] = {}

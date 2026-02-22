@@ -57,24 +57,28 @@ class MetricsCollectingProvider:
 
     def discuss(self, game: GameState, player: Player) -> str:
         start = time.monotonic()
-        result = self._inner.discuss(game, player)
-        self._record("discuss", player.name, start)
-        return result
+        try:
+            return self._inner.discuss(game, player)
+        finally:
+            self._record("discuss", player.name, start)
 
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         start = time.monotonic()
-        result = self._inner.vote(game, player, candidates)
-        self._record("vote", player.name, start)
-        return result
+        try:
+            return self._inner.vote(game, player, candidates)
+        finally:
+            self._record("vote", player.name, start)
 
     def divine(self, game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
         start = time.monotonic()
-        result = self._inner.divine(game, seer, candidates)
-        self._record("divine", seer.name, start)
-        return result
+        try:
+            return self._inner.divine(game, seer, candidates)
+        finally:
+            self._record("divine", seer.name, start)
 
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         start = time.monotonic()
-        result = self._inner.attack(game, werewolf, candidates)
-        self._record("attack", werewolf.name, start)
-        return result
+        try:
+            return self._inner.attack(game, werewolf, candidates)
+        finally:
+            self._record("attack", werewolf.name, start)
