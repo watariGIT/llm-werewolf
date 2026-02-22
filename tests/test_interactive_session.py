@@ -457,7 +457,7 @@ class TestDiscussionRounds:
         pytest.skip("No seed found for day2 two rounds test")
 
     def test_speaking_order_includes_human(self) -> None:
-        """ユーザーの発言が alive_players の順序通りに挿入される。"""
+        """ユーザーの発言が speaking_order の順序通りに挿入される。"""
         session = _create_session(human_name="Alice")
         advance_to_discussion(session)
         handle_user_discuss(session, "私の発言です")
@@ -466,16 +466,99 @@ class TestDiscussionRounds:
         human_msgs = [msg for msg in session.current_discussion if msg.startswith("Alice:")]
         assert len(human_msgs) == 1
 
-        # 発言順がプレイヤー順になっているか確認
-        alive_order = [p.name for p in session.game.alive_players]
+        # 発言順が speaking_order に従うか確認
+        speaking_order = list(session.speaking_order)
         human_name = "Alice"
-        human_idx = alive_order.index(human_name)
+        human_idx = speaking_order.index(human_name)
 
         # ユーザーの前の AI の発言がユーザーの前にある
         discussion_speakers = [msg.split(": ", 1)[0] for msg in session.current_discussion]
         human_msg_idx = discussion_speakers.index(human_name)
-        for i, speaker in enumerate(discussion_speakers[:human_msg_idx]):
-            assert speaker in alive_order[:human_idx]
+        for speaker in discussion_speakers[:human_msg_idx]:
+            assert speaker in speaking_order[:human_idx]
+
+
+class TestSpeakingOrder:
+    def test_speaking_order_is_randomized(self) -> None:
+        """speaking_order はランダムで決定され、必ずしもプレイヤーが先頭ではない。"""
+        orders: set[tuple[str, ...]] = set()
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice")
+            orders.add(session.speaking_order)
+        # 複数の異なる発言順が生成されるはず
+        assert len(orders) > 1
+
+    def test_speaking_order_contains_all_players(self) -> None:
+        """speaking_order は全プレイヤーを含む。"""
+        session = _create_session(human_name="Alice")
+        player_names = {p.name for p in session.game.players}
+        assert set(session.speaking_order) == player_names
+
+    def test_human_not_always_first_in_speaking_order(self) -> None:
+        """ユーザーが常に最初ではない。"""
+        first_count = 0
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice")
+            if session.speaking_order[0] == "Alice":
+                first_count += 1
+        # 50回中すべてが先頭ではないはず（確率的にほぼありえない）
+        assert first_count < 50
+
+    def test_discussion_follows_speaking_order(self) -> None:
+        """議論の発言順が speaking_order に従う。"""
+        session = _create_session(seed=10, human_name="Alice")
+        advance_to_discussion(session)
+        handle_user_discuss(session, "テスト発言")
+
+        # 全発言者の順序を取得
+        discussion_speakers = [msg.split(": ", 1)[0] for msg in session.current_discussion]
+
+        # speaking_order から生存者のみ抽出
+        alive_names = {p.name for p in session.game.alive_players}
+        expected_order = [name for name in session.speaking_order if name in alive_names]
+
+        # discussion_speakers は expected_order のサブシーケンスであるべき
+        expected_idx = 0
+        for speaker in discussion_speakers:
+            while expected_idx < len(expected_order) and expected_order[expected_idx] != speaker:
+                expected_idx += 1
+            assert expected_idx < len(expected_order), f"{speaker} not in expected order position"
+            expected_idx += 1
+
+    def test_speaking_order_rotates_after_night_attack(self) -> None:
+        """夜襲撃後、speaking_order が襲撃された人の次から開始するよう回転する。"""
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice", role=Role.VILLAGER)
+            original_order = session.speaking_order
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+
+            # 村人を投票対象にする（人狼以外）
+            villager = next(
+                (p for p in session.game.alive_players if p.role == Role.VILLAGER and p.name != "Alice"),
+                None,
+            )
+            if villager is None:
+                continue
+
+            handle_user_vote(session, villager.name)
+            if session.step != GameStep.EXECUTION_RESULT:
+                continue
+
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_cands = get_night_action_candidates(session)
+                if night_cands:
+                    handle_night_action(session, night_cands[0].name)
+            if session.step not in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER):
+                continue
+
+            # 夜の襲撃があった場合、speaking_order が変わっているはず
+            if session.night_messages:
+                assert session.speaking_order != original_order
+                return
+
+        pytest.skip("No seed found for speaking order rotation test")
 
 
 class TestDeterminism:

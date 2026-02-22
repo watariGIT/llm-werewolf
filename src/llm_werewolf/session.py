@@ -48,6 +48,7 @@ class InteractiveSession:
     step: GameStep
     providers: dict[str, ActionProvider]
     rng: random.Random
+    speaking_order: tuple[str, ...] = ()
     current_discussion: list[str] = field(default_factory=list)
     current_votes: dict[str, str] = field(default_factory=dict)
     night_messages: list[str] = field(default_factory=list)
@@ -137,6 +138,9 @@ class InteractiveSessionStore:
             name: RandomActionProvider(rng=random.Random(rng.randint(0, 2**32))) for name in AI_NAMES
         }
 
+        # 発言順をランダムで決定
+        speaking_order = tuple(rng.sample(all_names, len(all_names)))
+
         game_id = self._generate_unique_id()
         session = InteractiveSession(
             game_id=game_id,
@@ -145,6 +149,7 @@ class InteractiveSessionStore:
             step=GameStep.ROLE_REVEAL,
             providers=providers,
             rng=rng,
+            speaking_order=speaking_order,
         )
         self._sessions[game_id] = session
         return session
@@ -178,6 +183,13 @@ def _find_player(game: GameState, name: str, *, alive_only: bool = False) -> Pla
     return None
 
 
+def _get_alive_speaking_order(session: InteractiveSession) -> list[Player]:
+    """speaking_order に基づき生存プレイヤーを発言順で返す。"""
+    alive_names = {p.name for p in session.game.alive_players}
+    name_to_player = {p.name: p for p in session.game.alive_players}
+    return [name_to_player[name] for name in session.speaking_order if name in alive_names]
+
+
 def _run_ai_discussion(session: InteractiveSession, players: list[Player]) -> list[str]:
     """指定 AI プレイヤーの発言を実行し、発言メッセージリストを返す。"""
     game = session.game
@@ -208,18 +220,18 @@ def advance_to_discussion(session: InteractiveSession) -> None:
 
     session.game = session.game.add_log(f"[議論] ラウンド {round_num}")
 
-    # ユーザーの発言順を基準に、前半の AI 発言を実行
+    # speaking_order に基づく発言順で、ユーザーの前の AI を発言させる
     human = _find_player(session.game, session.human_player_name, alive_only=True)
-    alive = list(session.game.alive_players)
+    ordered = _get_alive_speaking_order(session)
 
     if human is None:
         # ユーザー死亡時: 全 AI が発言
-        ai_players = [p for p in alive if p.name in session.providers]
+        ai_players = [p for p in ordered if p.name in session.providers]
         msgs = _run_ai_discussion(session, ai_players)
         session.current_discussion.extend(msgs)
     else:
-        human_idx = next(i for i, p in enumerate(alive) if p.name == session.human_player_name)
-        before = [p for p in alive[:human_idx] if p.name in session.providers]
+        human_idx = next(i for i, p in enumerate(ordered) if p.name == session.human_player_name)
+        before = [p for p in ordered[:human_idx] if p.name in session.providers]
         msgs = _run_ai_discussion(session, before)
         session.current_discussion.extend(msgs)
 
@@ -257,10 +269,10 @@ def handle_user_discuss(session: InteractiveSession, message: str) -> None:
         session.game = session.game.add_log(f"[発言] {human.name}: {message}")
         session.current_discussion.append(f"{human.name}: {message}")
 
-        # ユーザーの後ろの AI が発言
-        alive = list(session.game.alive_players)
-        human_idx = next(i for i, p in enumerate(alive) if p.name == session.human_player_name)
-        after = [p for p in alive[human_idx + 1 :] if p.name in session.providers]
+        # speaking_order に基づきユーザーの後ろの AI が発言
+        ordered = _get_alive_speaking_order(session)
+        human_idx = next(i for i, p in enumerate(ordered) if p.name == session.human_player_name)
+        after = [p for p in ordered[human_idx + 1 :] if p.name in session.providers]
         msgs = _run_ai_discussion(session, after)
         session.current_discussion.extend(msgs)
 
@@ -454,6 +466,15 @@ def resolve_night_phase(
     if divine_result is not None:
         _, seer_name_rec, target_name_rec, _ = divine_result
         game = game.add_divine_history(seer_name_rec, target_name_rec)
+
+    # 襲撃された人の次から発言順を回転
+    if attack_target_name is not None:
+        order = list(session.speaking_order)
+        if attack_target_name in order:
+            idx = order.index(attack_target_name)
+            # 襲撃された人の次の位置から開始するよう回転
+            rotated = order[idx + 1 :] + order[: idx + 1]
+            session.speaking_order = tuple(rotated)
 
     # 次の日へ
     game = replace(game, phase=Phase.DAY, day=game.day + 1)

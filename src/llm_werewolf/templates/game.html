@@ -244,6 +244,19 @@
 
         <!-- VOTE: 投票フェーズ -->
         {% if step == "vote" %}
+        {% if session.current_discussion %}
+        <div class="panel">
+            <h2>議論 - Day {{ game.day }}</h2>
+            <ul class="message-list">
+                {% for msg in session.current_discussion %}
+                <li>
+                    <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                    {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
         <div class="panel">
             <h2>投票 - Day {{ game.day }}</h2>
             {% if human_is_alive %}
