@@ -297,7 +297,9 @@ class InteractiveGameEngine:
         if not candidates:
             return None
 
-        if human_target is not None and seer.name == self._human_player_name:
+        if seer.name == self._human_player_name:
+            if human_target is None:
+                return None
             target_name = human_target
         else:
             provider = self._providers[seer.name]
@@ -317,7 +319,9 @@ class InteractiveGameEngine:
         if not candidates:
             return None
 
-        if human_target is not None and werewolf.name == self._human_player_name:
+        if werewolf.name == self._human_player_name:
+            if human_target is None:
+                return None
             target_name = human_target
         else:
             provider = self._providers[werewolf.name]

@@ -404,3 +404,41 @@ class TestFullGame:
                 return
 
         pytest.fail("Game did not reach a winner within max turns")
+
+
+class TestResolveNightWithoutHumanTarget:
+    """ユーザーが占い師/人狼で human_target=None の場合にスキップされる。"""
+
+    def test_seer_human_without_target_skips_divine(self) -> None:
+        """ユーザーが占い師で human_divine_target=None の場合、占いがスキップされる。"""
+        engine = _create_engine(seed=42, role=Role.SEER)
+        engine.advance_discussion()
+        engine.handle_user_discuss("テスト")
+        candidates = [p for p in engine.game.alive_players if p.name != "Alice"]
+        villager = next(p for p in candidates if p.role == Role.VILLAGER)
+        _, winner = engine.handle_user_vote(villager.name)
+        if winner is not None:
+            pytest.skip("Game ended at vote")
+
+        engine.start_night()
+        # human_divine_target=None で呼び出し → KeyError にならずスキップされる
+        night_msgs, _ = engine.resolve_night(human_divine_target=None)
+        # 占い履歴が増えていないことを確認
+        assert len(engine.game.divined_history) == 0
+
+    def test_werewolf_human_without_target_skips_attack(self) -> None:
+        """ユーザーが人狼で human_attack_target=None の場合、襲撃がスキップされる。"""
+        engine = _create_engine(seed=42, role=Role.WEREWOLF)
+        engine.advance_discussion()
+        engine.handle_user_discuss("テスト")
+        candidates = [p for p in engine.game.alive_players if p.name != "Alice"]
+        villager = next(p for p in candidates if p.role == Role.VILLAGER)
+        _, winner = engine.handle_user_vote(villager.name)
+        if winner is not None:
+            pytest.skip("Game ended at vote")
+
+        engine.start_night()
+        # human_attack_target=None で呼び出し → KeyError にならずスキップされる
+        night_msgs, _ = engine.resolve_night(human_attack_target=None)
+        # 襲撃が発生していないことを確認
+        assert len(night_msgs) == 0
