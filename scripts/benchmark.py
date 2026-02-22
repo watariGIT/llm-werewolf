@@ -149,12 +149,13 @@ def main() -> None:
     parser.add_argument("--output", type=str, default=None, help="結果の JSON 出力先")
     args = parser.parse_args()
 
-    # 出力先の決定
+    # 出力先の決定（デフォルトはプロジェクトルート内の benchmark_results/）
+    project_root = Path(__file__).resolve().parent.parent
     if args.output:
         output_path = Path(args.output)
     else:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        output_path = Path("benchmark_results") / f"result_{timestamp}.json"
+        output_path = project_root / "benchmark_results" / f"result_{timestamp}.json"
 
     all_results: dict[str, Any] = {}
 
