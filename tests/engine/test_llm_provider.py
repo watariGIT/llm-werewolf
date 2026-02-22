@@ -1,18 +1,20 @@
 """LLMActionProvider のテスト。
 
 ChatOpenAI.invoke をモックして実 API を呼ばずにテストする。
+リトライ・フォールバック動作のテストを含む。
 """
 
 import random
 from unittest.mock import MagicMock, patch
 
+import openai
 from pydantic import SecretStr
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
 from llm_werewolf.engine.llm_config import LLMConfig
-from llm_werewolf.engine.llm_provider import LLMActionProvider
+from llm_werewolf.engine.llm_provider import FALLBACK_DISCUSS_MESSAGE, MAX_RETRIES, LLMActionProvider
 
 
 def _create_config() -> LLMConfig:
@@ -40,6 +42,24 @@ def _create_mock_response(content: str) -> MagicMock:
     mock = MagicMock()
     mock.content = content
     return mock
+
+
+def _create_api_timeout_error() -> openai.APITimeoutError:
+    return openai.APITimeoutError(request=MagicMock())
+
+
+def _create_rate_limit_error() -> openai.RateLimitError:
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.headers = {}
+    return openai.RateLimitError(message="Rate limit exceeded", response=mock_response, body=None)
+
+
+def _create_server_error(status_code: int = 500) -> openai.APIStatusError:
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_response.headers = {}
+    return openai.APIStatusError(message=f"Server error {status_code}", response=mock_response, body=None)
 
 
 class TestLLMActionProviderInit:
@@ -175,3 +195,162 @@ class TestAttack:
         result = provider.attack(game, game.players[2], candidates)
 
         assert result == "Bob"
+
+
+class TestRetry:
+    """リトライ機構のテスト。"""
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_retry_on_timeout_then_success(self, mock_chat_openai: MagicMock) -> None:
+        """タイムアウト後にリトライで成功する。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_api_timeout_error(),
+            _create_mock_response("リトライ後の発言です。"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        provider._sleep = MagicMock()
+        game = _create_game()
+        result = provider.discuss(game, game.players[1])
+
+        assert result == "リトライ後の発言です。"
+        assert mock_instance.invoke.call_count == 2
+        provider._sleep.assert_called_once_with(1)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_retry_on_rate_limit_then_success(self, mock_chat_openai: MagicMock) -> None:
+        """レート制限後にリトライで成功する。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_rate_limit_error(),
+            _create_mock_response("Charlie"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        provider._sleep = MagicMock()
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        result = provider.vote(game, game.players[0], candidates)
+
+        assert result == "Charlie"
+        assert mock_instance.invoke.call_count == 2
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_retry_on_server_error_then_success(self, mock_chat_openai: MagicMock) -> None:
+        """サーバーエラー (5xx) 後にリトライで成功する。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_server_error(500),
+            _create_mock_response("Bob"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        provider._sleep = MagicMock()
+        game = _create_game()
+        candidates = (game.players[1], game.players[2])
+        result = provider.divine(game, game.players[0], candidates)
+
+        assert result == "Bob"
+        assert mock_instance.invoke.call_count == 2
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_exponential_backoff(self, mock_chat_openai: MagicMock) -> None:
+        """指数バックオフで待機時間が増加する。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_api_timeout_error(),
+            _create_api_timeout_error(),
+            _create_mock_response("成功"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        provider._sleep = MagicMock()
+        game = _create_game()
+        result = provider.discuss(game, game.players[1])
+
+        assert result == "成功"
+        assert provider._sleep.call_count == 2
+        provider._sleep.assert_any_call(1)  # 2^0
+        provider._sleep.assert_any_call(2)  # 2^1
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_no_retry_on_client_error(self, mock_chat_openai: MagicMock) -> None:
+        """クライアントエラー (4xx、429以外) はリトライしない。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = _create_server_error(400)
+
+        provider = LLMActionProvider(_create_config())
+        provider._sleep = MagicMock()
+        game = _create_game()
+        result = provider.discuss(game, game.players[1])
+
+        assert result == FALLBACK_DISCUSS_MESSAGE
+        assert mock_instance.invoke.call_count == 1
+        provider._sleep.assert_not_called()
+
+
+class TestFallback:
+    """フォールバック動作のテスト。"""
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_discuss_fallback(self, mock_chat_openai: MagicMock) -> None:
+        """discuss のフォールバックは定型文を返す。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [_create_api_timeout_error()] * MAX_RETRIES
+
+        provider = LLMActionProvider(_create_config())
+        provider._sleep = MagicMock()
+        game = _create_game()
+        result = provider.discuss(game, game.players[1])
+
+        assert result == FALLBACK_DISCUSS_MESSAGE
+        assert mock_instance.invoke.call_count == MAX_RETRIES
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_vote_fallback(self, mock_chat_openai: MagicMock) -> None:
+        """vote のフォールバックはランダム選択する。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [_create_rate_limit_error()] * MAX_RETRIES
+
+        rng = random.Random(42)
+        provider = LLMActionProvider(_create_config(), rng=rng)
+        provider._sleep = MagicMock()
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        result = provider.vote(game, game.players[0], candidates)
+
+        assert result in ("Charlie", "Dave")
+        assert mock_instance.invoke.call_count == MAX_RETRIES
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_divine_fallback(self, mock_chat_openai: MagicMock) -> None:
+        """divine のフォールバックはランダム選択する。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [_create_server_error(503)] * MAX_RETRIES
+
+        rng = random.Random(42)
+        provider = LLMActionProvider(_create_config(), rng=rng)
+        provider._sleep = MagicMock()
+        game = _create_game()
+        candidates = (game.players[1], game.players[2])
+        result = provider.divine(game, game.players[0], candidates)
+
+        assert result in ("Bob", "Charlie")
+        assert mock_instance.invoke.call_count == MAX_RETRIES
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_attack_fallback(self, mock_chat_openai: MagicMock) -> None:
+        """attack のフォールバックはランダム選択する。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [_create_api_timeout_error()] * MAX_RETRIES
+
+        rng = random.Random(42)
+        provider = LLMActionProvider(_create_config(), rng=rng)
+        provider._sleep = MagicMock()
+        game = _create_game()
+        candidates = (game.players[0], game.players[1])
+        result = provider.attack(game, game.players[2], candidates)
+
+        assert result in ("Alice", "Bob")
+        assert mock_instance.invoke.call_count == MAX_RETRIES
