@@ -45,3 +45,6 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: 実 API を呼び出す結合テスト (OPENAI_API_KEY 必須)",
+]
