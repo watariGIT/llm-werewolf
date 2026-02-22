@@ -510,6 +510,47 @@ class TestSpeakingOrder:
         player_names = {p.name for p in session.game.players}
         assert set(session.speaking_order) == player_names
 
+    def test_display_order_set_on_creation(self) -> None:
+        """display_order がゲーム開始時に speaking_order と同じ値で設定される。"""
+        session = _create_session(human_name="Alice")
+        assert session.display_order == session.speaking_order
+        assert len(session.display_order) == 5
+
+    def test_display_order_unchanged_after_night_attack(self) -> None:
+        """夜襲撃後も display_order は変更されない（speaking_order は変わる）。"""
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice", role=Role.VILLAGER)
+            original_display_order = session.display_order
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+
+            villager = next(
+                (p for p in session.game.alive_players if p.role == Role.VILLAGER and p.name != "Alice"),
+                None,
+            )
+            if villager is None:
+                continue
+
+            handle_user_vote(session, villager.name)
+            if session.step != GameStep.EXECUTION_RESULT:
+                continue
+
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_cands = get_night_action_candidates(session)
+                if night_cands:
+                    handle_night_action(session, night_cands[0].name)
+            if session.step not in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER):
+                continue
+
+            if session.night_messages:
+                # speaking_order は変わるが display_order は変わらない
+                assert session.speaking_order != original_display_order
+                assert session.display_order == original_display_order
+                return
+
+        pytest.skip("No seed found for display order test")
+
     def test_human_not_always_first_in_speaking_order(self) -> None:
         """ユーザーが常に最初ではない。"""
         first_count = 0

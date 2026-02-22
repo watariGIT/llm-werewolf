@@ -56,6 +56,7 @@ class InteractiveSession:
     providers: dict[str, ActionProvider]
     rng: random.Random
     speaking_order: tuple[str, ...] = ()
+    display_order: tuple[str, ...] = ()
     current_discussion: list[str] = field(default_factory=list)
     current_votes: dict[str, str] = field(default_factory=dict)
     night_messages: list[str] = field(default_factory=list)
@@ -169,6 +170,7 @@ class InteractiveSessionStore:
             providers=providers,
             rng=rng,
             speaking_order=speaking_order,
+            display_order=speaking_order,
         )
         self._sessions[game_id] = session
         return session

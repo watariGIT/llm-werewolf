@@ -159,20 +159,23 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     human_player = session.game.find_player(session.human_player_name)
     human_is_alive = human_player is not None and human_player.is_alive
 
-    # 投票候補（自分以外の生存者）
-    vote_candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
+    # display_order に基づく表示順ソート用インデックス
+    display_index = {name: i for i, name in enumerate(session.display_order)}
 
-    # 夜行動のコンテキスト
-    night_action_type = get_night_action_type(session) if session.step == GameStep.NIGHT_ACTION else None
-    night_action_candidates = get_night_action_candidates(session) if session.step == GameStep.NIGHT_ACTION else []
-
-    # speaking_order に基づくプレイヤー表示順
-    name_to_player = {p.name: p for p in session.game.players}
-    ordered_players = (
-        [name_to_player[name] for name in session.speaking_order if name in name_to_player]
-        if session.speaking_order
-        else list(session.game.players)
+    # 投票候補（自分以外の生存者、display_order 順）
+    vote_candidates = sorted(
+        [p for p in session.game.alive_players if p.name != session.human_player_name],
+        key=lambda p: display_index.get(p.name, 999),
     )
+
+    # 夜行動のコンテキスト（display_order 順）
+    night_action_type = get_night_action_type(session) if session.step == GameStep.NIGHT_ACTION else None
+    night_action_candidates_raw = get_night_action_candidates(session) if session.step == GameStep.NIGHT_ACTION else []
+    night_action_candidates = sorted(night_action_candidates_raw, key=lambda p: display_index.get(p.name, 999))
+
+    # display_order に基づくプレイヤー表示順（ゲーム中固定）
+    name_to_player = {p.name: p for p in session.game.players}
+    ordered_players = [name_to_player[name] for name in session.display_order if name in name_to_player]
 
     return templates.TemplateResponse(
         request,

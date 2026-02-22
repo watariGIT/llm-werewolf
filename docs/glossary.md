@@ -57,6 +57,7 @@
 | 巡 | Round | `round` | 議論での発言の一巡り |
 | 議論ラウンド | Discussion Round | `discussion_round` | 現在の議論ラウンド番号（Day 1: 1巡、Day 2+: 2巡） |
 | 発言順 | Speaking Order | `speaking_order` | 議論で発言する順番 |
+| UI表示順 | Display Order | `display_order` | ゲーム中固定のプレイヤー表示順。ゲーム開始時の発言順で固定される |
 | 占い結果 | Divine Result | `divine_result` | 占い師が占いで得た情報（人狼か否か） |
 
 ## インタラクティブゲーム
