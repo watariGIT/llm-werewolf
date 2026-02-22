@@ -189,10 +189,9 @@ class InteractiveGameEngine:
         if human is None:
             return []
         if human.role == Role.SEER:
-            already_divined = set(self._game.get_divined_history(human.name))
-            return [p for p in self._game.alive_players if p.name != human.name and p.name not in already_divined]
+            return list(get_divine_candidates(self._game, human))
         if human.role == Role.WEREWOLF:
-            return [p for p in self._game.alive_players if p.role != Role.WEREWOLF]
+            return list(get_attack_candidates(self._game))
         return []
 
     def resolve_night(
