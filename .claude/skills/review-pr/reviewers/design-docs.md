@@ -17,9 +17,6 @@
 
 ### ドキュメント
 - CLAUDE.md / README.md / docs/ への反映漏れ
-  - 新しいコマンド・実行方法の追加時: CLAUDE.md の Common Commands と README.md のセットアップ・テストセクションの両方に反映されているか
-  - 新しい設定・環境変数の追加時: README.md の設定テーブルに反映されているか
-  - アーキテクチャ変更時: docs/architecture.md に反映されているか
 - `.claude/rules/` 配下のルールファイルが英語で統一されているか（日本語混在の検出）
 
 ### 対象外（自動チェック済み）
