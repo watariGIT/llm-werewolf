@@ -30,6 +30,7 @@
 ```bash
 uv sync                  # Install dependencies
 uv run tox               # Run lint, type check, and tests
+uv run tox -e integration # Run integration tests (OPENAI_API_KEY required)
 ```
 
 ## Development Workflow
