@@ -54,9 +54,14 @@ Issue の内容に応じてラベルを選ぶ:
 | 判定基準 | ラベル |
 |---------|--------|
 | バグ修正 | `bug` |
-| 新機能・改善 | `enhancement` |
+| 新しい機能の追加 | `feature` |
+| 既存機能の改善・UX向上 | `improve` |
+| リファクタリング・技術的改善 | `refactor` |
 | ドキュメント関連 | `documentation` |
 | ゲームルール関連 | `game-rules` |
+| Web UI 関連 | `ui` |
+| ベンチマーク・品質評価関連 | `benchmark` |
+| AIの思考・応答品質の改善 | `ai-quality` |
 | Step 1 のスコープ | `step-1` |
 | Step 2 のスコープ | `step-2` |
 
