@@ -2,14 +2,16 @@ import random
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
-from llm_werewolf.domain.value_objects import Role
+from llm_werewolf.domain.value_objects import NightActionType, Role
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
+    find_night_actor,
     get_alive_speaking_order,
     get_attack_candidates,
     get_discussion_rounds,
     get_divine_candidates,
+    get_night_action_candidates,
     notify_divine_result,
     rotate_speaking_order,
     tally_votes,
@@ -223,6 +225,52 @@ class TestRotateSpeakingOrder:
     def test_empty_order(self) -> None:
         result = rotate_speaking_order((), "Alice")
         assert result == ()
+
+
+class TestFindNightActor:
+    def test_find_seer(self) -> None:
+        game = _make_game()
+        actor = find_night_actor(game, NightActionType.DIVINE)
+        assert actor is not None
+        assert actor.name == "Alice"
+        assert actor.role == Role.SEER
+
+    def test_find_werewolf(self) -> None:
+        game = _make_game()
+        actor = find_night_actor(game, NightActionType.ATTACK)
+        assert actor is not None
+        assert actor.name == "Bob"
+        assert actor.role == Role.WEREWOLF
+
+    def test_returns_none_when_dead(self) -> None:
+        game = _make_game()
+        alice = game.players[0]
+        game = game.replace_player(alice, alice.killed())
+        actor = find_night_actor(game, NightActionType.DIVINE)
+        assert actor is None
+
+
+class TestGetNightActionCandidates:
+    def test_divine_candidates(self) -> None:
+        game = _make_game()
+        seer = game.players[0]
+        candidates = get_night_action_candidates(game, seer)
+        names = [p.name for p in candidates]
+        assert "Alice" not in names
+        assert "Bob" in names
+
+    def test_attack_candidates(self) -> None:
+        game = _make_game()
+        werewolf = game.players[1]
+        candidates = get_night_action_candidates(game, werewolf)
+        for p in candidates:
+            assert p.role != Role.WEREWOLF
+
+    def test_villager_returns_empty(self) -> None:
+        game = _make_game()
+        villager = game.players[2]
+        candidates = get_night_action_candidates(game, villager)
+        assert len(candidates) == 0
 
 
 class TestGetDiscussionRounds:

@@ -13,15 +13,15 @@ from dataclasses import replace
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import check_victory
-from llm_werewolf.domain.value_objects import Phase, Role, Team
+from llm_werewolf.domain.value_objects import NightActionType, Phase, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
+    find_night_actor,
     get_alive_speaking_order,
-    get_attack_candidates,
     get_discussion_rounds,
-    get_divine_candidates,
+    get_night_action_candidates,
     notify_divine_result,
     rotate_speaking_order,
     tally_votes,
@@ -170,27 +170,19 @@ class InteractiveGameEngine:
             return True
         return False
 
-    def get_night_action_type(self) -> str | None:
-        """ユーザーの夜行動タイプを返す。"divine" / "attack" / None。"""
+    def get_night_action_type(self) -> NightActionType | None:
+        """ユーザーの夜行動タイプを返す。"""
         human = self._game.find_player(self._human_player_name, alive_only=True)
         if human is None:
             return None
-        if human.role == Role.SEER:
-            return "divine"
-        if human.role == Role.WEREWOLF:
-            return "attack"
-        return None
+        return human.role.night_action_type
 
     def get_night_action_candidates(self) -> list[Player]:
         """ユーザーの夜行動の対象候補を返す。"""
         human = self._game.find_player(self._human_player_name, alive_only=True)
         if human is None:
             return []
-        if human.role == Role.SEER:
-            return list(get_divine_candidates(self._game, human))
-        if human.role == Role.WEREWOLF:
-            return list(get_attack_candidates(self._game))
-        return []
+        return list(get_night_action_candidates(self._game, human))
 
     def resolve_night(
         self,
@@ -284,16 +276,15 @@ class InteractiveGameEngine:
         human = self._game.find_player(self._human_player_name, alive_only=True)
         if human is None:
             return False
-        return human.role in (Role.SEER, Role.WEREWOLF)
+        return human.role.has_night_action
 
     def _resolve_divine(self, human_target: str | None = None) -> tuple[str, str, bool] | None:
         """占いを実行する。結果は (seer_name, target_name, is_werewolf) または None。"""
-        seer_players = [p for p in self._game.alive_players if p.role == Role.SEER]
-        if not seer_players:
+        seer = find_night_actor(self._game, NightActionType.DIVINE)
+        if seer is None:
             return None
 
-        seer = seer_players[0]
-        candidates = get_divine_candidates(self._game, seer)
+        candidates = get_night_action_candidates(self._game, seer)
         if not candidates:
             return None
 
@@ -310,12 +301,11 @@ class InteractiveGameEngine:
 
     def _resolve_attack(self, human_target: str | None = None) -> str | None:
         """襲撃を実行する。襲撃対象名または None を返す。"""
-        werewolves = [p for p in self._game.alive_players if p.role == Role.WEREWOLF]
-        if not werewolves:
+        werewolf = find_night_actor(self._game, NightActionType.ATTACK)
+        if werewolf is None:
             return None
 
-        werewolf = werewolves[0]
-        candidates = get_attack_candidates(self._game)
+        candidates = get_night_action_candidates(self._game, werewolf)
         if not candidates:
             return None
 

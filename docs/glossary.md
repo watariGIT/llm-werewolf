@@ -24,6 +24,14 @@
 | 昼フェーズ | Day Phase | `day` | 議論と投票を行うフェーズ |
 | 夜フェーズ | Night Phase | `night` | 人狼の襲撃と占い師の占いを行うフェーズ |
 
+## 夜行動種別 (Night Action Type)
+
+| 日本語 | 英語 | コード上の名前 | 説明 |
+|--------|------|----------------|------|
+| 夜行動種別 | Night Action Type | `NightActionType` | 役職が持つ夜行動の種別を表す値オブジェクト |
+| 占い | Divine | `NightActionType.DIVINE` | 占い師の夜行動 |
+| 襲撃 | Attack | `NightActionType.ATTACK` | 人狼の夜行動 |
+
 ## アクション (Action)
 
 | 日本語 | 英語 | コード上の名前 | 説明 |

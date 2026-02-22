@@ -45,7 +45,8 @@ src/llm_werewolf/
 | クラス | 説明 |
 |--------|------|
 | `Team` | 陣営（`village`, `werewolf`） |
-| `Role` | 役職（`villager`, `seer`, `werewolf`） |
+| `Role` | 役職（`villager`, `seer`, `werewolf`）。`night_action_type` / `has_night_action` プロパティで夜行動メタデータを提供 |
+| `NightActionType` | 夜行動種別（`divine`, `attack`）。`Role` のメタデータとして使用 |
 | `Phase` | フェーズ（`day`, `night`） |
 | `PlayerStatus` | 生存状態（`alive`, `dead`） |
 
@@ -89,7 +90,7 @@ src/llm_werewolf/
 | クラス/Protocol/モジュール | 説明 |
 |---------------------------|------|
 | `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃の行動を定義 |
-| `game_logic` | 両エンジン共通のゲームロジック関数群。占い結果通知・占い/襲撃実行・投票集計・発言順管理・議論ラウンド数判定を提供 |
+| `game_logic` | 両エンジン共通のゲームロジック関数群。占い結果通知・占い/襲撃実行・投票集計・発言順管理・議論ラウンド数判定を提供。`find_night_actor` / `get_night_action_candidates` で役職メタデータに基づく汎用的な夜行動解決を提供 |
 | `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑→夜行動→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用 |
 | `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動の各メソッドを提供し、`game_logic` の共通関数を利用 |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
