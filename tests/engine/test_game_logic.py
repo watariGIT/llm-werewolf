@@ -84,6 +84,20 @@ class TestNotifyDivineResult:
         result = notify_divine_result(game)
         assert not any("[占い結果]" in log for log in result.log)
 
+    def test_no_notification_when_seer_dead(self) -> None:
+        game = _make_game()
+        alice = game.players[0]
+        game = game.replace_player(alice, alice.killed())
+        game = GameState(players=game.players, day=2, divined_history=(("Alice", "Charlie"),))
+        result = notify_divine_result(game)
+        assert not any("[占い結果]" in log for log in result.log)
+
+    def test_no_notification_when_no_history(self) -> None:
+        game = _make_game()
+        game = GameState(players=game.players, day=2)
+        result = notify_divine_result(game)
+        assert not any("[占い結果]" in log for log in result.log)
+
 
 class TestGetDivineCandidates:
     def test_excludes_self_and_divined(self) -> None:
@@ -95,6 +109,16 @@ class TestGetDivineCandidates:
         assert "Alice" not in names
         assert "Charlie" not in names
         assert "Bob" in names
+
+    def test_empty_when_all_divined(self) -> None:
+        game = _make_game()
+        game = GameState(
+            players=game.players,
+            divined_history=(("Alice", "Bob"), ("Alice", "Charlie"), ("Alice", "Dave"), ("Alice", "Eve")),
+        )
+        seer = game.players[0]
+        candidates = get_divine_candidates(game, seer)
+        assert len(candidates) == 0
 
 
 class TestExecuteDivine:
@@ -120,6 +144,20 @@ class TestExecuteDivine:
         _, result = execute_divine(game, seer, "Unknown")
         assert result is None
 
+    def test_divine_self_returns_none(self) -> None:
+        game = _make_game()
+        seer = game.players[0]
+        _, result = execute_divine(game, seer, "Alice")
+        assert result is None
+
+    def test_divine_dead_target_returns_none(self) -> None:
+        game = _make_game()
+        charlie = game.players[2]
+        game = game.replace_player(charlie, charlie.killed())
+        seer = game.players[0]
+        _, result = execute_divine(game, seer, "Charlie")
+        assert result is None
+
 
 class TestGetAttackCandidates:
     def test_excludes_werewolves(self) -> None:
@@ -142,6 +180,20 @@ class TestExecuteAttack:
         _, target_name = execute_attack(game, werewolf, "Unknown")
         assert target_name is None
 
+    def test_attack_werewolf_returns_none(self) -> None:
+        game = _make_game()
+        werewolf = game.players[1]
+        _, target_name = execute_attack(game, werewolf, "Bob")
+        assert target_name is None
+
+    def test_attack_dead_target_returns_none(self) -> None:
+        game = _make_game()
+        charlie = game.players[2]
+        game = game.replace_player(charlie, charlie.killed())
+        werewolf = game.players[1]
+        _, target_name = execute_attack(game, werewolf, "Charlie")
+        assert target_name is None
+
 
 class TestTallyVotes:
     def test_majority_wins(self) -> None:
@@ -160,6 +212,12 @@ class TestTallyVotes:
         result = tally_votes(votes, rng)
         assert result in ("Bob", "Dave")
 
+    def test_three_way_tie(self) -> None:
+        rng = random.Random(42)
+        votes = {"Alice": "Bob", "Charlie": "Dave", "Eve": "Alice"}
+        result = tally_votes(votes, rng)
+        assert result in ("Bob", "Dave", "Alice")
+
 
 class TestRotateSpeakingOrder:
     def test_rotates_after_removal(self) -> None:
@@ -172,6 +230,20 @@ class TestRotateSpeakingOrder:
         order = ("Alice", "Bob", "Charlie")
         result = rotate_speaking_order(order, "Unknown")
         assert result == order
+
+    def test_remove_first_player(self) -> None:
+        order = ("Alice", "Bob", "Charlie", "Dave")
+        result = rotate_speaking_order(order, "Alice")
+        assert result == ("Bob", "Charlie", "Dave")
+
+    def test_remove_last_player(self) -> None:
+        order = ("Alice", "Bob", "Charlie", "Dave")
+        result = rotate_speaking_order(order, "Dave")
+        assert result == ("Alice", "Bob", "Charlie")
+
+    def test_empty_order(self) -> None:
+        result = rotate_speaking_order((), "Alice")
+        assert result == ()
 
 
 class TestGetDiscussionRounds:

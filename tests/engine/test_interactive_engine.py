@@ -39,6 +39,25 @@ def _create_engine(
     )
 
 
+def _create_engine_with_dead_human(
+    seed: int = 42,
+    human_name: str = "Alice",
+    role: Role = Role.VILLAGER,
+) -> InteractiveGameEngine:
+    """ユーザーが死亡済みのエンジンを生成する。"""
+    engine = _create_engine(seed=seed, human_name=human_name, role=role)
+    game = engine.game
+    human = next(p for p in game.players if p.name == human_name)
+    game = game.replace_player(human, human.killed())
+    return InteractiveGameEngine(
+        game=game,
+        providers={name: RandomActionProvider(rng=random.Random(seed)) for name in AI_NAMES},
+        human_player_name=human_name,
+        rng=random.Random(seed),
+        speaking_order=engine.speaking_order,
+    )
+
+
 class TestAdvanceDiscussion:
     def test_returns_ai_messages(self) -> None:
         engine = _create_engine()
@@ -55,6 +74,12 @@ class TestAdvanceDiscussion:
         engine = _create_engine()
         engine.advance_discussion()
         assert any("ラウンド 1" in log for log in engine.game.log)
+
+    def test_user_dead_all_ai_discuss(self) -> None:
+        engine = _create_engine_with_dead_human()
+        msgs = engine.advance_discussion()
+        assert len(msgs) > 0
+        assert all("Alice" not in msg for msg in msgs)
 
 
 class TestHandleUserDiscuss:
@@ -107,6 +132,12 @@ class TestHandleUserDiscuss:
             return
 
         pytest.skip("No seed found for day2 test")
+
+    def test_user_dead_skips_user_message(self) -> None:
+        engine = _create_engine_with_dead_human()
+        engine.advance_discussion()
+        msgs, vote_ready = engine.handle_user_discuss("テスト発言")
+        assert not any("[発言] Alice" in log for log in engine.game.log)
 
 
 class TestHandleUserVote:
@@ -171,6 +202,33 @@ class TestStartNight:
             return
         pytest.skip("No seed found for villager test")
 
+    def test_werewolf_gets_night_action(self) -> None:
+        for seed in range(50):
+            engine = _create_engine(seed=seed, role=Role.WEREWOLF)
+            engine.advance_discussion()
+            engine.handle_user_discuss("test")
+            candidates = [p for p in engine.game.alive_players if p.name != "Alice"]
+            _, winner = engine.handle_user_vote(candidates[0].name)
+            if winner is not None:
+                continue
+            human = next((p for p in engine.game.alive_players if p.name == "Alice"), None)
+            if human is None:
+                continue
+            has_action = engine.start_night()
+            assert has_action is True
+            assert engine.get_night_action_type() == "attack"
+            return
+        pytest.skip("No seed found for werewolf night action test")
+
+    def test_dead_user_no_night_action(self) -> None:
+        engine = _create_engine_with_dead_human(role=Role.SEER)
+        engine.advance_discussion()
+        engine.handle_user_discuss("test")
+        _, winner = engine.handle_auto_vote()
+        if winner is None:
+            has_action = engine.start_night()
+            assert has_action is False
+
 
 class TestResolveNight:
     def test_returns_night_messages(self) -> None:
@@ -204,6 +262,79 @@ class TestResolveNight:
             engine.resolve_night()
             assert engine.game.day == initial_day + 1
 
+    def test_seer_attacked_divine_result_invalidated(self) -> None:
+        """占い師が夜に襲撃された場合、占い結果は無効化される。"""
+        # Alice=占い師, 人狼がAliceを襲撃するケースを探す
+        for seed in range(100):
+            engine = _create_engine(seed=seed, role=Role.SEER)
+            engine.advance_discussion()
+            engine.handle_user_discuss("test")
+            candidates = [p for p in engine.game.alive_players if p.name != "Alice"]
+            villager = next((p for p in candidates if p.role == Role.VILLAGER), None)
+            if villager is None:
+                continue
+            _, winner = engine.handle_user_vote(villager.name)
+            if winner is not None:
+                continue
+            human = next((p for p in engine.game.alive_players if p.name == "Alice"), None)
+            if human is None:
+                continue
+
+            engine.start_night()
+            divine_cands = engine.get_night_action_candidates()
+            if not divine_cands:
+                continue
+
+            # 占い実行し、夜を解決（人狼がAliceを襲撃するかはAIのランダム依存）
+            night_msgs, winner = engine.resolve_night(human_divine_target=divine_cands[0].name)
+
+            # Aliceが襲撃された場合、占い結果が履歴に記録されないことを確認
+            alice_alive = any(p.name == "Alice" and p.is_alive for p in engine.game.players)
+            if not alice_alive:
+                # 占い師が襲撃された → 占い結果は無効（divined_historyに追加されない）
+                history = engine.game.get_divined_history("Alice")
+                assert divine_cands[0].name not in history
+                return
+
+        pytest.skip("No seed found for seer attacked test")
+
+    def test_speaking_order_rotated_after_attack(self) -> None:
+        """襲撃後に発言順が回転する。"""
+        for seed in range(50):
+            engine = _create_engine(seed=seed, role=Role.VILLAGER)
+            engine.advance_discussion()
+            engine.handle_user_discuss("test")
+            candidates = [p for p in engine.game.alive_players if p.name != "Alice"]
+            villager = next((p for p in candidates if p.role == Role.VILLAGER), None)
+            if villager is None:
+                continue
+            _, winner = engine.handle_user_vote(villager.name)
+            if winner is not None:
+                continue
+
+            order_before = engine.speaking_order
+            engine.start_night()
+            night_msgs, winner = engine.resolve_night()
+            if winner is not None:
+                continue
+
+            if night_msgs:
+                # 襲撃が発生した → 発言順が変わっているはず
+                assert engine.speaking_order != order_before
+                return
+
+        pytest.skip("No seed found for speaking order rotation test")
+
+
+class TestGetNightActionType:
+    def test_dead_user_returns_none(self) -> None:
+        engine = _create_engine_with_dead_human(role=Role.SEER)
+        assert engine.get_night_action_type() is None
+
+    def test_villager_returns_none(self) -> None:
+        engine = _create_engine(role=Role.VILLAGER)
+        assert engine.get_night_action_type() is None
+
 
 class TestGetNightActionCandidates:
     def test_seer_excludes_self(self) -> None:
@@ -215,6 +346,14 @@ class TestGetNightActionCandidates:
         engine = _create_engine(role=Role.WEREWOLF)
         candidates = engine.get_night_action_candidates()
         assert all(p.role != Role.WEREWOLF for p in candidates)
+
+    def test_dead_user_returns_empty(self) -> None:
+        engine = _create_engine_with_dead_human(role=Role.SEER)
+        assert engine.get_night_action_candidates() == []
+
+    def test_villager_returns_empty(self) -> None:
+        engine = _create_engine(role=Role.VILLAGER)
+        assert engine.get_night_action_candidates() == []
 
 
 class TestFullGame:
