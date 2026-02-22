@@ -93,6 +93,7 @@ src/llm_werewolf/
 | `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑→夜行動→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用 |
 | `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動の各メソッドを提供し、`game_logic` の共通関数を利用 |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
+| `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃の行動を生成。プロンプトテンプレートとレスポンスパーサーを組み合わせて構築 |
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供 |
