@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,12 @@ from llm_werewolf.session import (
 )
 
 load_dotenv()
+
+_log_level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level_name, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 logger = logging.getLogger(__name__)
 
