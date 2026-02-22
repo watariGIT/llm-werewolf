@@ -2,16 +2,16 @@
 globs: src/llm_werewolf/domain/**
 ---
 
-# ドメイン層ルール
+# Domain Layer Rules
 
-- DDD（ドメイン駆動設計）に従う
-  - 値オブジェクト: `str, Enum` で定義（`value_objects.py`）
-  - エンティティ: `@dataclass(frozen=True)` で定義、一意な同一性を持つ（`player.py`）
-    - 不変オブジェクトとして設計し、状態変更時は新インスタンスを返す
-  - 集約ルート: `@dataclass(frozen=True)` で定義、関連オブジェクトの整合性境界（`game.py`）
-    - コレクションは `tuple` を使用し、状態変更は `dataclasses.replace` で新インスタンスを返す
-  - ドメインサービス: エンティティに属さないビジネスロジックを関数で提供（`services.py`）
-- **外部ライブラリに依存しない**（Python 標準ライブラリのみ使用可）
-- 命名は `docs/glossary.md` の用語に準拠すること
-- ゲームロジックは `docs/game-rules.md` のルールに準拠すること
-- ドメインサービスの制約チェック関数は、違反時に `ValueError` を送出する
+- Follow DDD (Domain-Driven Design)
+  - Value Objects: defined with `str, Enum` (`value_objects.py`)
+  - Entities: defined with `@dataclass(frozen=True)`, have unique identity (`player.py`)
+    - Designed as immutable objects; return new instances on state changes
+  - Aggregate Root: defined with `@dataclass(frozen=True)`, consistency boundary for related objects (`game.py`)
+    - Use `tuple` for collections; create new instances via `dataclasses.replace` for state changes
+  - Domain Services: business logic not belonging to entities, provided as functions (`services.py`)
+- **No external library dependencies** (only Python standard library allowed)
+- Naming must follow terminology in `docs/glossary.md`
+- Game logic must comply with rules in `docs/game-rules.md`
+- Constraint-checking functions in domain services must raise `ValueError` on violations

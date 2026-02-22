@@ -2,10 +2,10 @@
 globs: src/llm_werewolf/engine/**
 ---
 
-# Engine 層（アプリケーション層）ルール
+# Engine Layer (Application Layer) Rules
 
-- **外部ライブラリに依存しない**（Python 標準ライブラリ + domain 層のみ使用可）
-- `ActionProvider` Protocol で行動を抽象化し、具象クラスで実装する
-  - 新しい AI 実装は `ActionProvider` を満たすクラスとして追加する
-- `GameEngine` は GameState を直接変異させず、`dataclasses.replace` や GameState のメソッドで新インスタンスを生成する
-- 乱数は `random.Random` を外部から注入し、テスト決定性を確保する
+- **No external library dependencies** (only Python standard library + domain layer allowed)
+- Abstract actions via `ActionProvider` Protocol; implement in concrete classes
+  - New AI implementations must satisfy the `ActionProvider` interface
+- `GameEngine` must not mutate GameState directly; use `dataclasses.replace` or GameState methods to produce new instances
+- Inject `random.Random` from outside to ensure test determinism

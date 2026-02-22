@@ -1,6 +1,6 @@
-# レイヤー依存ルール
+# Layer Dependency Rules
 
-- ドメイン層 (`domain/`): Python 標準ライブラリのみ
-- アプリケーション層 (`engine/`): Python 標準ライブラリ + domain 層のみ
-- インフラ層 (`main.py`, `session.py`, `templates/`): 全ライブラリ使用可。engine / domain への import 可
-- 依存の方向: インフラ → アプリケーション → ドメイン（逆方向の依存禁止）
+- Domain layer (`domain/`): Python standard library only
+- Application layer (`engine/`): Python standard library + domain layer only
+- Infrastructure layer (`main.py`, `session.py`, `templates/`): All libraries allowed. May import from engine / domain
+- Dependency direction: Infrastructure → Application → Domain (reverse dependencies prohibited)

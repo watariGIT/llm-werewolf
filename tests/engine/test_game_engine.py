@@ -245,3 +245,79 @@ class TestDivineResultNotification:
 
         divine_result_logs = [log for log in result.log if "[占い結果]" in log]
         assert len(divine_result_logs) == 0
+
+
+class TestSpeakingOrder:
+    """発言順のテスト。"""
+
+    def _setup_engine(self, seed: int = 42) -> GameEngine:
+        rng = random.Random(seed)
+        game = GameState(
+            players=(
+                Player(name="Alice", role=Role.SEER),
+                Player(name="Bob", role=Role.WEREWOLF),
+                Player(name="Charlie", role=Role.VILLAGER),
+                Player(name="Dave", role=Role.VILLAGER),
+                Player(name="Eve", role=Role.VILLAGER),
+            )
+        )
+        providers = _create_all_random_providers(game, rng)
+        return GameEngine(game=game, providers=providers, rng=rng)
+
+    def _extract_speaker_order(self, game: GameState, round_num: int = 1) -> list[str]:
+        """ログから指定ラウンドの発言順を抽出する。"""
+        in_round = False
+        speakers: list[str] = []
+        current_round = 0
+        for log in game.log:
+            if "[議論] ラウンド" in log:
+                current_round += 1
+                in_round = current_round == round_num
+                continue
+            if in_round and "[発言]" in log:
+                # "[発言] Alice: ..." → "Alice"
+                name = log.split("[発言] ")[1].split(":")[0]
+                speakers.append(name)
+        return speakers
+
+    def test_day1_discussion_follows_speaking_order(self) -> None:
+        """Day 1 の発言順が speaking_order に基づくことを確認する。"""
+        engine = self._setup_engine()
+        speaking_order = list(engine._speaking_order)  # noqa: SLF001
+        result = engine._day_phase()  # noqa: SLF001
+
+        speakers = self._extract_speaker_order(result, round_num=1)
+        assert len(speakers) == 5
+
+        # speaking_order と一致すること（Day 1 は全員生存なので全員含まれる）
+        assert speakers == speaking_order
+
+    def test_speaking_order_rotates_after_night_attack(self) -> None:
+        """夜襲撃後に発言順が回転することを確認する。"""
+        engine = self._setup_engine()
+        original_order = engine._speaking_order  # noqa: SLF001
+
+        # 夜フェーズを実行（襲撃が発生する）
+        engine._game = engine._day_phase()  # noqa: SLF001
+        engine._game = engine._night_phase()  # noqa: SLF001
+
+        new_order = engine._speaking_order  # noqa: SLF001
+        # 襲撃があれば発言順が変わっているはず
+        attack_logs = [log for log in engine._game.log if "[襲撃]" in log]  # noqa: SLF001
+        if attack_logs:
+            assert new_order != original_order
+            # 襲撃された人は新しい発言順に含まれない
+            attacked_name = attack_logs[0].split("[襲撃] ")[1].split(" が")[0]
+            assert attacked_name not in new_order
+
+    def test_speaking_order_maintained_across_rounds(self) -> None:
+        """Day 2 の 2 ラウンドで発言順が同じことを確認する。"""
+        engine = self._setup_engine()
+
+        # Day 2 に設定
+        engine._game = replace(engine._game, day=2)  # noqa: SLF001
+        result = engine._day_phase()  # noqa: SLF001
+
+        round1_speakers = self._extract_speaker_order(result, round_num=1)
+        round2_speakers = self._extract_speaker_order(result, round_num=2)
+        assert round1_speakers == round2_speakers
