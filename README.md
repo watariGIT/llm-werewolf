@@ -111,6 +111,7 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ```bash
 uv run tox               # リント・型チェック・テスト一括実行
+uv run tox -e integration # 結合テスト（OPENAI_API_KEY 必須）
 ```
 
 ## ドキュメント
