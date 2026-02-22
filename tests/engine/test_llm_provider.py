@@ -1,13 +1,15 @@
 """LLMActionProvider のテスト。
 
 ChatOpenAI.invoke をモックして実 API を呼ばずにテストする。
-リトライ・フォールバック動作のテストを含む。
+リトライ・フォールバック動作・ロギングのテストを含む。
 """
 
+import logging
 import random
 from unittest.mock import MagicMock, patch
 
 import openai
+import pytest
 from pydantic import SecretStr
 
 from llm_werewolf.domain.game import GameState
@@ -38,9 +40,10 @@ def _create_game() -> GameState:
     return game
 
 
-def _create_mock_response(content: str) -> MagicMock:
+def _create_mock_response(content: str, usage_metadata: dict[str, int] | None = None) -> MagicMock:
     mock = MagicMock()
     mock.content = content
+    mock.usage_metadata = usage_metadata
     return mock
 
 
@@ -354,3 +357,131 @@ class TestFallback:
 
         assert result in ("Alice", "Bob")
         assert mock_instance.invoke.call_count == MAX_RETRIES
+
+
+class TestLogging:
+    """ロギング出力のテスト。"""
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_info_log_on_discuss_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        """discuss 成功時に INFO ログが出力される。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("発言です。")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        with caplog.at_level(logging.INFO, logger="llm_werewolf.engine.llm_provider"):
+            provider.discuss(game, game.players[1])  # Bob
+
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        assert any("player=Bob" in m and "action=discuss" in m and "elapsed=" in m for m in info_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_info_log_on_vote_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        """vote 成功時に INFO ログが出力される。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("Charlie")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        with caplog.at_level(logging.INFO, logger="llm_werewolf.engine.llm_provider"):
+            provider.vote(game, game.players[0], candidates)
+
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        assert any("player=Alice" in m and "action=vote" in m for m in info_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_info_log_on_divine_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        """divine 成功時に INFO ログが出力される。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("Bob")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[1], game.players[2])
+        with caplog.at_level(logging.INFO, logger="llm_werewolf.engine.llm_provider"):
+            provider.divine(game, game.players[0], candidates)
+
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        assert any("player=Alice" in m and "action=divine" in m for m in info_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_info_log_on_attack_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        """attack 成功時に INFO ログが出力される。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("Alice")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[0], game.players[1])
+        with caplog.at_level(logging.INFO, logger="llm_werewolf.engine.llm_provider"):
+            provider.attack(game, game.players[2], candidates)
+
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        assert any("player=Charlie" in m and "action=attack" in m for m in info_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_debug_log_contains_prompt_and_response(
+        self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """DEBUG ログにプロンプトとレスポンスが含まれる。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("テスト発言")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        with caplog.at_level(logging.DEBUG, logger="llm_werewolf.engine.llm_provider"):
+            provider.discuss(game, game.players[1])
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        assert any("LLM プロンプト:" in m for m in debug_messages)
+        assert any("LLM レスポンス:" in m and "テスト発言" in m for m in debug_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_debug_log_contains_token_usage(
+        self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """DEBUG ログにトークン使用量が含まれる。"""
+        mock_instance = mock_chat_openai.return_value
+        usage = {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+        mock_instance.invoke.return_value = _create_mock_response("発言", usage_metadata=usage)
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        with caplog.at_level(logging.DEBUG, logger="llm_werewolf.engine.llm_provider"):
+            provider.discuss(game, game.players[1])
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        assert any("input=100" in m and "output=50" in m and "total=150" in m for m in debug_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_no_token_log_when_usage_metadata_is_none(
+        self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """usage_metadata が None の場合、トークンログは出力されない。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("発言", usage_metadata=None)
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        with caplog.at_level(logging.DEBUG, logger="llm_werewolf.engine.llm_provider"):
+            provider.discuss(game, game.players[1])
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        assert not any("トークン使用量" in m for m in debug_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_warning_log_on_fallback(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        """フォールバック時に WARNING ログが出力される。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [_create_api_timeout_error()] * MAX_RETRIES
+
+        provider = LLMActionProvider(_create_config())
+        provider._sleep = MagicMock()
+        game = _create_game()
+        with caplog.at_level(logging.WARNING, logger="llm_werewolf.engine.llm_provider"):
+            provider.discuss(game, game.players[1])
+
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("フォールバック" in m for m in warning_messages)

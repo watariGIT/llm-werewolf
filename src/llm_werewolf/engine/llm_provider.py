@@ -2,6 +2,7 @@
 
 LangChain + OpenAI API を使用して AI プレイヤーの行動を生成する。
 API エラー時はリトライ（指数バックオフ）を行い、上限到達時はフォールバック動作で代替する。
+各 API 呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する。
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from typing import NamedTuple
 
 import openai
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -33,6 +35,13 @@ MAX_RETRIES = 3
 FALLBACK_DISCUSS_MESSAGE = "（通信エラーのため発言できませんでした）"
 
 
+class _LLMResult(NamedTuple):
+    """LLM 呼び出し結果を保持する内部データ型。"""
+
+    content: str
+    elapsed: float
+
+
 class LLMActionProvider:
     """LLM ベースのプレイヤー行動プロバイダー。
 
@@ -53,8 +62,8 @@ class LLMActionProvider:
         """スリープ処理。テスト時にモック可能。"""
         time.sleep(seconds)
 
-    def _call_llm(self, system_prompt: str, user_prompt: str) -> str | None:
-        """LLM を呼び出してレスポンステキストを返す。
+    def _call_llm(self, system_prompt: str, user_prompt: str) -> _LLMResult | None:
+        """LLM を呼び出してレスポンステキストとメタデータを返す。
 
         API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
         リトライ上限到達時は None を返す。
@@ -63,10 +72,23 @@ class LLMActionProvider:
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
         ]
+        logger.debug("LLM プロンプト:\n  system: %s\n  user: %s", system_prompt, user_prompt)
         for attempt in range(MAX_RETRIES):
             try:
+                start = time.monotonic()
                 response = self._llm.invoke(messages)
-                return str(response.content)
+                elapsed = time.monotonic() - start
+                content = str(response.content)
+                logger.debug("LLM レスポンス: %s", content)
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    logger.debug(
+                        "トークン使用量: input=%d, output=%d, total=%d",
+                        usage.get("input_tokens", 0),
+                        usage.get("output_tokens", 0),
+                        usage.get("total_tokens", 0),
+                    )
+                return _LLMResult(content=content, elapsed=elapsed)
             except (openai.APITimeoutError, openai.RateLimitError) as e:
                 wait = 2**attempt
                 logger.warning(
@@ -95,50 +117,54 @@ class LLMActionProvider:
         """議論フェーズでの発言を LLM で生成する。"""
         system_prompt = build_system_prompt(player.role)
         user_prompt = build_discuss_prompt(game, player)
-        response = self._call_llm(system_prompt, user_prompt)
-        if response is None:
+        result = self._call_llm(system_prompt, user_prompt)
+        if result is None:
             logger.warning("discuss フォールバック: プレイヤー %s の発言を定型文で代替します。", player.name)
             return FALLBACK_DISCUSS_MESSAGE
-        return parse_discuss_response(response)
+        logger.info("LLM アクション完了: player=%s, action=discuss, elapsed=%.2fs", player.name, result.elapsed)
+        return parse_discuss_response(result.content)
 
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         """投票先を LLM で選択する。"""
         system_prompt = build_system_prompt(player.role)
         user_prompt = build_vote_prompt(game, player, candidates)
-        response = self._call_llm(system_prompt, user_prompt)
+        result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
-        if response is None:
+        if result is None:
             selected = self._rng.choice(candidate_names)
             logger.warning(
                 "vote フォールバック: プレイヤー %s の投票先をランダムで %s に決定しました。", player.name, selected
             )
             return selected
-        return parse_candidate_response(response, candidate_names, self._rng, action_type="vote")
+        logger.info("LLM アクション完了: player=%s, action=vote, elapsed=%.2fs", player.name, result.elapsed)
+        return parse_candidate_response(result.content, candidate_names, self._rng, action_type="vote")
 
     def divine(self, game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
         """占い対象を LLM で選択する。"""
         system_prompt = build_system_prompt(seer.role)
         user_prompt = build_divine_prompt(game, seer, candidates)
-        response = self._call_llm(system_prompt, user_prompt)
+        result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
-        if response is None:
+        if result is None:
             selected = self._rng.choice(candidate_names)
             logger.warning(
                 "divine フォールバック: 占い師 %s の占い対象をランダムで %s に決定しました。", seer.name, selected
             )
             return selected
-        return parse_candidate_response(response, candidate_names, self._rng, action_type="divine")
+        logger.info("LLM アクション完了: player=%s, action=divine, elapsed=%.2fs", seer.name, result.elapsed)
+        return parse_candidate_response(result.content, candidate_names, self._rng, action_type="divine")
 
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         """襲撃対象を LLM で選択する。"""
         system_prompt = build_system_prompt(werewolf.role)
         user_prompt = build_attack_prompt(game, werewolf, candidates)
-        response = self._call_llm(system_prompt, user_prompt)
+        result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
-        if response is None:
+        if result is None:
             selected = self._rng.choice(candidate_names)
             logger.warning(
                 "attack フォールバック: 人狼 %s の襲撃対象をランダムで %s に決定しました。", werewolf.name, selected
             )
             return selected
-        return parse_candidate_response(response, candidate_names, self._rng, action_type="attack")
+        logger.info("LLM アクション完了: player=%s, action=attack, elapsed=%.2fs", werewolf.name, result.elapsed)
+        return parse_candidate_response(result.content, candidate_names, self._rng, action_type="attack")
