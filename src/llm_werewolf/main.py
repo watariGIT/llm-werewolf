@@ -164,6 +164,10 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     night_action_type = get_night_action_type(session) if session.step == GameStep.NIGHT_ACTION else None
     night_action_candidates = get_night_action_candidates(session) if session.step == GameStep.NIGHT_ACTION else []
 
+    # speaking_order に基づくプレイヤー表示順
+    name_to_player = {p.name: p for p in session.game.players}
+    ordered_players = [name_to_player[name] for name in session.speaking_order if name in name_to_player]
+
     return templates.TemplateResponse(
         request,
         "game.html",
@@ -177,6 +181,7 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
             "night_action_type": night_action_type,
             "night_action_candidates": night_action_candidates,
             "game_id": game_id,
+            "ordered_players": ordered_players,
         },
     )
 

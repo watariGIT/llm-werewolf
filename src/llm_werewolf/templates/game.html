@@ -171,7 +171,7 @@
         <div class="panel">
             <h2>プレイヤー</h2>
             <div class="players">
-                {% for p in game.players %}
+                {% for p in ordered_players %}
                 <div class="player-tag {{ 'alive' if p.is_alive else 'dead' }} {{ 'you' if p.name == session.human_player_name else '' }}">
                     {{ p.name }}
                     {% if p.name == session.human_player_name %}
@@ -397,7 +397,7 @@
 
                 <h2 style="margin: 1.5rem 0 1rem;">配役公開</h2>
                 <div class="players" style="justify-content: center;">
-                    {% for p in game.players %}
+                    {% for p in ordered_players %}
                     <div class="player-tag {{ 'alive' if p.is_alive else 'dead' }}">
                         {{ p.name }}
                         <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
