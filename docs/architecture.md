@@ -101,8 +101,8 @@ src/llm_werewolf/
 
 | モード | 用途 | ストア |
 |--------|------|--------|
-| 一括実行モード | AI のみでゲームを最初から最後まで自動実行し、結果を JSON API で返す | `GameSessionStore` |
-| インタラクティブモード | ユーザーと AI が対戦し、ステップごとに進行する Web UI 版 | `InteractiveSessionStore` |
+| インタラクティブモード | メインのゲーム体験。ユーザーと AI が対戦し、ステップごとに進行する Web UI 版 | `InteractiveSessionStore` |
+| 一括実行モード | 開発用内部ツール。AI のみで自動対戦し結果を JSON API で返す。Step 2 以降の LLM 品質評価・ベンチマークに活用 | `GameSessionStore` |
 
 ### セッション管理 (`session.py`)
 
