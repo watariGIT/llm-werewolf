@@ -78,6 +78,14 @@ class TestInteractiveSessionStore:
         with pytest.raises(SessionLimitExceeded):
             store.create("Overflow", rng=random.Random(999))
 
+    def test_create_after_delete_allows_new_session(self) -> None:
+        store = InteractiveSessionStore(max_sessions=2)
+        s1 = store.create("Player0", rng=random.Random(0))
+        store.create("Player1", rng=random.Random(1))
+        store.delete(s1.game_id)
+        session = store.create("Player2", rng=random.Random(2))
+        assert session.game_id is not None
+
 
 class TestAdvanceToDiscussion:
     def test_transitions_to_discussion(self) -> None:
