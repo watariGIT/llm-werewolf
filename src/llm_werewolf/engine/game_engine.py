@@ -24,6 +24,9 @@ class GameEngine:
         self._game = game
         self._providers = providers
         self._rng = rng if rng is not None else random.Random()
+        # 発言順をランダムに決定
+        names = [p.name for p in game.players]
+        self._speaking_order: tuple[str, ...] = tuple(self._rng.sample(names, len(names)))
 
     @property
     def game(self) -> GameState:
@@ -102,6 +105,14 @@ class GameEngine:
             seer_name, target_name, _ = divine_result
             game = game.add_divine_history(seer_name, target_name)
 
+        # 襲撃された人の次から発言順を回転
+        if attack_target_name is not None:
+            order = list(self._speaking_order)
+            if attack_target_name in order:
+                idx = order.index(attack_target_name)
+                rotated = order[idx + 1 :] + order[:idx]
+                self._speaking_order = tuple(rotated)
+
         # 次の日へ
         game = replace(game, phase=Phase.DAY, day=game.day + 1)
         return game
@@ -130,11 +141,18 @@ class GameEngine:
 
         return game
 
+    def _get_alive_speaking_order(self, game: GameState) -> list[Player]:
+        """speaking_order に基づき生存プレイヤーを発言順で返す。"""
+        alive_names = {p.name for p in game.alive_players}
+        name_to_player = {p.name: p for p in game.alive_players}
+        return [name_to_player[name] for name in self._speaking_order if name in alive_names]
+
     def _discussion_phase(self, game: GameState) -> GameState:
         rounds = 1 if game.day == 1 else 2
+        ordered = self._get_alive_speaking_order(game)
         for round_num in range(1, rounds + 1):
             game = game.add_log(f"[議論] ラウンド {round_num}")
-            for player in game.alive_players:
+            for player in ordered:
                 provider = self._providers[player.name]
                 message = provider.discuss(game, player)
                 game = game.add_log(f"[発言] {player.name}: {message}")
