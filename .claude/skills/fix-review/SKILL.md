@@ -14,6 +14,22 @@ PR レビューの指摘事項を修正するスキル。レビューコメン�
 
 ## ワークフロー
 
+### Step 0: 作業ディレクトリの確認
+
+PR のブランチに対応する worktree が存在するか確認し、worktree 内で作業する。
+
+```bash
+BRANCH_NAME=$(gh pr view <番号> --json headRefName -q .headRefName)
+if [ -d ".worktrees/$BRANCH_NAME" ]; then
+  cd .worktrees/$BRANCH_NAME
+else
+  git worktree add .worktrees/$BRANCH_NAME $BRANCH_NAME
+  cd .worktrees/$BRANCH_NAME
+fi
+```
+
+以降の全 Step は worktree ディレクトリ内で実行する。
+
 ### Step 1: 指摘事項の収集
 
 2つのソースから指摘を集める:
