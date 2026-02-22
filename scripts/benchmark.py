@@ -65,6 +65,7 @@ def run_single_game(
         "turns": final_state.day - 1,
         "api_calls": total_calls,
         "average_latency": round(avg_latency, 4),
+        "log": list(final_state.log),
     }
 
 
