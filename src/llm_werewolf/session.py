@@ -273,11 +273,8 @@ def handle_user_vote(session: InteractiveSession, target_name: str) -> None:
     votes, winner = engine.handle_user_vote(target_name)
     _sync_engine_to_session(session, engine)
     session.current_votes = votes
-
-    if winner is not None:
-        _set_game_over(session, winner)
-    else:
-        session.step = GameStep.EXECUTION_RESULT
+    session.winner = winner
+    session.step = GameStep.EXECUTION_RESULT
 
 
 def handle_auto_vote(session: InteractiveSession) -> None:
@@ -286,11 +283,8 @@ def handle_auto_vote(session: InteractiveSession) -> None:
     votes, winner = engine.handle_auto_vote()
     _sync_engine_to_session(session, engine)
     session.current_votes = votes
-
-    if winner is not None:
-        _set_game_over(session, winner)
-    else:
-        session.step = GameStep.EXECUTION_RESULT
+    session.winner = winner
+    session.step = GameStep.EXECUTION_RESULT
 
 
 def get_night_action_type(session: InteractiveSession) -> NightActionType | None:
@@ -303,6 +297,14 @@ def get_night_action_candidates(session: InteractiveSession) -> list[Player]:
     """ユーザーの夜行動の対象候補を返す。"""
     engine = _create_engine(session)
     return engine.get_night_action_candidates()
+
+
+def advance_from_execution_result(session: InteractiveSession) -> None:
+    """EXECUTION_RESULT から次ステップへ遷移する。勝者が確定済みなら GAME_OVER、それ以外は夜フェーズへ。"""
+    if session.winner is not None:
+        _set_game_over(session, session.winner)
+    else:
+        start_night_phase(session)
 
 
 def start_night_phase(session: InteractiveSession) -> None:

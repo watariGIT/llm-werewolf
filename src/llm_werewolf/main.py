@@ -20,6 +20,7 @@ from llm_werewolf.session import (
     GameStep,
     InteractiveSessionStore,
     SessionLimitExceeded,
+    advance_from_execution_result,
     advance_to_discussion,
     get_night_action_candidates,
     get_night_action_type,
@@ -28,7 +29,6 @@ from llm_werewolf.session import (
     handle_user_discuss,
     handle_user_vote,
     skip_to_vote,
-    start_night_phase,
 )
 
 load_dotenv()
@@ -235,7 +235,7 @@ async def advance_game(game_id: str) -> RedirectResponse:
         handle_auto_vote(session)
         advanced = True
     elif session.step == GameStep.EXECUTION_RESULT:
-        start_night_phase(session)
+        advance_from_execution_result(session)
         advanced = True
     elif session.step == GameStep.NIGHT_RESULT:
         advance_to_discussion(session)

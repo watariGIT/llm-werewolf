@@ -9,6 +9,7 @@ from llm_werewolf.session import (
     InteractiveSession,
     InteractiveSessionStore,
     SessionLimitExceeded,
+    advance_from_execution_result,
     advance_to_discussion,
     get_night_action_candidates,
     get_night_action_type,
@@ -137,14 +138,14 @@ class TestSkipToVote:
 
 
 class TestHandleUserVote:
-    def test_transitions_to_execution_result_on_no_victory(self) -> None:
+    def test_always_transitions_to_execution_result(self) -> None:
         session = _create_session()
         advance_to_discussion(session)
         handle_user_discuss(session, "test")
         # 誰か生存者に投票
         candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
         handle_user_vote(session, candidates[0].name)
-        assert session.step in (GameStep.EXECUTION_RESULT, GameStep.GAME_OVER)
+        assert session.step == GameStep.EXECUTION_RESULT
 
     def test_records_votes_in_log(self) -> None:
         session = _create_session()
@@ -164,8 +165,7 @@ class TestHandleUserVote:
         assert len(session.current_votes) > 0
 
     def test_game_over_when_werewolf_executed(self) -> None:
-        """人狼が処刑されたらゲーム終了になる。seed を調整して人狼を直接処刑する。"""
-        # 人狼を見つけてそのプレイヤーに全員投票させるような状況を作る
+        """人狼が処刑されたら EXECUTION_RESULT を経由してゲーム終了になる。"""
         for seed in range(100):
             session = _create_session(seed=seed)
             advance_to_discussion(session)
@@ -177,21 +177,25 @@ class TestHandleUserVote:
                 continue
 
             handle_user_vote(session, werewolf.name)
-            if session.step == GameStep.GAME_OVER:
-                assert session.winner == Team.VILLAGE
+            if session.winner == Team.VILLAGE:
+                # 勝者が確定していても EXECUTION_RESULT を経由する
+                assert session.step == GameStep.EXECUTION_RESULT
+                assert len(session.current_votes) > 0
+                # advance_from_execution_result で GAME_OVER に遷移
+                advance_from_execution_result(session)
+                assert session.step == GameStep.GAME_OVER
                 return
 
-        # いずれかの seed で GAME_OVER になるはず（大量投票でランダム的に当たる）
         pytest.skip("No seed found that results in werewolf execution")
 
 
 class TestHandleAutoVote:
-    def test_transitions_after_auto_vote(self) -> None:
+    def test_always_transitions_to_execution_result(self) -> None:
         session = _create_session()
         advance_to_discussion(session)
         skip_to_vote(session)
         handle_auto_vote(session)
-        assert session.step in (GameStep.EXECUTION_RESULT, GameStep.GAME_OVER)
+        assert session.step == GameStep.EXECUTION_RESULT
 
 
 class TestExecuteNightPhase:
@@ -202,13 +206,13 @@ class TestExecuteNightPhase:
         candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
         handle_user_vote(session, candidates[0].name)
 
-        if session.step == GameStep.EXECUTION_RESULT:
-            start_night_phase(session)
-            if session.step == GameStep.NIGHT_ACTION:
-                candidates = get_night_action_candidates(session)
-                if candidates:
-                    handle_night_action(session, candidates[0].name)
-            assert session.step in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER)
+        assert session.step == GameStep.EXECUTION_RESULT
+        advance_from_execution_result(session)
+        if session.step == GameStep.NIGHT_ACTION:
+            candidates = get_night_action_candidates(session)
+            if candidates:
+                handle_night_action(session, candidates[0].name)
+        assert session.step in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER)
 
     def test_increments_day_after_night(self) -> None:
         session = _create_session()
@@ -218,7 +222,8 @@ class TestExecuteNightPhase:
         candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
         handle_user_vote(session, candidates[0].name)
 
-        if session.step == GameStep.EXECUTION_RESULT:
+        assert session.step == GameStep.EXECUTION_RESULT
+        if session.winner is None:
             start_night_phase(session)
             if session.step == GameStep.NIGHT_ACTION:
                 candidates = get_night_action_candidates(session)
@@ -246,7 +251,8 @@ class TestExecuteNightPhase:
                 continue
 
             handle_user_vote(session, villager.name)
-            if session.step != GameStep.EXECUTION_RESULT:
+            assert session.step == GameStep.EXECUTION_RESULT
+            if session.winner is not None:
                 continue
 
             alive_before = len(session.game.alive_players)
@@ -294,7 +300,7 @@ class TestFullGameFlow:
                 else:
                     handle_auto_vote(session)
             elif session.step == GameStep.EXECUTION_RESULT:
-                start_night_phase(session)
+                advance_from_execution_result(session)
                 if session.step == GameStep.NIGHT_ACTION:
                     candidates = get_night_action_candidates(session)
                     if candidates:
@@ -343,7 +349,7 @@ class TestNightAction:
             handle_user_discuss(session, "test")
             candidates = [p for p in session.game.alive_players if p.name != "Alice"]
             handle_user_vote(session, candidates[0].name)
-            if session.step != GameStep.EXECUTION_RESULT:
+            if session.winner is not None:
                 continue
             # Alice が生存しているか確認
             human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
@@ -362,7 +368,7 @@ class TestNightAction:
             handle_user_discuss(session, "test")
             candidates = [p for p in session.game.alive_players if p.name != "Alice"]
             handle_user_vote(session, candidates[0].name)
-            if session.step != GameStep.EXECUTION_RESULT:
+            if session.winner is not None:
                 continue
             human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
             if human is None:
@@ -380,7 +386,7 @@ class TestNightAction:
             handle_user_discuss(session, "test")
             candidates = [p for p in session.game.alive_players if p.name != "Alice"]
             handle_user_vote(session, candidates[0].name)
-            if session.step != GameStep.EXECUTION_RESULT:
+            if session.winner is not None:
                 continue
             start_night_phase(session)
             assert session.step != GameStep.NIGHT_ACTION
@@ -393,7 +399,7 @@ class TestNightAction:
         handle_user_discuss(session, "test")
         candidates = [p for p in session.game.alive_players if p.name != "Alice"]
         handle_user_vote(session, candidates[0].name)
-        if session.step == GameStep.EXECUTION_RESULT:
+        if session.winner is None:
             start_night_phase(session)
             if session.step == GameStep.NIGHT_ACTION:
                 night_candidates = get_night_action_candidates(session)
@@ -406,7 +412,7 @@ class TestNightAction:
         handle_user_discuss(session, "test")
         candidates = [p for p in session.game.alive_players if p.name != "Alice"]
         handle_user_vote(session, candidates[0].name)
-        if session.step == GameStep.EXECUTION_RESULT:
+        if session.winner is None:
             start_night_phase(session)
             if session.step == GameStep.NIGHT_ACTION:
                 night_candidates = get_night_action_candidates(session)
@@ -419,7 +425,7 @@ class TestNightAction:
         handle_user_discuss(session, "test")
         candidates = [p for p in session.game.alive_players if p.name != "Alice"]
         handle_user_vote(session, candidates[0].name)
-        if session.step == GameStep.EXECUTION_RESULT:
+        if session.winner is None:
             start_night_phase(session)
             if session.step == GameStep.NIGHT_ACTION:
                 night_candidates = get_night_action_candidates(session)
@@ -445,7 +451,7 @@ class TestDiscussionRounds:
             handle_user_discuss(session, "Day1 発言")
             candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
             handle_user_vote(session, candidates[0].name)
-            if session.step != GameStep.EXECUTION_RESULT:
+            if session.winner is not None:
                 continue
             start_night_phase(session)
             if session.step == GameStep.NIGHT_ACTION:
@@ -532,7 +538,7 @@ class TestSpeakingOrder:
                 continue
 
             handle_user_vote(session, villager.name)
-            if session.step != GameStep.EXECUTION_RESULT:
+            if session.winner is not None:
                 continue
 
             start_night_phase(session)
@@ -599,7 +605,7 @@ class TestSpeakingOrder:
                 continue
 
             handle_user_vote(session, villager.name)
-            if session.step != GameStep.EXECUTION_RESULT:
+            if session.winner is not None:
                 continue
 
             start_night_phase(session)

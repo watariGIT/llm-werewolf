@@ -136,8 +136,9 @@ src/llm_werewolf/
 | `advance_to_discussion` | `InteractiveGameEngine.advance_discussion()` を呼び出し DISCUSSION ステップへ遷移 |
 | `handle_user_discuss` | `InteractiveGameEngine.handle_user_discuss()` を呼び出し、結果に応じて VOTE または次ラウンドへ遷移 |
 | `skip_to_vote` | ユーザー死亡時に `discussion_round` をリセットし VOTE へスキップ |
-| `handle_user_vote` | `InteractiveGameEngine.handle_user_vote()` を呼び出し、結果に応じて EXECUTION_RESULT または GAME_OVER へ遷移 |
-| `handle_auto_vote` | `InteractiveGameEngine.handle_auto_vote()` を呼び出し、ユーザー死亡時の AI のみ投票を処理 |
+| `handle_user_vote` | `InteractiveGameEngine.handle_user_vote()` を呼び出し、常に EXECUTION_RESULT へ遷移。勝者が確定した場合は `session.winner` に保持 |
+| `handle_auto_vote` | `InteractiveGameEngine.handle_auto_vote()` を呼び出し、ユーザー死亡時の AI のみ投票を処理。常に EXECUTION_RESULT へ遷移 |
+| `advance_from_execution_result` | `session.winner` が設定済みなら `_set_game_over()` で GAME_OVER へ、未設定なら `start_night_phase()` で夜フェーズへ遷移 |
 | `start_night_phase` | `InteractiveGameEngine.start_night()` を呼び出し、NIGHT_ACTION または即解決へ遷移 |
 | `handle_night_action` | ユーザーの夜行動を検証し `resolve_night_phase()` へ委譲 |
 | `resolve_night_phase` | `InteractiveGameEngine.resolve_night()` を呼び出し夜を完了 |
