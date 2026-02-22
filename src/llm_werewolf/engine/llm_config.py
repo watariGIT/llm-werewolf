@@ -32,7 +32,16 @@ def load_llm_config() -> LLMConfig:
         raise ValueError("環境変数 OPENAI_API_KEY が設定されていません")
 
     model_name = os.environ.get("OPENAI_MODEL_NAME", DEFAULT_MODEL_NAME).strip()
-    temperature_str = os.environ.get("OPENAI_TEMPERATURE", "")
-    temperature = float(temperature_str) if temperature_str.strip() else DEFAULT_TEMPERATURE
+
+    temperature_str = os.environ.get("OPENAI_TEMPERATURE", "").strip()
+    if temperature_str:
+        try:
+            temperature = float(temperature_str)
+        except ValueError:
+            raise ValueError(f"OPENAI_TEMPERATURE の値が不正です: {temperature_str!r}")
+        if not (0.0 <= temperature <= 2.0):
+            raise ValueError(f"OPENAI_TEMPERATURE は 0.0〜2.0 の範囲で指定してください: {temperature}")
+    else:
+        temperature = DEFAULT_TEMPERATURE
 
     return LLMConfig(model_name=model_name, temperature=temperature, api_key=api_key)

@@ -45,6 +45,20 @@ class TestLLMConfig:
 
         assert config.temperature == 0.5
 
+    def test_load_with_invalid_temperature_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setenv("OPENAI_TEMPERATURE", "abc")
+
+        with pytest.raises(ValueError, match="OPENAI_TEMPERATURE の値が不正です"):
+            load_llm_config()
+
+    def test_load_with_out_of_range_temperature_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setenv("OPENAI_TEMPERATURE", "3.0")
+
+        with pytest.raises(ValueError, match="0.0〜2.0"):
+            load_llm_config()
+
     def test_config_is_frozen(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
         monkeypatch.delenv("OPENAI_MODEL_NAME", raising=False)
