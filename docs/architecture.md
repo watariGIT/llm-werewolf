@@ -118,10 +118,10 @@ src/llm_werewolf/
 |-------------|------|
 | `MAX_SESSIONS` | セッション数の上限定数（デフォルト100）。DoS 対策として両ストアで共有 |
 | `SessionLimitExceeded` | セッション数が上限に達した場合に発生する例外 |
-| `GameSessionStore` | 一括実行ゲームの CRUD 管理。ゲームID → GameState のマッピングを保持 |
+| `GameSessionStore` | 一括実行ゲームの CRUD 管理。ゲームID → GameState のマッピングを保持。`create()` に `LLMConfig` を渡すと `LLMActionProvider` を使用し、省略時は `RandomActionProvider` にフォールバック |
 | `GameStep` | インタラクティブゲームの進行ステップ。遷移順: `role_reveal` → `discussion` → `vote` → `execution_result` → `night_action` → `night_result` → `discussion`（次の日）。勝利時は `game_over` へ遷移 |
 | `InteractiveSession` | インタラクティブゲームの状態。GameState + 進行ステップ + AI providers + `discussion_round`（議論ラウンド番号）+ `speaking_order`（発言順）+ `display_order`（UI表示用の固定プレイヤー順）を保持 |
-| `InteractiveSessionStore` | InteractiveSession のインメモリ CRUD |
+| `InteractiveSessionStore` | InteractiveSession のインメモリ CRUD。`create()` に `LLMConfig` を渡すと AI プレイヤーに `LLMActionProvider` を使用し、省略時は `RandomActionProvider` にフォールバック |
 
 #### ステップ進行関数
 

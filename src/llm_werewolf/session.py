@@ -18,6 +18,8 @@ from llm_werewolf.domain.value_objects import Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
+from llm_werewolf.engine.llm_config import LLMConfig
+from llm_werewolf.engine.llm_provider import LLMActionProvider
 from llm_werewolf.engine.random_provider import RandomActionProvider
 
 AI_NAMES: list[str] = ["AI-1", "AI-2", "AI-3", "AI-4"]
@@ -71,12 +73,18 @@ class GameSessionStore:
         self._sessions: dict[str, GameState] = {}
         self._max_sessions = max_sessions
 
-    def create(self, player_names: list[str], rng: random.Random | None = None) -> tuple[str, GameState]:
+    def create(
+        self,
+        player_names: list[str],
+        rng: random.Random | None = None,
+        config: LLMConfig | None = None,
+    ) -> tuple[str, GameState]:
         """新規ゲームを作成し、一括実行して結果を保存する。
 
         Args:
             player_names: プレイヤー名リスト（5人）
             rng: テスト用の乱数生成器
+            config: LLM設定。指定時は LLMActionProvider を使用、None 時は RandomActionProvider
 
         Returns:
             (ゲームID, 最終GameState) のタプル
@@ -89,8 +97,12 @@ class GameSessionStore:
         game_id = self._generate_unique_id()
         initial_state = create_game(player_names, rng=rng)
 
-        # 全プレイヤーに RandomActionProvider を割り当て
-        providers: dict[str, ActionProvider] = {p.name: RandomActionProvider(rng=rng) for p in initial_state.players}
+        if config is not None:
+            providers: dict[str, ActionProvider] = {
+                p.name: LLMActionProvider(config, rng=rng) for p in initial_state.players
+            }
+        else:
+            providers = {p.name: RandomActionProvider(rng=rng) for p in initial_state.players}
         engine = GameEngine(initial_state, providers, rng=rng)
         final_state = engine.run()
 
@@ -129,13 +141,20 @@ class InteractiveSessionStore:
         self._sessions: dict[str, InteractiveSession] = {}
         self._max_sessions = max_sessions
 
-    def create(self, human_name: str, rng: random.Random | None = None, role: Role | None = None) -> InteractiveSession:
+    def create(
+        self,
+        human_name: str,
+        rng: random.Random | None = None,
+        role: Role | None = None,
+        config: LLMConfig | None = None,
+    ) -> InteractiveSession:
         """新規インタラクティブゲームを作成する。
 
         Args:
             human_name: ユーザーのプレイヤー名
             rng: テスト用の乱数生成器
             role: ユーザーの役職（None の場合はランダム）
+            config: LLM設定。指定時は LLMActionProvider を使用、None 時は RandomActionProvider
 
         Raises:
             SessionLimitExceeded: セッション数が上限に達した場合
@@ -154,9 +173,11 @@ class InteractiveSessionStore:
         for p in game.players:
             game = game.add_log(f"[配役] {p.name}: {p.role.value}")
 
-        providers: dict[str, ActionProvider] = {
-            name: RandomActionProvider(rng=random.Random(rng.randint(0, 2**32))) for name in AI_NAMES
-        }
+        providers: dict[str, ActionProvider]
+        if config is not None:
+            providers = {name: LLMActionProvider(config, rng=random.Random(rng.randint(0, 2**32))) for name in AI_NAMES}
+        else:
+            providers = {name: RandomActionProvider(rng=random.Random(rng.randint(0, 2**32))) for name in AI_NAMES}
 
         # 発言順をランダムで決定
         speaking_order = tuple(rng.sample(all_names, len(all_names)))

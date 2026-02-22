@@ -1,9 +1,12 @@
 import random
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
-from llm_werewolf.session import GameSessionStore, SessionLimitExceeded
+from llm_werewolf.engine.llm_config import LLMConfig
+from llm_werewolf.engine.random_provider import RandomActionProvider
+from llm_werewolf.session import GameSessionStore, InteractiveSessionStore, SessionLimitExceeded
 
 PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
 
@@ -87,3 +90,42 @@ class TestGameSessionStore:
         store.delete(id1)
         game_id, _ = store.create(PLAYER_NAMES, rng=random.Random(2))
         assert game_id is not None
+
+
+def _create_test_config() -> LLMConfig:
+    return LLMConfig(model_name="gpt-4o-mini", temperature=0.7, api_key="test-key")
+
+
+class TestGameSessionStoreWithLLM:
+    @patch("llm_werewolf.session.LLMActionProvider")
+    def test_create_with_config_uses_llm_provider(self, mock_llm_cls: MagicMock) -> None:
+        mock_llm_cls.side_effect = lambda config, rng=None: RandomActionProvider(rng=rng)
+        store = GameSessionStore()
+        config = _create_test_config()
+        game_id, game = store.create(PLAYER_NAMES, rng=random.Random(42), config=config)
+        assert isinstance(game_id, str)
+        assert len(game.log) > 0
+        assert mock_llm_cls.call_count == REQUIRED_PLAYER_COUNT
+
+    def test_create_without_config_uses_random_provider(self) -> None:
+        store = GameSessionStore()
+        game_id, game = store.create(PLAYER_NAMES, rng=random.Random(42))
+        assert isinstance(game_id, str)
+        assert len(game.log) > 0
+
+
+class TestInteractiveSessionStoreWithLLM:
+    @patch("llm_werewolf.session.LLMActionProvider")
+    def test_create_with_config_uses_llm_provider(self, mock_llm_cls: MagicMock) -> None:
+        mock_llm_cls.side_effect = lambda config, rng=None: RandomActionProvider(rng=rng)
+        store = InteractiveSessionStore()
+        config = _create_test_config()
+        session = store.create("Player", rng=random.Random(42), config=config)
+        assert session.human_player_name == "Player"
+        assert mock_llm_cls.call_count == 4  # AI_NAMES の4人分
+
+    def test_create_without_config_uses_random_provider(self) -> None:
+        store = InteractiveSessionStore()
+        session = store.create("Player", rng=random.Random(42))
+        for provider in session.providers.values():
+            assert isinstance(provider, RandomActionProvider)

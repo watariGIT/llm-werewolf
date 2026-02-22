@@ -35,7 +35,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 try:
-    load_llm_config()
+    llm_config = load_llm_config()
 except ValueError as e:
     logger.error(str(e))
     sys.exit(1)
@@ -102,7 +102,7 @@ async def index(request: Request) -> HTMLResponse:
 @app.post("/games")
 async def create_game(body: CreateGameRequest) -> JSONResponse:
     """新規ゲームを作成し、一括実行して結果を返す。"""
-    game_id, game = game_store.create(body.player_names)
+    game_id, game = game_store.create(body.player_names, config=llm_config)
     return JSONResponse(content=_serialize_game(game_id, game), status_code=201)
 
 
@@ -157,7 +157,7 @@ async def create_interactive_game(player_name: str = Form(...), role: str = Form
     if role != "random" and role not in ROLE_MAP:
         raise HTTPException(status_code=400, detail="無効な役職です")
     selected_role = ROLE_MAP.get(role) if role != "random" else None
-    session = interactive_store.create(name, role=selected_role)
+    session = interactive_store.create(name, role=selected_role, config=llm_config)
     return RedirectResponse(url=f"/play/{session.game_id}", status_code=303)
 
 
