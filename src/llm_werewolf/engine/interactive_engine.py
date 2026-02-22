@@ -26,7 +26,6 @@ from llm_werewolf.engine.game_logic import (
     rotate_speaking_order,
     tally_votes,
 )
-from llm_werewolf.engine.random_provider import RandomActionProvider
 
 
 class InteractiveGameEngine:
@@ -298,13 +297,12 @@ class InteractiveGameEngine:
         if not candidates:
             return None
 
-        if human_target is not None and seer.name == self._human_player_name:
+        if seer.name == self._human_player_name:
+            if human_target is None:
+                return None
             target_name = human_target
-        elif seer.name in self._providers:
-            provider = self._providers[seer.name]
-            target_name = provider.divine(self._game, seer, candidates)
         else:
-            provider = RandomActionProvider(rng=self._rng)
+            provider = self._providers[seer.name]
             target_name = provider.divine(self._game, seer, candidates)
 
         self._game, result = execute_divine(self._game, seer, target_name)
@@ -321,13 +319,12 @@ class InteractiveGameEngine:
         if not candidates:
             return None
 
-        if human_target is not None and werewolf.name == self._human_player_name:
+        if werewolf.name == self._human_player_name:
+            if human_target is None:
+                return None
             target_name = human_target
-        elif werewolf.name in self._providers:
-            provider = self._providers[werewolf.name]
-            target_name = provider.attack(self._game, werewolf, candidates)
         else:
-            provider = RandomActionProvider(rng=self._rng)
+            provider = self._providers[werewolf.name]
             target_name = provider.attack(self._game, werewolf, candidates)
 
         self._game, attack_target = execute_attack(self._game, werewolf, target_name)
