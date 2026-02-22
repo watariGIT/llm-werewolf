@@ -166,7 +166,11 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
 
     # speaking_order に基づくプレイヤー表示順
     name_to_player = {p.name: p for p in session.game.players}
-    ordered_players = [name_to_player[name] for name in session.speaking_order if name in name_to_player]
+    ordered_players = (
+        [name_to_player[name] for name in session.speaking_order if name in name_to_player]
+        if session.speaking_order
+        else list(session.game.players)
+    )
 
     return templates.TemplateResponse(
         request,

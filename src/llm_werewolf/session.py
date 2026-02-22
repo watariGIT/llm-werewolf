@@ -469,13 +469,12 @@ def resolve_night_phase(
         _, seer_name_rec, target_name_rec, _ = divine_result
         game = game.add_divine_history(seer_name_rec, target_name_rec)
 
-    # 襲撃された人の次から発言順を回転
+    # 襲撃された人の次から発言順を回転（襲撃された人は除外）
     if attack_target_name is not None:
         order = list(session.speaking_order)
         if attack_target_name in order:
             idx = order.index(attack_target_name)
-            # 襲撃された人の次の位置から開始するよう回転
-            rotated = order[idx + 1 :] + order[: idx + 1]
+            rotated = order[idx + 1 :] + order[:idx]
             session.speaking_order = tuple(rotated)
 
     # 次の日へ
