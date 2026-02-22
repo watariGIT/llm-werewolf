@@ -80,6 +80,33 @@ uv run uvicorn llm_werewolf.main:app --reload
 
 サーバー起動後、ブラウザで http://127.0.0.1:8000 にアクセスしてゲームをプレイできます。
 
+### OpenAI API キーの設定
+
+AI プレイヤーの動作に OpenAI API を使用するため、API キーの設定が必要です。
+
+1. [OpenAI Platform](https://platform.openai.com/api-keys) でAPIキーを取得
+2. プロジェクトルートに `.env` ファイルを作成（`.env.example` をコピー）
+
+```bash
+cp .env.example .env
+```
+
+3. `.env` ファイルを編集し、取得したAPIキーを設定
+
+```
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+以下の設定もオプションで変更可能です:
+
+| 環境変数 | 説明 | デフォルト値 |
+|----------|------|-------------|
+| `OPENAI_API_KEY` | OpenAI API キー（必須） | — |
+| `OPENAI_MODEL_NAME` | 使用するモデル名 | `gpt-4o-mini` |
+| `OPENAI_TEMPERATURE` | 応答のランダム性（0.0〜2.0） | `0.7` |
+
+`OPENAI_API_KEY` が未設定の場合、起動時にエラーメッセージが表示されサーバーは起動しません。
+
 ### リント・型チェック・テスト
 
 ```bash
