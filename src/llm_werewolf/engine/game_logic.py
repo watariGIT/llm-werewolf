@@ -15,15 +15,6 @@ from llm_werewolf.domain.services import can_attack, can_divine
 from llm_werewolf.domain.value_objects import Role
 
 
-def find_player(game: GameState, name: str, *, alive_only: bool = False) -> Player | None:
-    """プレイヤーを検索する。alive_only=True の場合は生存者のみ。"""
-    players = game.alive_players if alive_only else game.players
-    for p in players:
-        if p.name == name:
-            return p
-    return None
-
-
 def get_alive_speaking_order(game: GameState, speaking_order: tuple[str, ...]) -> list[Player]:
     """speaking_order に基づき生存プレイヤーを発言順で返す。"""
     if not speaking_order:
@@ -48,7 +39,7 @@ def notify_divine_result(game: GameState) -> GameState:
         return game
 
     last_target_name = history[-1]
-    last_target = find_player(game, last_target_name)
+    last_target = game.find_player(last_target_name)
     if last_target is not None:
         is_werewolf = last_target.role == Role.WEREWOLF
         result_text = "人狼" if is_werewolf else "人狼ではない"
@@ -65,7 +56,7 @@ def get_divine_candidates(game: GameState, seer: Player) -> tuple[Player, ...]:
 
 def execute_divine(game: GameState, seer: Player, target_name: str) -> tuple[GameState, tuple[str, str, bool] | None]:
     """占い対象名が確定した後の占い実行（検証＋ログ）。"""
-    target = find_player(game, target_name, alive_only=True)
+    target = game.find_player(target_name, alive_only=True)
     if target is None:
         return game, None
 
@@ -86,7 +77,7 @@ def get_attack_candidates(game: GameState) -> tuple[Player, ...]:
 
 def execute_attack(game: GameState, werewolf: Player, target_name: str) -> tuple[GameState, str | None]:
     """襲撃対象名が確定した後の襲撃実行（検証のみ、キルは呼び出し側で行う）。"""
-    target = find_player(game, target_name, alive_only=True)
+    target = game.find_player(target_name, alive_only=True)
     if target is None:
         return game, None
 

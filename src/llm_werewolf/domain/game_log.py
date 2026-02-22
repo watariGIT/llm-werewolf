@@ -10,13 +10,6 @@ from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Role
 
 
-def _find_player(game: GameState, name: str) -> Player | None:
-    for p in game.players:
-        if p.name == name:
-            return p
-    return None
-
-
 def _is_visible(log_entry: str, player: Player) -> bool:
     """ログエントリがプレイヤーに見えるかどうか判定する。
 
@@ -51,7 +44,7 @@ def format_log_for_context(game: GameState, player_name: str) -> str:
     Raises:
         ValueError: 指定された名前のプレイヤーが存在しない場合
     """
-    player = _find_player(game, player_name)
+    player = game.find_player(player_name)
     if player is None:
         raise ValueError(f"Player '{player_name}' not found in game")
 

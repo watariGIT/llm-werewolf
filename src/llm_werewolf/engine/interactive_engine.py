@@ -18,7 +18,6 @@ from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
-    find_player,
     get_alive_speaking_order,
     get_attack_candidates,
     get_discussion_rounds,
@@ -84,7 +83,7 @@ class InteractiveGameEngine:
         self._discussion_round += 1
         self._game = self._game.add_log(f"[議論] ラウンド {self._discussion_round}")
 
-        human = find_player(self._game, self._human_player_name, alive_only=True)
+        human = self._game.find_player(self._human_player_name, alive_only=True)
         ordered = get_alive_speaking_order(self._game, self._speaking_order)
 
         if human is None:
@@ -108,7 +107,7 @@ class InteractiveGameEngine:
             vote_ready が True なら全ラウンド完了で投票フェーズへ遷移すべき。
         """
         messages: list[str] = []
-        human = find_player(self._game, self._human_player_name, alive_only=True)
+        human = self._game.find_player(self._human_player_name, alive_only=True)
 
         if human is not None:
             self._game = self._game.add_log(f"[発言] {human.name}: {message}")
@@ -138,7 +137,7 @@ class InteractiveGameEngine:
         """
         votes: dict[str, str] = {}
 
-        human = find_player(self._game, self._human_player_name, alive_only=True)
+        human = self._game.find_player(self._human_player_name, alive_only=True)
         if human is not None:
             votes[human.name] = target_name
             self._game = self._game.add_log(f"[投票] {human.name} → {target_name}")
@@ -174,7 +173,7 @@ class InteractiveGameEngine:
 
     def get_night_action_type(self) -> str | None:
         """ユーザーの夜行動タイプを返す。"divine" / "attack" / None。"""
-        human = find_player(self._game, self._human_player_name, alive_only=True)
+        human = self._game.find_player(self._human_player_name, alive_only=True)
         if human is None:
             return None
         if human.role == Role.SEER:
@@ -185,7 +184,7 @@ class InteractiveGameEngine:
 
     def get_night_action_candidates(self) -> list[Player]:
         """ユーザーの夜行動の対象候補を返す。"""
-        human = find_player(self._game, self._human_player_name, alive_only=True)
+        human = self._game.find_player(self._human_player_name, alive_only=True)
         if human is None:
             return []
         if human.role == Role.SEER:
@@ -212,7 +211,7 @@ class InteractiveGameEngine:
         # 襲撃を実行
         attack_target_name = self._resolve_attack(human_attack_target)
         if attack_target_name is not None:
-            attack_target = find_player(self._game, attack_target_name, alive_only=True)
+            attack_target = self._game.find_player(attack_target_name, alive_only=True)
             if attack_target is not None:
                 dead_player = attack_target.killed()
                 self._game = self._game.replace_player(attack_target, dead_player)
@@ -271,7 +270,7 @@ class InteractiveGameEngine:
 
         vote_counts = Counter(votes.values())
 
-        executed_player = find_player(self._game, executed_name, alive_only=True)
+        executed_player = self._game.find_player(executed_name, alive_only=True)
         if executed_player is not None:
             dead_player = executed_player.killed()
             self._game = self._game.replace_player(executed_player, dead_player)
@@ -283,7 +282,7 @@ class InteractiveGameEngine:
 
     def _human_has_night_action(self) -> bool:
         """ユーザーが夜行動を持つか判定する。"""
-        human = find_player(self._game, self._human_player_name, alive_only=True)
+        human = self._game.find_player(self._human_player_name, alive_only=True)
         if human is None:
             return False
         return human.role in (Role.SEER, Role.WEREWOLF)

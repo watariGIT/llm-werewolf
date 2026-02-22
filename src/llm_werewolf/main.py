@@ -13,8 +13,8 @@ from llm_werewolf.domain.value_objects import Role
 from llm_werewolf.session import (
     GameSessionStore,
     GameStep,
-    InteractiveSession,
     InteractiveSessionStore,
+    SessionLimitExceeded,
     advance_to_discussion,
     get_night_action_candidates,
     get_night_action_type,
@@ -80,7 +80,12 @@ async def index(request: Request) -> HTMLResponse:
 @app.post("/games")
 async def create_game(body: CreateGameRequest) -> JSONResponse:
     """新規ゲームを作成し、一括実行して結果を返す。"""
-    game_id, game = game_store.create(body.player_names)
+    try:
+        game_id, game = game_store.create(body.player_names)
+    except SessionLimitExceeded:
+        raise HTTPException(
+            status_code=429, detail="セッション数が上限に達しました。しばらくしてから再試行してください。"
+        )
     return JSONResponse(content=_serialize_game(game_id, game), status_code=201)
 
 
@@ -116,14 +121,6 @@ async def get_game(game_id: str) -> JSONResponse:
 # --- インタラクティブ Web UI ---
 
 
-def _get_human_player(session: InteractiveSession) -> Player | None:
-    """セッションからユーザープレイヤーを取得する。"""
-    for p in session.game.players:
-        if p.name == session.human_player_name:
-            return p
-    return None
-
-
 ROLE_MAP: dict[str, Role] = {
     "villager": Role.VILLAGER,
     "seer": Role.SEER,
@@ -143,7 +140,12 @@ async def create_interactive_game(player_name: str = Form(...), role: str = Form
     if role != "random" and role not in ROLE_MAP:
         raise HTTPException(status_code=400, detail="無効な役職です")
     selected_role = ROLE_MAP.get(role) if role != "random" else None
-    session = interactive_store.create(name, role=selected_role)
+    try:
+        session = interactive_store.create(name, role=selected_role)
+    except SessionLimitExceeded:
+        raise HTTPException(
+            status_code=429, detail="セッション数が上限に達しました。しばらくしてから再試行してください。"
+        )
     return RedirectResponse(url=f"/play/{session.game_id}", status_code=303)
 
 
@@ -154,7 +156,7 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     if session is None:
         raise HTTPException(status_code=404, detail="Game not found")
 
-    human_player = _get_human_player(session)
+    human_player = session.game.find_player(session.human_player_name)
     human_is_alive = human_player is not None and human_player.is_alive
 
     # 投票候補（自分以外の生存者）
@@ -197,7 +199,7 @@ async def advance_game(game_id: str) -> RedirectResponse:
     if session is None:
         raise HTTPException(status_code=404, detail="Game not found")
 
-    human_player = _get_human_player(session)
+    human_player = session.game.find_player(session.human_player_name)
     human_is_alive = human_player is not None and human_player.is_alive
 
     advanced = False

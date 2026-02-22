@@ -6,7 +6,6 @@ from llm_werewolf.domain.value_objects import Role
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
-    find_player,
     get_alive_speaking_order,
     get_attack_candidates,
     get_discussion_rounds,
@@ -27,26 +26,6 @@ def _make_game() -> GameState:
             Player(name="Eve", role=Role.VILLAGER),
         )
     )
-
-
-class TestFindPlayer:
-    def test_find_existing_player(self) -> None:
-        game = _make_game()
-        p = find_player(game, "Alice")
-        assert p is not None
-        assert p.name == "Alice"
-
-    def test_find_missing_player(self) -> None:
-        game = _make_game()
-        assert find_player(game, "Unknown") is None
-
-    def test_find_alive_only(self) -> None:
-        game = _make_game()
-        alice = game.players[0]
-        dead_alice = alice.killed()
-        game = game.replace_player(alice, dead_alice)
-        assert find_player(game, "Alice", alive_only=True) is None
-        assert find_player(game, "Alice", alive_only=False) is not None
 
 
 class TestGetAliveSpeakingOrder:

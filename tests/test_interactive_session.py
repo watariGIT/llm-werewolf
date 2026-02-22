@@ -8,6 +8,7 @@ from llm_werewolf.session import (
     GameStep,
     InteractiveSession,
     InteractiveSessionStore,
+    SessionLimitExceeded,
     advance_to_discussion,
     get_night_action_candidates,
     get_night_action_type,
@@ -69,6 +70,13 @@ class TestInteractiveSessionStore:
         session = store.create("Player1", rng=random.Random(42))
         store.delete(session.game_id)
         assert store.get(session.game_id) is None
+
+    def test_create_raises_when_max_sessions_reached(self) -> None:
+        store = InteractiveSessionStore(max_sessions=3)
+        for i in range(3):
+            store.create(f"Player{i}", rng=random.Random(i))
+        with pytest.raises(SessionLimitExceeded):
+            store.create("Overflow", rng=random.Random(999))
 
 
 class TestAdvanceToDiscussion:

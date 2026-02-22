@@ -65,6 +65,22 @@ class TestGameState:
         # 元の GameState は変更されない
         assert len(game.alive_players) == 5
 
+    def test_find_player_returns_player(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        result = game.find_player("Alice")
+        assert result is not None
+        assert result.name == "Alice"
+
+    def test_find_player_returns_none_for_unknown(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        assert game.find_player("Unknown") is None
+
+    def test_find_player_alive_only(self, players: tuple[Player, ...]) -> None:
+        dead = players[0].killed()
+        game = GameState(players=(dead,) + players[1:])
+        assert game.find_player("Alice", alive_only=False) is not None
+        assert game.find_player("Alice", alive_only=True) is None
+
     def test_frozen(self, players: tuple[Player, ...]) -> None:
         game = GameState(players=players)
         with pytest.raises(AttributeError):
