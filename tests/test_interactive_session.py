@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from llm_werewolf.domain.value_objects import Role, Team
+from llm_werewolf.domain.value_objects import NightActionType, Role, Team
 from llm_werewolf.session import (
     AI_NAMES,
     GameStep,
@@ -351,7 +351,7 @@ class TestNightAction:
                 continue
             start_night_phase(session)
             assert session.step == GameStep.NIGHT_ACTION
-            assert get_night_action_type(session) == "divine"
+            assert get_night_action_type(session) == NightActionType.DIVINE
             return
         pytest.skip("No seed found for seer night action test")
 
@@ -369,7 +369,7 @@ class TestNightAction:
                 continue
             start_night_phase(session)
             assert session.step == GameStep.NIGHT_ACTION
-            assert get_night_action_type(session) == "attack"
+            assert get_night_action_type(session) == NightActionType.ATTACK
             return
         pytest.skip("No seed found for werewolf night action test")
 

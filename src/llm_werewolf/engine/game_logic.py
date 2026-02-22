@@ -12,7 +12,7 @@ from collections import Counter
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import can_attack, can_divine
-from llm_werewolf.domain.value_objects import Role
+from llm_werewolf.domain.value_objects import NightActionType, Role
 
 
 def get_alive_speaking_order(game: GameState, speaking_order: tuple[str, ...]) -> list[Player]:
@@ -108,6 +108,24 @@ def rotate_speaking_order(speaking_order: tuple[str, ...], removed_name: str) ->
     idx = order.index(removed_name)
     rotated = order[idx + 1 :] + order[:idx]
     return tuple(rotated)
+
+
+def find_night_actor(game: GameState, night_action_type: NightActionType) -> Player | None:
+    """指定された夜行動種別を持つ生存プレイヤーを返す。"""
+    for p in game.alive_players:
+        if p.role.night_action_type == night_action_type:
+            return p
+    return None
+
+
+def get_night_action_candidates(game: GameState, player: Player) -> tuple[Player, ...]:
+    """プレイヤーの役職に応じた夜行動の対象候補を返す。"""
+    action_type = player.role.night_action_type
+    if action_type == NightActionType.DIVINE:
+        return get_divine_candidates(game, player)
+    if action_type == NightActionType.ATTACK:
+        return get_attack_candidates(game)
+    return ()
 
 
 def get_discussion_rounds(day: int) -> int:

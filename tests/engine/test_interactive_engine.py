@@ -3,7 +3,7 @@ import random
 import pytest
 
 from llm_werewolf.domain.services import create_game, create_game_with_role
-from llm_werewolf.domain.value_objects import Role, Team
+from llm_werewolf.domain.value_objects import NightActionType, Role, Team
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
 from llm_werewolf.engine.random_provider import RandomActionProvider
 
@@ -113,8 +113,12 @@ class TestHandleUserDiscuss:
                 night_cands = engine.get_night_action_candidates()
                 if night_cands:
                     engine.resolve_night(
-                        human_divine_target=night_cands[0].name if engine.get_night_action_type() == "divine" else None,
-                        human_attack_target=night_cands[0].name if engine.get_night_action_type() == "attack" else None,
+                        human_divine_target=night_cands[0].name
+                        if engine.get_night_action_type() == NightActionType.DIVINE
+                        else None,
+                        human_attack_target=night_cands[0].name
+                        if engine.get_night_action_type() == NightActionType.ATTACK
+                        else None,
                     )
                 else:
                     engine.resolve_night()
@@ -184,7 +188,7 @@ class TestStartNight:
                 continue
             has_action = engine.start_night()
             assert has_action is True
-            assert engine.get_night_action_type() == "divine"
+            assert engine.get_night_action_type() == NightActionType.DIVINE
             return
         pytest.skip("No seed found for seer night action test")
 
@@ -216,7 +220,7 @@ class TestStartNight:
                 continue
             has_action = engine.start_night()
             assert has_action is True
-            assert engine.get_night_action_type() == "attack"
+            assert engine.get_night_action_type() == NightActionType.ATTACK
             return
         pytest.skip("No seed found for werewolf night action test")
 
@@ -391,8 +395,8 @@ class TestFullGame:
                 action_type = engine.get_night_action_type()
                 if night_cands:
                     night_msgs, winner = engine.resolve_night(
-                        human_divine_target=night_cands[0].name if action_type == "divine" else None,
-                        human_attack_target=night_cands[0].name if action_type == "attack" else None,
+                        human_divine_target=night_cands[0].name if action_type == NightActionType.DIVINE else None,
+                        human_attack_target=night_cands[0].name if action_type == NightActionType.ATTACK else None,
                     )
                 else:
                     night_msgs, winner = engine.resolve_night()

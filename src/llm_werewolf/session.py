@@ -14,7 +14,7 @@ from enum import Enum
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import create_game, create_game_with_role
-from llm_werewolf.domain.value_objects import Role, Team
+from llm_werewolf.domain.value_objects import NightActionType, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
@@ -293,8 +293,8 @@ def handle_auto_vote(session: InteractiveSession) -> None:
         session.step = GameStep.EXECUTION_RESULT
 
 
-def get_night_action_type(session: InteractiveSession) -> str | None:
-    """ユーザーの夜行動タイプを返す。"divine" / "attack" / None。"""
+def get_night_action_type(session: InteractiveSession) -> NightActionType | None:
+    """ユーザーの夜行動タイプを返す。"""
     engine = _create_engine(session)
     return engine.get_night_action_type()
 
@@ -320,9 +320,9 @@ def start_night_phase(session: InteractiveSession) -> None:
 def handle_night_action(session: InteractiveSession, target_name: str) -> None:
     """ユーザーの夜行動（占い or 襲撃対象選択）を処理し、夜フェーズを解決する。"""
     engine = _create_engine(session)
-    human = engine.get_night_action_type()
+    action_type = engine.get_night_action_type()
 
-    if human is None:
+    if action_type is None:
         resolve_night_phase(session)
         return
 
@@ -332,9 +332,9 @@ def handle_night_action(session: InteractiveSession, target_name: str) -> None:
         resolve_night_phase(session)
         return
 
-    if human == "divine":
+    if action_type == NightActionType.DIVINE:
         resolve_night_phase(session, human_divine_target=target_name)
-    elif human == "attack":
+    elif action_type == NightActionType.ATTACK:
         resolve_night_phase(session, human_attack_target=target_name)
     else:
         resolve_night_phase(session)

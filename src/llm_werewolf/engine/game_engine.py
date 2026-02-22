@@ -4,15 +4,15 @@ from dataclasses import replace
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.services import check_victory
-from llm_werewolf.domain.value_objects import Phase, Role, Team
+from llm_werewolf.domain.value_objects import NightActionType, Phase, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
+    find_night_actor,
     get_alive_speaking_order,
-    get_attack_candidates,
     get_discussion_rounds,
-    get_divine_candidates,
+    get_night_action_candidates,
     notify_divine_result,
     rotate_speaking_order,
     tally_votes,
@@ -159,12 +159,11 @@ class GameEngine:
 
     def _resolve_divine(self, game: GameState) -> tuple[GameState, tuple[str, str, bool] | None]:
         """占いを実行し、更新された game と結果を返す。結果は (seer_name, target_name, is_werewolf) または None。"""
-        seer_players = [p for p in game.alive_players if p.role == Role.SEER]
-        if not seer_players:
+        seer = find_night_actor(game, NightActionType.DIVINE)
+        if seer is None:
             return game, None
 
-        seer = seer_players[0]
-        candidates = get_divine_candidates(game, seer)
+        candidates = get_night_action_candidates(game, seer)
         if not candidates:
             return game, None
 
@@ -174,12 +173,11 @@ class GameEngine:
 
     def _resolve_attack(self, game: GameState) -> tuple[GameState, str | None]:
         """襲撃を実行し、更新された game と対象の名前を返す。"""
-        werewolves = [p for p in game.alive_players if p.role == Role.WEREWOLF]
-        if not werewolves:
+        werewolf = find_night_actor(game, NightActionType.ATTACK)
+        if werewolf is None:
             return game, None
 
-        werewolf = werewolves[0]
-        candidates = get_attack_candidates(game)
+        candidates = get_night_action_candidates(game, werewolf)
         if not candidates:
             return game, None
 
