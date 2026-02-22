@@ -14,7 +14,7 @@ src/llm_werewolf/
     game.py                集約ルート
     services.py            ドメインサービス
     game_log.py            ゲームログのフィルタリング・整形
-  engine/              ← アプリケーション層（ゲーム進行エンジン）
+  engine/              ← アプリケーション層（ゲーム進行エンジン、LangChain 依存可）
     action_provider.py     プレイヤー行動の抽象インターフェース
     game_logic.py          共通ゲームロジック関数
     game_engine.py         一括実行用ゲームループ管理
@@ -33,7 +33,7 @@ src/llm_werewolf/
 ```
 
 ドメイン層は FastAPI, Jinja2, LangChain 等の外部ライブラリに**一切依存しない**。
-アプリケーション層はドメイン層に依存し、ゲーム進行のユースケースを実装する。
+アプリケーション層はドメイン層に依存し、ゲーム進行のユースケースを実装する。LangChain / langchain-openai への依存は許可されており、LLM ベースの `ActionProvider` 実装に使用する。
 
 ## DDD 構成要素
 
