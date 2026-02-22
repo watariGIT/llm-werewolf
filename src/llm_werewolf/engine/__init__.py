@@ -3,6 +3,7 @@ from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
 from llm_werewolf.engine.llm_config import LLMConfig, load_llm_config
 from llm_werewolf.engine.random_provider import RandomActionProvider
+from llm_werewolf.engine.response_parser import parse_candidate_response, parse_discuss_response
 
 __all__ = [
     "ActionProvider",
@@ -11,4 +12,6 @@ __all__ = [
     "LLMConfig",
     "RandomActionProvider",
     "load_llm_config",
+    "parse_candidate_response",
+    "parse_discuss_response",
 ]
