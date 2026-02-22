@@ -305,7 +305,7 @@
             </div>
             <div class="actions">
                 <form action="/play/{{ game_id }}/next" method="post">
-                    <button type="submit" class="btn">夜へ</button>
+                    <button type="submit" class="btn">{% if session.winner %}結果を見る{% else %}夜へ{% endif %}</button>
                 </form>
             </div>
         </div>
