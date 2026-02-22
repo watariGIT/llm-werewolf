@@ -114,6 +114,30 @@ uv run tox               # リント・型チェック・テスト一括実行
 uv run tox -e integration # 結合テスト（OPENAI_API_KEY 必須）
 ```
 
+### ベンチマーク
+
+LLM AI の品質を定量的に評価するためのベンチマークスクリプト。
+
+```bash
+# Random のみ（API KEY 不要）
+uv run python scripts/benchmark.py --games 10 --random-only
+
+# LLM ベンチマーク（OPENAI_API_KEY 必須）
+uv run python scripts/benchmark.py --games 10
+
+# LLM と Random の比較
+uv run python scripts/benchmark.py --games 10 --compare-random
+
+# 出力先を指定
+uv run python scripts/benchmark.py --games 10 --output results.json
+```
+
+結果は `benchmark_results/` に JSON 形式で出力されます。集計される統計:
+
+- 陣営別勝率（村人陣営 / 人狼陣営）
+- 平均ゲームターン数
+- LLM API 呼び出し回数・平均レイテンシ
+
 ## ドキュメント
 
 | ドキュメント | 内容 |
@@ -130,3 +154,5 @@ uv run tox -e integration # 結合テスト（OPENAI_API_KEY 必須）
 | `/implement-issue` | GitHub Issue の実装からPR作成まで一気通貫で実行 |
 | `/review-pr` | PR の差分を6種のレビュアー観点で並列レビュー |
 | `/fix-review` | レビュー指摘の修正・プッシュ、対応困難な問題はIssue作成 |
+| `/run-benchmark` | ベンチマーク実行（環境チェック→実行→結果表示） |
+| `/analyze-benchmark` | ベンチマーク結果の分析・改善提案 |

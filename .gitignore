@@ -30,6 +30,9 @@ venv/
 *.swp
 *.swo
 
+# Benchmark results
+benchmark_results/
+
 # Git worktrees
 .worktrees/
 

@@ -99,6 +99,9 @@ src/llm_werewolf/
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供 |
 | `prompts` | LLM 用プロンプトテンプレート生成。役職別システムプロンプトとアクション別ユーザープロンプト（discuss, vote, divine, attack）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う |
+| `ActionMetrics` | 1回のアクション呼び出しのメトリクス（アクション種別・プレイヤー名・レイテンシ）を保持するデータクラス |
+| `GameMetrics` | 1ゲーム分のメトリクスを集約するデータクラス。`total_api_calls` / `average_latency` プロパティで統計を提供 |
+| `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシを計測して `GameMetrics` に記録する。LLMActionProvider を変更せずにメトリクスを収集可能 |
 
 ## インフラ層
 
@@ -153,6 +156,12 @@ src/llm_werewolf/
 | `/games` | POST | 一括実行ゲーム作成（API） |
 | `/games` | GET | 一括実行ゲーム一覧（API） |
 | `/games/{id}` | GET | 一括実行ゲーム状態取得（API） |
+
+## ベンチマーク (`scripts/`)
+
+| ファイル | 説明 |
+|---------|------|
+| `scripts/benchmark.py` | CLI ベンチマークスクリプト。指定回数のゲームを一括実行し、陣営別勝率・平均ターン数・API 呼び出し回数・平均レイテンシを集計して JSON 出力する。`--compare-random` で RandomActionProvider との比較、`--random-only` で API KEY 不要の実行が可能 |
 
 ## 命名規則
 
