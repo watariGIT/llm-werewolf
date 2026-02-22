@@ -3,10 +3,21 @@ from collections import Counter
 from dataclasses import replace
 
 from llm_werewolf.domain.game import GameState
-from llm_werewolf.domain.player import Player
-from llm_werewolf.domain.services import can_attack, can_divine, check_victory
+from llm_werewolf.domain.services import check_victory
 from llm_werewolf.domain.value_objects import Phase, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
+from llm_werewolf.engine.game_logic import (
+    execute_attack,
+    execute_divine,
+    find_player,
+    get_alive_speaking_order,
+    get_attack_candidates,
+    get_discussion_rounds,
+    get_divine_candidates,
+    notify_divine_result,
+    rotate_speaking_order,
+    tally_votes,
+)
 
 
 class GameEngine:
@@ -67,7 +78,7 @@ class GameEngine:
         game = game.add_log(f"--- Day {game.day} （昼フェーズ） ---")
 
         # 占い結果通知 (Day 2以降)
-        game = self._notify_divine_result(game)
+        game = notify_divine_result(game)
 
         # 議論
         game = self._discussion_phase(game)
@@ -88,7 +99,7 @@ class GameEngine:
 
         # 襲撃処理
         if attack_target_name is not None:
-            target = self._find_alive_player(game, attack_target_name)
+            target = find_player(game, attack_target_name, alive_only=True)
             if target is not None:
                 dead_player = target.killed()
                 game = game.replace_player(target, dead_player)
@@ -107,49 +118,15 @@ class GameEngine:
 
         # 襲撃された人の次から発言順を回転
         if attack_target_name is not None:
-            order = list(self._speaking_order)
-            if attack_target_name in order:
-                idx = order.index(attack_target_name)
-                rotated = order[idx + 1 :] + order[:idx]
-                self._speaking_order = tuple(rotated)
+            self._speaking_order = rotate_speaking_order(self._speaking_order, attack_target_name)
 
         # 次の日へ
         game = replace(game, phase=Phase.DAY, day=game.day + 1)
         return game
 
-    def _notify_divine_result(self, game: GameState) -> GameState:
-        if game.day < 2:
-            return game
-
-        # 前夜の占い結果を通知
-        seer_players = [p for p in game.alive_players if p.role == Role.SEER]
-        if not seer_players:
-            return game
-
-        seer = seer_players[0]
-        history = game.get_divined_history(seer.name)
-        if not history:
-            return game
-
-        # 最新の占い対象を通知
-        last_target_name = history[-1]
-        last_target = self._find_player_by_name(game, last_target_name)
-        if last_target is not None:
-            is_werewolf = last_target.role == Role.WEREWOLF
-            result_text = "人狼" if is_werewolf else "人狼ではない"
-            game = game.add_log(f"[占い結果] {seer.name} の占い: {last_target_name} は {result_text}")
-
-        return game
-
-    def _get_alive_speaking_order(self, game: GameState) -> list[Player]:
-        """speaking_order に基づき生存プレイヤーを発言順で返す。"""
-        alive_names = {p.name for p in game.alive_players}
-        name_to_player = {p.name: p for p in game.alive_players}
-        return [name_to_player[name] for name in self._speaking_order if name in alive_names]
-
     def _discussion_phase(self, game: GameState) -> GameState:
-        rounds = 1 if game.day == 1 else 2
-        ordered = self._get_alive_speaking_order(game)
+        rounds = get_discussion_rounds(game.day)
+        ordered = get_alive_speaking_order(game, self._speaking_order)
         for round_num in range(1, rounds + 1):
             game = game.add_log(f"[議論] ラウンド {round_num}")
             for player in ordered:
@@ -168,19 +145,16 @@ class GameEngine:
             game = game.add_log(f"[投票] {player.name} → {target_name}")
 
         # 集計
-        vote_counts = Counter(votes.values())
-        max_votes = max(vote_counts.values())
-        top_candidates = [name for name, count in vote_counts.items() if count == max_votes]
-
-        # 同票時はランダム
-        executed_name = self._rng.choice(top_candidates) if len(top_candidates) > 1 else top_candidates[0]
+        executed_name = tally_votes(votes, self._rng)
 
         # 処刑
-        target = self._find_alive_player(game, executed_name)
-        if target is not None:
-            dead_player = target.killed()
-            game = game.replace_player(target, dead_player)
-            game = game.add_log(f"[処刑] {target.name} が処刑された（得票数: {vote_counts[executed_name]}）")
+        if executed_name is not None:
+            target = find_player(game, executed_name, alive_only=True)
+            if target is not None:
+                vote_counts = Counter(votes.values())
+                dead_player = target.killed()
+                game = game.replace_player(target, dead_player)
+                game = game.add_log(f"[処刑] {target.name} が処刑された（得票数: {vote_counts[executed_name]}）")
 
         return game
 
@@ -191,25 +165,13 @@ class GameEngine:
             return game, None
 
         seer = seer_players[0]
-        # 占い可能な対象を取得
-        already_divined = set(game.get_divined_history(seer.name))
-        candidates = tuple(p for p in game.alive_players if p.name != seer.name and p.name not in already_divined)
+        candidates = get_divine_candidates(game, seer)
         if not candidates:
             return game, None
 
         provider = self._providers[seer.name]
         target_name = provider.divine(game, seer, candidates)
-        target = self._find_alive_player(game, target_name)
-        if target is None:
-            return game, None
-
-        try:
-            can_divine(game, seer, target)
-        except ValueError:
-            return game, None
-        is_werewolf = target.role == Role.WEREWOLF
-        game = game.add_log(f"[占い] {seer.name} が {target.name} を占った")
-        return game, (seer.name, target_name, is_werewolf)
+        return execute_divine(game, seer, target_name)
 
     def _resolve_attack(self, game: GameState) -> tuple[GameState, str | None]:
         """襲撃を実行し、更新された game と対象の名前を返す。"""
@@ -218,30 +180,10 @@ class GameEngine:
             return game, None
 
         werewolf = werewolves[0]
-        candidates = tuple(p for p in game.alive_players if p.role != Role.WEREWOLF)
+        candidates = get_attack_candidates(game)
         if not candidates:
             return game, None
 
         provider = self._providers[werewolf.name]
         target_name = provider.attack(game, werewolf, candidates)
-        target = self._find_alive_player(game, target_name)
-        if target is None:
-            return game, None
-
-        try:
-            can_attack(game, werewolf, target)
-        except ValueError:
-            return game, None
-        return game, target_name
-
-    def _find_alive_player(self, game: GameState, name: str) -> Player | None:
-        for p in game.alive_players:
-            if p.name == name:
-                return p
-        return None
-
-    def _find_player_by_name(self, game: GameState, name: str) -> Player | None:
-        for p in game.players:
-            if p.name == name:
-                return p
-        return None
+        return execute_attack(game, werewolf, target_name)

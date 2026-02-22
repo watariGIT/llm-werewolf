@@ -16,7 +16,9 @@ src/llm_werewolf/
     game_log.py            ゲームログのフィルタリング・整形
   engine/              ← アプリケーション層（ゲーム進行エンジン）
     action_provider.py     プレイヤー行動の抽象インターフェース
-    game_engine.py         ゲームループ管理
+    game_logic.py          共通ゲームロジック関数
+    game_engine.py         一括実行用ゲームループ管理
+    interactive_engine.py  インタラクティブ用ステップ実行エンジン
     random_provider.py     ランダム行動プロバイダー（Mock版AI）
   session.py           ← インフラ層（セッション管理）
   main.py              ← インフラ層（FastAPI, Jinja2）
@@ -83,10 +85,12 @@ src/llm_werewolf/
 
 ゲーム進行のユースケースを管理する層。ドメイン層のモデルとサービスを組み合わせてゲームループを実現する。
 
-| クラス/Protocol | 説明 |
-|-----------------|------|
+| クラス/Protocol/モジュール | 説明 |
+|---------------------------|------|
 | `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃の行動を定義 |
-| `GameEngine` | ゲームループ管理。昼議論→投票→処刑→夜行動→勝利判定のサイクルを実行。初期化時にランダムな発言順を決定し、夜の襲撃後に発言順を回転する |
+| `game_logic` | 両エンジン共通のゲームロジック関数群。プレイヤー検索・占い結果通知・占い/襲撃実行・投票集計・発言順管理・議論ラウンド数判定を提供 |
+| `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑→夜行動→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用 |
+| `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動の各メソッドを提供し、`game_logic` の共通関数を利用 |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 
 ## インフラ層
@@ -113,18 +117,18 @@ src/llm_werewolf/
 
 #### ステップ進行関数
 
-インフラ層のモジュール関数として配置。GameState の変更は domain 層のメソッド（`add_log`, `replace_player` 等）と domain サービス（`check_victory`, `can_divine` 等）を呼び出して行う。
+インフラ層のモジュール関数として配置。ビジネスロジックはエンジン層の `InteractiveGameEngine` に委譲し、セッション状態の更新とステップ遷移のみを担当する薄いラッパーとして機能する。
 
 | 関数 | 説明 |
 |------|------|
-| `advance_to_discussion` | 1ラウンド分の AI 議論（`speaking_order` に基づくユーザーの発言順まで）を実行し DISCUSSION ステップへ遷移。`discussion_round` でラウンド管理 |
-| `handle_user_discuss` | ユーザー発言を記録し、`speaking_order` に基づく後半 AI 発言を実行。ラウンド残りがあれば次ラウンドへ、なければ VOTE へ遷移 |
+| `advance_to_discussion` | `InteractiveGameEngine.advance_discussion()` を呼び出し DISCUSSION ステップへ遷移 |
+| `handle_user_discuss` | `InteractiveGameEngine.handle_user_discuss()` を呼び出し、結果に応じて VOTE または次ラウンドへ遷移 |
 | `skip_to_vote` | ユーザー死亡時に `discussion_round` をリセットし VOTE へスキップ |
-| `handle_user_vote` | ユーザー投票 + AI 投票 → 集計 → 処刑 → 勝利判定 |
-| `handle_auto_vote` | ユーザー死亡時の AI のみ投票 |
-| `start_night_phase` | 夜フェーズ開始。ユーザーが占い師/人狼なら NIGHT_ACTION へ、それ以外は即解決 |
-| `handle_night_action` | ユーザーの夜行動（占い/襲撃対象選択）を処理 |
-| `resolve_night_phase` | AI の夜行動 + ユーザー選択を反映して夜を完了 |
+| `handle_user_vote` | `InteractiveGameEngine.handle_user_vote()` を呼び出し、結果に応じて EXECUTION_RESULT または GAME_OVER へ遷移 |
+| `handle_auto_vote` | `InteractiveGameEngine.handle_auto_vote()` を呼び出し、ユーザー死亡時の AI のみ投票を処理 |
+| `start_night_phase` | `InteractiveGameEngine.start_night()` を呼び出し、NIGHT_ACTION または即解決へ遷移 |
+| `handle_night_action` | ユーザーの夜行動を検証し `resolve_night_phase()` へ委譲 |
+| `resolve_night_phase` | `InteractiveGameEngine.resolve_night()` を呼び出し夜を完了 |
 
 ### Web エンドポイント (`main.py`)
 
