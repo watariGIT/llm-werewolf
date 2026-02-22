@@ -1,6 +1,9 @@
+import logging
+import sys
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -10,6 +13,7 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
 from llm_werewolf.domain.value_objects import Role
+from llm_werewolf.engine.llm_config import load_llm_config
 from llm_werewolf.session import (
     GameSessionStore,
     GameStep,
@@ -25,6 +29,16 @@ from llm_werewolf.session import (
     skip_to_vote,
     start_night_phase,
 )
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+try:
+    load_llm_config()
+except ValueError as e:
+    logger.error(str(e))
+    sys.exit(1)
 
 app = FastAPI(title="LLM人狼")
 
