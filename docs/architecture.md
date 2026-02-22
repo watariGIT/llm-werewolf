@@ -95,6 +95,7 @@ src/llm_werewolf/
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
+| `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供 |
 
 ## インフラ層
 
