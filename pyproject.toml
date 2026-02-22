@@ -21,6 +21,7 @@ dev = [
     "httpx",
     "tox",
     "tox-uv",
+    "pytest-timeout",
 ]
 
 [build-system]
