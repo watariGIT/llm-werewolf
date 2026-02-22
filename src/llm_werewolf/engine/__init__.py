@@ -3,6 +3,7 @@ from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
 from llm_werewolf.engine.llm_config import LLMConfig, load_llm_config
 from llm_werewolf.engine.llm_provider import LLMActionProvider
+from llm_werewolf.engine.metrics import ActionMetrics, GameMetrics, MetricsCollectingProvider
 from llm_werewolf.engine.prompts import (
     build_attack_prompt,
     build_discuss_prompt,
@@ -14,11 +15,14 @@ from llm_werewolf.engine.random_provider import RandomActionProvider
 from llm_werewolf.engine.response_parser import parse_candidate_response, parse_discuss_response
 
 __all__ = [
+    "ActionMetrics",
     "ActionProvider",
     "GameEngine",
+    "GameMetrics",
     "InteractiveGameEngine",
     "LLMActionProvider",
     "LLMConfig",
+    "MetricsCollectingProvider",
     "RandomActionProvider",
     "build_attack_prompt",
     "build_discuss_prompt",
