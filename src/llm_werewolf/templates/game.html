@@ -245,7 +245,7 @@
         <!-- VOTE: 投票フェーズ -->
         {% if step == "vote" %}
         {% if session.current_discussion %}
-        <div class="panel">
+        <div class="panel" style="max-height: 400px; overflow-y: auto;">
             <h2>議論 - Day {{ game.day }}</h2>
             <ul class="message-list">
                 {% for msg in session.current_discussion %}

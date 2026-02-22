@@ -185,6 +185,8 @@ def _find_player(game: GameState, name: str, *, alive_only: bool = False) -> Pla
 
 def _get_alive_speaking_order(session: InteractiveSession) -> list[Player]:
     """speaking_order に基づき生存プレイヤーを発言順で返す。"""
+    if not session.speaking_order:
+        return list(session.game.alive_players)
     alive_names = {p.name for p in session.game.alive_players}
     name_to_player = {p.name: p for p in session.game.alive_players}
     return [name_to_player[name] for name in session.speaking_order if name in alive_names]
