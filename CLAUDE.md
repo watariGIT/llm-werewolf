@@ -5,9 +5,6 @@
 - Respond in Japanese
 - Always use **uv** for package management (pip is prohibited)
 - Tests use pytest (`tests/` directory)
-- Bash で `&&` や `||` による複合コマンドを使わない（コマンドは1つずつ実行する）
-- Bash のパスは `E:/workspace/...` 形式を使う（`/E:/...` や `/e/...` は使わない）
-- ファイル操作には専用ツール（Read / Write / Edit）を使う（`cat` 等の Bash コマンドは使わない）
 
 ## Project Structure
 
