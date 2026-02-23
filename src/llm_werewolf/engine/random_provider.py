@@ -32,3 +32,6 @@ class RandomActionProvider:
 
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         return self._rng.choice(candidates).name
+
+    def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
+        return self._rng.choice(candidates).name

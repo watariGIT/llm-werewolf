@@ -82,3 +82,10 @@ class MetricsCollectingProvider:
             return self._inner.attack(game, werewolf, candidates)
         finally:
             self._record("attack", werewolf.name, start)
+
+    def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
+        start = time.monotonic()
+        try:
+            return self._inner.guard(game, knight, candidates)
+        finally:
+            self._record("guard", knight.name, start)
