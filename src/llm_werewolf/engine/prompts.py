@@ -139,7 +139,6 @@ _ROLE_INSTRUCTIONS: dict[Role, str] = {
 ## あなたの役職: 狩人
 - 毎晩1人を護衛し、人狼の襲撃から守ることができます
 - 自分自身は護衛できません
-- 連続で同じ人を護衛することはできません
 - 占い師など重要な役職を守ることを優先しましょう
 - 自分が狩人であることを公表するかどうかは戦略的に判断してください""",
     Role.MEDIUM: """\
@@ -305,7 +304,6 @@ def build_guard_prompt(game: GameState, knight: Player, candidates: tuple[Player
     return f"""{context}
 
 あなたは{knight.name}（狩人）です。以下の候補者から護衛したいプレイヤーを1人選んでください。
-※自分自身と前回の護衛対象は候補から除外されています。
 
 ## 候補者
 {candidate_list}

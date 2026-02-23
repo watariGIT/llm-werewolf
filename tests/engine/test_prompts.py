@@ -84,7 +84,6 @@ class TestBuildSystemPrompt:
         """狩人のプロンプトに護衛制約が含まれること。"""
         result = build_system_prompt(Role.KNIGHT)
         assert "自分自身は護衛できません" in result
-        assert "連続で同じ人を護衛" in result
 
     def test_medium_prompt_contains_role(self) -> None:
         result = build_system_prompt(Role.MEDIUM)
