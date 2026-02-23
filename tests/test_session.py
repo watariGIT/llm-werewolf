@@ -8,7 +8,7 @@ from llm_werewolf.engine.llm_config import LLMConfig
 from llm_werewolf.engine.random_provider import RandomActionProvider
 from llm_werewolf.session import GameSessionStore, InteractiveSessionStore, SessionLimitExceeded
 
-PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Heidi", "Ivan"]
 
 
 class TestGameSessionStore:
@@ -122,7 +122,7 @@ class TestInteractiveSessionStoreWithLLM:
         config = _create_test_config()
         session = store.create("Player", rng=random.Random(42), config=config)
         assert session.human_player_name == "Player"
-        assert mock_llm_cls.call_count == 4  # AI_NAMES の4人分
+        assert mock_llm_cls.call_count == 8  # AI_NAMES の8人分
 
     def test_create_without_config_uses_random_provider(self) -> None:
         store = InteractiveSessionStore()

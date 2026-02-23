@@ -19,7 +19,7 @@ class TestGameEngineFullSimulation:
 
     def test_simulation_completes_with_winner(self) -> None:
         rng = random.Random(42)
-        game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve"], rng=rng)
+        game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"], rng=rng)
         providers = _create_all_random_providers(game, rng)
         engine = GameEngine(game=game, providers=providers, rng=rng)
 
@@ -34,7 +34,7 @@ class TestGameEngineFullSimulation:
         """複数の seed でシミュレーションが完走することを確認する。"""
         for seed in [1, 10, 100, 999, 12345]:
             rng = random.Random(seed)
-            game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve"], rng=rng)
+            game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"], rng=rng)
             providers = _create_all_random_providers(game, rng)
             engine = GameEngine(game=game, providers=providers, rng=rng)
 
@@ -43,7 +43,7 @@ class TestGameEngineFullSimulation:
 
     def test_dead_players_are_marked_dead(self) -> None:
         rng = random.Random(42)
-        game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve"], rng=rng)
+        game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"], rng=rng)
         providers = _create_all_random_providers(game, rng)
         engine = GameEngine(game=game, providers=providers, rng=rng)
 

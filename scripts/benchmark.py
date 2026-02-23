@@ -25,7 +25,7 @@ from llm_werewolf.engine.game_engine import GameEngine  # noqa: E402
 from llm_werewolf.engine.metrics import GameMetrics, MetricsCollectingProvider  # noqa: E402
 from llm_werewolf.engine.random_provider import RandomActionProvider  # noqa: E402
 
-PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Dave", "Eve"]
+PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"]
 
 
 def _create_providers(

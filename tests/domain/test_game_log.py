@@ -12,7 +12,7 @@ from llm_werewolf.engine.random_provider import RandomActionProvider
 def _run_game(seed: int = 42) -> tuple[list[str], GameState]:
     """テスト用にゲームを実行し、(player_names, game) を返す。"""
     rng = random.Random(seed)
-    player_names = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+    player_names = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Heidi", "Ivan"]
     game = create_game(player_names, rng=rng)
     providers = {p.name: RandomActionProvider(rng=rng) for p in game.players}
     engine = GameEngine(game, providers, rng=rng)

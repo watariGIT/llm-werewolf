@@ -34,9 +34,9 @@ class TestInteractiveSessionStore:
         assert session.step == GameStep.ROLE_REVEAL
         assert session.game_id
 
-    def test_create_assigns_five_players(self) -> None:
+    def test_create_assigns_nine_players(self) -> None:
         session = _create_session()
-        assert len(session.game.players) == 5
+        assert len(session.game.players) == 9
 
     def test_create_includes_human_player(self) -> None:
         session = _create_session(human_name="Alice")
@@ -361,14 +361,17 @@ class TestCreateWithRole:
 
     def test_create_with_random_role(self) -> None:
         session = _create_session(human_name="Alice", role=None)
-        assert len(session.game.players) == 5
+        assert len(session.game.players) == 9
 
     def test_all_roles_assigned_with_fixed_role(self) -> None:
         session = _create_session(human_name="Alice", role=Role.SEER)
         roles = [p.role for p in session.game.players]
         assert roles.count(Role.SEER) == 1
-        assert roles.count(Role.WEREWOLF) == 1
+        assert roles.count(Role.WEREWOLF) == 2
         assert roles.count(Role.VILLAGER) == 3
+        assert roles.count(Role.KNIGHT) == 1
+        assert roles.count(Role.MEDIUM) == 1
+        assert roles.count(Role.MADMAN) == 1
 
 
 class TestNightAction:
@@ -550,7 +553,7 @@ class TestSpeakingOrder:
         """display_order がゲーム開始時に speaking_order と同じ値で設定される。"""
         session = _create_session(human_name="Alice")
         assert session.display_order == session.speaking_order
-        assert len(session.display_order) == 5
+        assert len(session.display_order) == 9
 
     def test_display_order_unchanged_after_night_attack(self) -> None:
         """夜襲撃後も display_order は変更されない（speaking_order は変わる）。"""

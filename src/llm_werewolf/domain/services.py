@@ -5,28 +5,32 @@ from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Role, Team
 
 DEFAULT_ROLE_COMPOSITION: list[Role] = [
-    Role.VILLAGER,
-    Role.VILLAGER,
-    Role.VILLAGER,
-    Role.SEER,
     Role.WEREWOLF,
+    Role.WEREWOLF,
+    Role.KNIGHT,
+    Role.SEER,
+    Role.MEDIUM,
+    Role.MADMAN,
+    Role.VILLAGER,
+    Role.VILLAGER,
+    Role.VILLAGER,
 ]
 
-REQUIRED_PLAYER_COUNT = 5
+REQUIRED_PLAYER_COUNT = 9
 
 
 def assign_roles(player_names: list[str], rng: random.Random | None = None) -> list[Player]:
     """配役: プレイヤー名リストにランダムで役職を割り当てる。
 
     Args:
-        player_names: 5人のプレイヤー名リスト
+        player_names: 9人のプレイヤー名リスト
         rng: テスト用の乱数生成器（None の場合は新規インスタンスを使用）
 
     Returns:
         役職が割り当てられた Player リスト
 
     Raises:
-        ValueError: プレイヤー数が5人でない場合
+        ValueError: プレイヤー数が9人でない場合
     """
     if len(player_names) != REQUIRED_PLAYER_COUNT:
         raise ValueError(f"Player count must be {REQUIRED_PLAYER_COUNT}, got {len(player_names)}")
@@ -51,7 +55,7 @@ def create_game_with_role(
     """指定プレイヤーに指定役職を割り当ててゲームを初期化する。
 
     Args:
-        player_names: 5人のプレイヤー名リスト
+        player_names: 9人のプレイヤー名リスト
         fixed_player: 役職を固定するプレイヤー名
         fixed_role: 割り当てる役職
         rng: テスト用の乱数生成器
@@ -60,7 +64,7 @@ def create_game_with_role(
         初期化された GameState
 
     Raises:
-        ValueError: プレイヤー数が5人でない場合、固定プレイヤーがリストにない場合、
+        ValueError: プレイヤー数が9人でない場合、固定プレイヤーがリストにない場合、
                     または指定役職が配役構成に存在しない場合
     """
     if len(player_names) != REQUIRED_PLAYER_COUNT:
@@ -95,7 +99,7 @@ def create_game(player_names: list[str], rng: random.Random | None = None) -> Ga
     """ゲーム初期化: 配役を行い GameState を生成する。
 
     Args:
-        player_names: 5人のプレイヤー名リスト
+        player_names: 9人のプレイヤー名リスト
         rng: テスト用の乱数生成器（None の場合は新規インスタンスを使用）
 
     Returns:
@@ -182,3 +186,31 @@ def can_attack(game: GameState, werewolf: Player, target: Player) -> None:
         raise ValueError(f"{werewolf.name} cannot attack themselves")
     if target.role == Role.WEREWOLF:
         raise ValueError(f"{werewolf.name} cannot attack another werewolf {target.name}")
+
+
+def can_guard(game: GameState, knight: Player, target: Player) -> None:
+    """狩人が対象を護衛できるかチェックする。
+
+    制約違反時は ValueError を送出する。
+
+    Args:
+        game: 現在のゲーム状態
+        knight: 狩人のプレイヤー
+        target: 護衛対象のプレイヤー
+
+    Raises:
+        ValueError: 制約違反の場合
+    """
+    if knight.role != Role.KNIGHT:
+        raise ValueError(f"{knight.name} is not a knight")
+    if not knight.is_alive:
+        raise ValueError(f"{knight.name} is dead and cannot guard")
+    if target not in game.players:
+        raise ValueError(f"{target.name} is not in the game")
+    if not target.is_alive:
+        raise ValueError(f"{target.name} is dead and cannot be guarded")
+    if knight.name == target.name:
+        raise ValueError(f"{knight.name} cannot guard themselves")
+    last_guard_target = game.get_last_guard_target(knight.name)
+    if last_guard_target == target.name:
+        raise ValueError(f"{knight.name} cannot guard {target.name} consecutively")

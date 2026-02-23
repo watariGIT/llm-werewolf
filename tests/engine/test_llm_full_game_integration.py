@@ -26,7 +26,7 @@ pytestmark = [
     pytest.mark.integration,
 ]
 
-PLAYER_NAMES = ["アリス", "ボブ", "キャロル", "デイブ", "イブ"]
+PLAYER_NAMES = ["アリス", "ボブ", "キャロル", "デイブ", "イブ", "フランク", "グレース", "ハイジ", "アイバン"]
 
 
 def _create_all_llm_providers(game: GameState) -> dict[str, LLMActionProvider]:

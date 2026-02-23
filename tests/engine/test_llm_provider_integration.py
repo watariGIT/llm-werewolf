@@ -23,12 +23,22 @@ pytestmark = [
 ]
 
 # テスト用プレイヤー名
-PLAYER_NAMES = ["アリス", "ボブ", "キャロル", "デイブ", "イブ"]
+PLAYER_NAMES = ["アリス", "ボブ", "キャロル", "デイブ", "イブ", "フランク", "グレース", "ハイジ", "アイバン"]
 
 
 def _create_players() -> tuple[Player, ...]:
     """固定配役でプレイヤーを生成する。"""
-    roles = [Role.VILLAGER, Role.VILLAGER, Role.VILLAGER, Role.SEER, Role.WEREWOLF]
+    roles = [
+        Role.VILLAGER,
+        Role.VILLAGER,
+        Role.VILLAGER,
+        Role.SEER,
+        Role.WEREWOLF,
+        Role.WEREWOLF,
+        Role.KNIGHT,
+        Role.MEDIUM,
+        Role.MADMAN,
+    ]
     return tuple(Player(name=name, role=role) for name, role in zip(PLAYER_NAMES, roles))
 
 
