@@ -65,21 +65,44 @@ def _create_candidate_decision(target: str, reason: str = "テスト理由") -> 
     return CandidateDecision(target=target, reason=reason)
 
 
-def _setup_structured_mock(mock_chat_openai: MagicMock, return_value: CandidateDecision) -> MagicMock:
-    """with_structured_output().invoke が CandidateDecision を返すようにモックを設定する。"""
+def _create_raw_message(usage_metadata: dict[str, int] | None = None) -> MagicMock:
+    raw = MagicMock()
+    raw.usage_metadata = usage_metadata
+    return raw
+
+
+def _setup_structured_mock(
+    mock_chat_openai: MagicMock,
+    return_value: CandidateDecision,
+    usage_metadata: dict[str, int] | None = None,
+) -> MagicMock:
+    """with_structured_output(include_raw=True).invoke が辞書を返すようにモックを設定する。"""
     mock_instance = mock_chat_openai.return_value
     mock_structured = MagicMock()
     mock_instance.with_structured_output.return_value = mock_structured
-    mock_structured.invoke.return_value = return_value
+    mock_structured.invoke.return_value = {
+        "raw": _create_raw_message(usage_metadata),
+        "parsed": return_value,
+        "parsing_error": None,
+    }
     return mock_structured
 
 
+def _wrap_as_raw_response(value: CandidateDecision) -> dict:
+    """CandidateDecision を include_raw=True 形式の辞書にラップする。"""
+    return {"raw": _create_raw_message(), "parsed": value, "parsing_error": None}
+
+
 def _setup_structured_mock_side_effect(mock_chat_openai: MagicMock, side_effect: list) -> MagicMock:
-    """with_structured_output().invoke に side_effect を設定する。"""
+    """with_structured_output(include_raw=True).invoke に side_effect を設定する。
+
+    CandidateDecision は自動的に辞書形式にラップされる。例外はそのまま渡される。
+    """
     mock_instance = mock_chat_openai.return_value
     mock_structured = MagicMock()
     mock_instance.with_structured_output.return_value = mock_structured
-    mock_structured.invoke.side_effect = side_effect
+    wrapped = [_wrap_as_raw_response(v) if isinstance(v, CandidateDecision) else v for v in side_effect]
+    mock_structured.invoke.side_effect = wrapped
     return mock_structured
 
 
@@ -651,3 +674,50 @@ class TestLogging:
         debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
         assert any("構造化出力プロンプト" in m for m in debug_messages)
         assert any("構造化レスポンス" in m and "target=Charlie" in m for m in debug_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_debug_log_contains_token_usage_structured(
+        self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """構造化出力の DEBUG ログにトークン使用量が含まれる。"""
+        usage = {"input_tokens": 200, "output_tokens": 80, "total_tokens": 280}
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Charlie"), usage_metadata=usage)
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        with caplog.at_level(logging.DEBUG, logger="llm_werewolf.engine.llm_provider"):
+            provider.vote(game, game.players[0], candidates)
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        assert any("input=200" in m and "output=80" in m and "total=280" in m for m in debug_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_no_token_log_when_usage_metadata_is_none_structured(
+        self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """構造化出力で usage_metadata が None の場合、トークンログは出力されない。"""
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Charlie"), usage_metadata=None)
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        with caplog.at_level(logging.DEBUG, logger="llm_werewolf.engine.llm_provider"):
+            provider.vote(game, game.players[0], candidates)
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        assert not any("トークン使用量" in m for m in debug_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_token_usage_updated_on_structured_call(self, mock_chat_openai: MagicMock) -> None:
+        """構造化出力の呼び出し後に last_input_tokens / last_output_tokens が更新される。"""
+        usage = {"input_tokens": 150, "output_tokens": 60}
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Charlie"), usage_metadata=usage)
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        provider.vote(game, game.players[0], candidates)
+
+        assert provider.last_input_tokens == 150
+        assert provider.last_output_tokens == 60
