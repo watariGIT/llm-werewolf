@@ -137,6 +137,7 @@ uv run python scripts/benchmark.py --games 10 --output results.json
 - 陣営別勝率（村人陣営 / 人狼陣営）
 - 平均ゲームターン数
 - LLM API 呼び出し回数・平均レイテンシ
+- 護衛成功回数（合計・平均）
 
 ## ドキュメント
 
