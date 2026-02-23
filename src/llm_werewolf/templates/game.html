@@ -250,6 +250,11 @@
                 </span>
                 です
             </p>
+            {% if werewolf_allies %}
+            <p style="text-align: center; margin-top: 1rem; color: #ef4444;">
+                仲間の人狼: {% for ally in werewolf_allies %}{{ ally.name }}{% if not loop.last %}、{% endif %}{% endfor %}
+            </p>
+            {% endif %}
             <div class="actions">
                 <form action="/play/{{ game_id }}/next" method="post">
                     <button type="submit" class="btn">ゲーム開始</button>
@@ -420,6 +425,11 @@
             </form>
             {% elif night_action_type == "attack" %}
             <h2>襲撃 - Night {{ game.day }}</h2>
+            {% if werewolf_allies %}
+            <p style="margin-bottom: 1rem; color: #ef4444;">
+                仲間の人狼: {% for ally in werewolf_allies %}{{ ally.name }}{% if not loop.last %}、{% endif %}{% endfor %}
+            </p>
+            {% endif %}
             <p style="margin-bottom: 1rem;">襲撃する対象を選んでください:</p>
             <form action="/play/{{ game_id }}/night-action" method="post">
                 <div class="radio-group">

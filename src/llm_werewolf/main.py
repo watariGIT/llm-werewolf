@@ -254,6 +254,11 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     # 当日の処刑ログ
     current_execution_logs = _extract_current_execution_logs(session.game)
 
+    # 人狼の仲間情報（人間プレイヤーが人狼の場合）
+    werewolf_allies: list[Player] = []
+    if human_player and human_player.role == Role.WEREWOLF:
+        werewolf_allies = [p for p in session.game.alive_werewolves if p.name != session.human_player_name]
+
     return templates.TemplateResponse(
         request,
         "game.html",
@@ -270,6 +275,7 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
             "ordered_players": ordered_players,
             "current_execution_logs": current_execution_logs,
             "past_discussions": past_discussions,
+            "werewolf_allies": werewolf_allies,
         },
     )
 
