@@ -99,7 +99,7 @@ def _create_test_config() -> LLMConfig:
 class TestGameSessionStoreWithLLM:
     @patch("llm_werewolf.session.LLMActionProvider")
     def test_create_with_config_uses_llm_provider(self, mock_llm_cls: MagicMock) -> None:
-        mock_llm_cls.side_effect = lambda config, rng=None: RandomActionProvider(rng=rng)
+        mock_llm_cls.side_effect = lambda config, rng=None, personality="": RandomActionProvider(rng=rng)
         store = GameSessionStore()
         config = _create_test_config()
         game_id, game = store.create(PLAYER_NAMES, rng=random.Random(42), config=config)
@@ -117,7 +117,7 @@ class TestGameSessionStoreWithLLM:
 class TestInteractiveSessionStoreWithLLM:
     @patch("llm_werewolf.session.LLMActionProvider")
     def test_create_with_config_uses_llm_provider(self, mock_llm_cls: MagicMock) -> None:
-        mock_llm_cls.side_effect = lambda config, rng=None: RandomActionProvider(rng=rng)
+        mock_llm_cls.side_effect = lambda config, rng=None, personality="": RandomActionProvider(rng=rng)
         store = InteractiveSessionStore()
         config = _create_test_config()
         session = store.create("Player", rng=random.Random(42), config=config)

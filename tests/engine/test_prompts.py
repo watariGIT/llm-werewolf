@@ -1,12 +1,17 @@
 """プロンプトテンプレートのテスト。"""
 
+import random
+
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
 from llm_werewolf.engine.prompts import (
+    TRAIT_CATEGORIES,
+    assign_personalities,
     build_attack_prompt,
     build_discuss_prompt,
     build_divine_prompt,
+    build_personality,
     build_system_prompt,
     build_vote_prompt,
 )
@@ -197,3 +202,85 @@ class TestBuildAttackPrompt:
         candidates = (game.players[0],)
         result = build_attack_prompt(game, werewolf, candidates)
         assert "夜" in result
+
+
+class TestPersonalitySystem:
+    """人格特性システムのテスト。"""
+
+    def test_trait_categories_have_enough_options(self) -> None:
+        """各特性軸に4つ以上の選択肢があること。"""
+        for category in TRAIT_CATEGORIES:
+            assert len(category) >= 4
+
+    def test_assign_personalities_returns_correct_count(self) -> None:
+        """assign_personalities が指定人数分の人格を返すこと。"""
+        rng = random.Random(42)
+        result = assign_personalities(4, rng)
+        assert len(result) == 4
+
+    def test_assign_personalities_returns_correct_count_for_large_group(self) -> None:
+        """9人村（AI 8人）でも正しく動作すること。"""
+        rng = random.Random(42)
+        result = assign_personalities(8, rng)
+        assert len(result) == 8
+
+    def test_assign_personalities_each_has_all_categories(self) -> None:
+        """各AIに全カテゴリから1つずつ特性が割り当てられること。"""
+        rng = random.Random(42)
+        result = assign_personalities(4, rng)
+        for traits in result:
+            assert len(traits) == len(TRAIT_CATEGORIES)
+            categories = {t.category for t in traits}
+            expected_categories = {cat[0].category for cat in TRAIT_CATEGORIES}
+            assert categories == expected_categories
+
+    def test_assign_personalities_deterministic_with_seed(self) -> None:
+        """同じシードで同じ結果が返ること。"""
+        result1 = assign_personalities(4, random.Random(42))
+        result2 = assign_personalities(4, random.Random(42))
+        assert result1 == result2
+
+    def test_build_personality_formats_traits(self) -> None:
+        """build_personality が各特性を箇条書きで返すこと。"""
+        rng = random.Random(42)
+        traits = assign_personalities(1, rng)[0]
+        result = build_personality(traits)
+        for trait in traits:
+            assert trait.description in result
+        assert result.startswith("- ")
+
+    def test_build_system_prompt_with_personality(self) -> None:
+        """personality を渡すと性格セクションが含まれること。"""
+        personality = "- 丁寧語で話す\n- 積極的に疑いを指摘する"
+        result = build_system_prompt(Role.VILLAGER, personality=personality)
+        assert "あなたの性格" in result
+        assert "丁寧語で話す" in result
+        assert "積極的に疑いを指摘する" in result
+
+    def test_build_system_prompt_without_personality(self) -> None:
+        """personality 未指定時は従来と同じ出力であること。"""
+        result = build_system_prompt(Role.VILLAGER)
+        assert "あなたの性格" not in result
+
+    def test_build_system_prompt_with_empty_personality(self) -> None:
+        """空文字列の personality では性格セクションが含まれないこと。"""
+        result = build_system_prompt(Role.VILLAGER, personality="")
+        assert "あなたの性格" not in result
+
+
+class TestBuildDiscussPromptRules:
+    """build_discuss_prompt の発言ルールに関するテスト。"""
+
+    def test_contains_no_name_prefix_instruction(self) -> None:
+        """発言の冒頭に名前を付けない指示が含まれること。"""
+        game = _create_game()
+        player = game.players[1]  # Bob
+        result = build_discuss_prompt(game, player)
+        assert "名前を付けない" in result
+
+    def test_contains_specific_observation_instruction(self) -> None:
+        """具体的な観察を述べる指示が含まれること。"""
+        game = _create_game()
+        player = game.players[1]  # Bob
+        result = build_discuss_prompt(game, player)
+        assert "具体的な観察" in result

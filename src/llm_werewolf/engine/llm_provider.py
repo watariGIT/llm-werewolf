@@ -50,13 +50,14 @@ class LLMActionProvider:
     API エラー時は最大3回リトライし、失敗時はフォールバック動作で代替する。
     """
 
-    def __init__(self, config: LLMConfig, rng: random.Random | None = None) -> None:
+    def __init__(self, config: LLMConfig, rng: random.Random | None = None, personality: str = "") -> None:
         self._llm = ChatOpenAI(
             model=config.model_name,
             temperature=config.temperature,
             api_key=SecretStr(config.api_key),
         )
         self._rng = rng if rng is not None else random.Random()
+        self._personality = personality
 
     def _sleep(self, seconds: float) -> None:
         """スリープ処理。テスト時にモック可能。"""
@@ -115,7 +116,7 @@ class LLMActionProvider:
 
     def discuss(self, game: GameState, player: Player) -> str:
         """議論フェーズでの発言を LLM で生成する。"""
-        system_prompt = build_system_prompt(player.role)
+        system_prompt = build_system_prompt(player.role, self._personality)
         user_prompt = build_discuss_prompt(game, player)
         result = self._call_llm(system_prompt, user_prompt)
         if result is None:
@@ -126,7 +127,7 @@ class LLMActionProvider:
 
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         """投票先を LLM で選択する。"""
-        system_prompt = build_system_prompt(player.role)
+        system_prompt = build_system_prompt(player.role, self._personality)
         user_prompt = build_vote_prompt(game, player, candidates)
         result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
@@ -141,7 +142,7 @@ class LLMActionProvider:
 
     def divine(self, game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
         """占い対象を LLM で選択する。"""
-        system_prompt = build_system_prompt(seer.role)
+        system_prompt = build_system_prompt(seer.role, self._personality)
         user_prompt = build_divine_prompt(game, seer, candidates)
         result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
@@ -156,7 +157,7 @@ class LLMActionProvider:
 
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         """襲撃対象を LLM で選択する。"""
-        system_prompt = build_system_prompt(werewolf.role)
+        system_prompt = build_system_prompt(werewolf.role, self._personality)
         user_prompt = build_attack_prompt(game, werewolf, candidates)
         result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)

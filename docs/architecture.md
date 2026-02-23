@@ -98,7 +98,10 @@ src/llm_werewolf/
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供 |
-| `prompts` | LLM 用プロンプトテンプレート生成。役職別システムプロンプトとアクション別ユーザープロンプト（discuss, vote, divine, attack）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う |
+| `prompts` | LLM 用プロンプトテンプレート生成。役職別システムプロンプトとアクション別ユーザープロンプト（discuss, vote, divine, attack）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。人格特性システム（`PersonalityTrait` / `TRAIT_CATEGORIES`）により、口調・議論態度・思考スタイルの独立した特性軸を組み合わせて多様なAI人格を生成する |
+| `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（軸名）とプロンプト用テキストを保持する |
+| `assign_personalities` | AI人数分の特性組み合わせを生成する関数。各特性軸からランダムに1つ選択し、人格のバリエーションを作る |
+| `build_personality` | 特性リストからプロンプトに埋め込む人格テキストを組み立てる関数 |
 | `ActionMetrics` | 1回のアクション呼び出しのメトリクス（アクション種別・プレイヤー名・レイテンシ）を保持するデータクラス |
 | `GameMetrics` | 1ゲーム分のメトリクスを集約するデータクラス。`total_api_calls` / `average_latency` プロパティで統計を提供 |
 | `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシを計測して `GameMetrics` に記録する。LLMActionProvider を変更せずにメトリクスを収集可能 |
