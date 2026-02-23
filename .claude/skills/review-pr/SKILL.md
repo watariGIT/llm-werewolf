@@ -18,7 +18,7 @@ Pull Request のコードレビューを行うスキル。差分を取得し、�
 
 | # | レビュアー | 定義ファイル | 対象の判定基準 |
 |---|-----------|------------|--------------|
-| 1 | コード品質 | `reviewers/code-quality.md` | `.py` 変更あり |
+| 1 | コード品質 | `reviewers/code-quality.md` | `.py` または `templates/*.html` 変更あり |
 | 2 | 設計・ドキュメント | `reviewers/design-docs.md` | `.py` 変更あり |
 | 3 | ルール整合性 | `reviewers/rule-consistency.md` | `domain/`, `engine/`, `session.py` のいずれかに変更あり |
 | 4 | デザイナー | `reviewers/designer.md` | `templates/`, `static/`, `.html`, `.css`, `.js` 変更あり |
@@ -54,7 +54,7 @@ gh pr diff <番号>
 
 判定ルール:
 
-1. `.py` ファイルの変更あり → **コード品質** + **設計・ドキュメント**
+1. `.py` ファイルまたは `templates/*.html` の変更あり → **コード品質** + **設計・ドキュメント**
 2. `domain/`, `engine/`, `session.py` のいずれかに変更あり → 上記に加えて **ルール整合性**
 3. `engine/` 配下の LLM 関連ファイル変更あり → **LLM統合**
 4. `templates/`, `static/`, `.html`, `.css`, `.js` の変更あり → **デザイナー**
