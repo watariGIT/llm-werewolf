@@ -7,7 +7,13 @@ from starlette.testclient import TestClient
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.services import create_game
-from llm_werewolf.main import _extract_discussions_by_day, app, game_store, interactive_store
+from llm_werewolf.main import (
+    _extract_current_execution_logs,
+    _extract_discussions_by_day,
+    app,
+    game_store,
+    interactive_store,
+)
 from llm_werewolf.session import SessionLimitExceeded
 
 client = TestClient(app, raise_server_exceptions=False)
@@ -85,6 +91,55 @@ class TestExtractDiscussionsByDay:
         )
         result = _extract_discussions_by_day(game)
         assert result == {}
+
+
+class TestExtractCurrentExecutionLogs:
+    """_extract_current_execution_logs のユニットテスト。"""
+
+    def test_empty_log(self) -> None:
+        game = GameState(players=create_game(PLAYER_NAMES, rng=random.Random(42)).players)
+        result = _extract_current_execution_logs(game)
+        assert result == []
+
+    def test_extracts_current_day_only(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            day=2,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[処刑] Alice が処刑された（得票数: 3）",
+                "--- Night 1 （夜フェーズ） ---",
+                "--- Day 2 （昼フェーズ） ---",
+                "[処刑] Bob が処刑された（得票数: 2）",
+            ),
+        )
+        result = _extract_current_execution_logs(game)
+        assert result == ["Bob が処刑された（得票数: 2）"]
+
+    def test_strips_prefix(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            day=1,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[処刑] Charlie が処刑された（得票数: 4）",
+            ),
+        )
+        result = _extract_current_execution_logs(game)
+        assert result == ["Charlie が処刑された（得票数: 4）"]
+
+    def test_no_execution_logs(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            day=1,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[発言] Alice: こんにちは",
+                "[投票] Alice → Bob",
+            ),
+        )
+        result = _extract_current_execution_logs(game)
+        assert result == []
 
 
 class TestExportGameLog:
