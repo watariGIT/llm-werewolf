@@ -21,7 +21,7 @@
 
 ## Current Development Phase
 
-- **Step 2: ChatGPT integration** — Replace random actions with LangChain + OpenAI API
+- **Step 3: 9人村移行** — 5人村から9人村（人狼2, 狩人1, 占い師1, 霊媒師1, 狂人1, 村人3）への拡張
 - See README.md roadmap for details
 - Tasks for each Step are tracked via GitHub Issues
 
