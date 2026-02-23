@@ -83,3 +83,99 @@ class TestFormatLogForContext:
         for p in game.players:
             log_text = format_log_for_context(game, p.name)
             assert "[処刑]" in log_text
+
+
+class TestGuardLogVisibility:
+    """護衛ログの可視性テスト"""
+
+    def test_knight_can_see_own_guard_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.KNIGHT),
+            Player(name="Bob", role=Role.WEREWOLF),
+            Player(name="Charlie", role=Role.VILLAGER),
+        )
+        game = GameState(players=players, log=("[護衛] Aliceが Charlieを護衛した",))
+        log_text = format_log_for_context(game, "Alice")
+        assert "[護衛]" in log_text
+
+    def test_non_knight_cannot_see_guard_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.KNIGHT),
+            Player(name="Bob", role=Role.WEREWOLF),
+            Player(name="Charlie", role=Role.VILLAGER),
+        )
+        game = GameState(players=players, log=("[護衛] Aliceが Charlieを護衛した",))
+        for name in ("Bob", "Charlie"):
+            log_text = format_log_for_context(game, name)
+            assert "[護衛]" not in log_text
+
+
+class TestMediumResultLogVisibility:
+    """霊媒結果ログの可視性テスト"""
+
+    def test_medium_can_see_own_medium_result_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.MEDIUM),
+            Player(name="Bob", role=Role.WEREWOLF),
+            Player(name="Charlie", role=Role.VILLAGER),
+        )
+        game = GameState(players=players, log=("[霊媒結果] Aliceの霊媒: Bobは人狼だった",))
+        log_text = format_log_for_context(game, "Alice")
+        assert "[霊媒結果]" in log_text
+
+    def test_non_medium_cannot_see_medium_result_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.MEDIUM),
+            Player(name="Bob", role=Role.WEREWOLF),
+            Player(name="Charlie", role=Role.VILLAGER),
+        )
+        game = GameState(players=players, log=("[霊媒結果] Aliceの霊媒: Bobは人狼だった",))
+        for name in ("Bob", "Charlie"):
+            log_text = format_log_for_context(game, name)
+            assert "[霊媒結果]" not in log_text
+
+
+class TestWerewolfAllyLogVisibility:
+    """人狼仲間ログの可視性テスト"""
+
+    def test_werewolf_can_see_ally_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.WEREWOLF),
+            Player(name="Bob", role=Role.WEREWOLF),
+            Player(name="Charlie", role=Role.VILLAGER),
+        )
+        game = GameState(players=players, log=("[人狼仲間] 人狼はAlice, Bobです",))
+        for name in ("Alice", "Bob"):
+            log_text = format_log_for_context(game, name)
+            assert "[人狼仲間]" in log_text
+
+    def test_non_werewolf_cannot_see_ally_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.WEREWOLF),
+            Player(name="Bob", role=Role.WEREWOLF),
+            Player(name="Charlie", role=Role.VILLAGER),
+            Player(name="Diana", role=Role.SEER),
+            Player(name="Eve", role=Role.MADMAN),
+        )
+        game = GameState(players=players, log=("[人狼仲間] 人狼はAlice, Bobです",))
+        for name in ("Charlie", "Diana", "Eve"):
+            log_text = format_log_for_context(game, name)
+            assert "[人狼仲間]" not in log_text
