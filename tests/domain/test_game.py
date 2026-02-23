@@ -85,3 +85,57 @@ class TestGameState:
         game = GameState(players=players)
         with pytest.raises(AttributeError):
             game.phase = Phase.NIGHT  # type: ignore[misc]
+
+
+class TestGuardHistory:
+    def test_add_guard_history(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        game = game.add_guard_history("Knight", "Alice")
+        game = game.add_guard_history("Knight", "Bob")
+        assert game.guard_history == (("Knight", "Alice"), ("Knight", "Bob"))
+
+    def test_get_last_guard_target(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        game = game.add_guard_history("Knight", "Alice")
+        game = game.add_guard_history("Knight", "Bob")
+        assert game.get_last_guard_target("Knight") == "Bob"
+
+    def test_get_last_guard_target_no_history(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        assert game.get_last_guard_target("Knight") is None
+
+    def test_immutability(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        new_game = game.add_guard_history("Knight", "Alice")
+        assert game.guard_history == ()
+        assert len(new_game.guard_history) == 1
+
+
+class TestMediumResults:
+    def test_add_medium_result(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        game = game.add_medium_result(1, "Eve", True)
+        game = game.add_medium_result(2, "Alice", False)
+        assert game.medium_results == ((1, "Eve", True), (2, "Alice", False))
+
+    def test_immutability(self, players: tuple[Player, ...]) -> None:
+        game = GameState(players=players)
+        new_game = game.add_medium_result(1, "Eve", True)
+        assert game.medium_results == ()
+        assert len(new_game.medium_results) == 1
+
+
+class TestAliveVillageTeamExcludesMadman:
+    def test_madman_excluded_from_village_team(self) -> None:
+        players = (
+            Player(name="Alice", role=Role.VILLAGER),
+            Player(name="Bob", role=Role.SEER),
+            Player(name="Charlie", role=Role.MADMAN),
+            Player(name="Dave", role=Role.VILLAGER),
+            Player(name="Eve", role=Role.WEREWOLF),
+        )
+        game = GameState(players=players)
+        village_team = game.alive_village_team
+        assert len(village_team) == 3
+        assert all(p.role.team.value == "village" for p in village_team)
+        assert not any(p.role == Role.MADMAN for p in village_team)
