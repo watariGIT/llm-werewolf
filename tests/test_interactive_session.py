@@ -129,12 +129,42 @@ class TestHandleUserDiscuss:
         assert any("[発言] Alice: 怪しいのは誰だ" in line for line in session.game.log)
 
 
+def _advance_to_day2(session: InteractiveSession) -> None:
+    """セッションを Day 2 の議論開始前まで進める。"""
+    # Day 1: 議論 → 投票 → 処刑
+    advance_to_discussion(session)
+    handle_user_discuss(session, "テスト")
+    candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
+    handle_user_vote(session, candidates[0].name)
+    # 処刑結果 → 夜フェーズ
+    advance_from_execution_result(session)
+    if session.step == GameStep.NIGHT_ACTION:
+        night_candidates = get_night_action_candidates(session)
+        handle_night_action(session, night_candidates[0].name)
+    elif session.step == GameStep.NIGHT_RESULT:
+        pass  # 自動解決済み
+    assert session.game.day == 2 or session.step == GameStep.NIGHT_RESULT
+
+
 class TestSkipToVote:
     def test_transitions_to_vote(self) -> None:
         session = _create_session()
         advance_to_discussion(session)
         skip_to_vote(session)
         assert session.step == GameStep.VOTE
+
+    def test_day2_executes_two_rounds(self) -> None:
+        """Day 2 でユーザー死亡時に skip_to_vote が2巡分の議論を実行する。"""
+        session = _create_session(seed=42)
+        _advance_to_day2(session)
+        # NIGHT_RESULT から Day 2 議論開始（1巡目実行）
+        if session.step == GameStep.NIGHT_RESULT:
+            advance_to_discussion(session)
+        assert session.discussion_round == 1
+        # skip_to_vote で残りラウンドを消化
+        skip_to_vote(session)
+        assert session.step == GameStep.VOTE
+        assert session.discussion_round == 2
 
 
 class TestHandleUserVote:

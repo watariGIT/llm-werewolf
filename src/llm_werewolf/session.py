@@ -17,6 +17,7 @@ from llm_werewolf.domain.services import create_game, create_game_with_role
 from llm_werewolf.domain.value_objects import NightActionType, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
+from llm_werewolf.engine.game_logic import get_discussion_rounds
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
 from llm_werewolf.engine.llm_config import LLMConfig
 from llm_werewolf.engine.llm_provider import LLMActionProvider
@@ -262,8 +263,10 @@ def handle_user_discuss(session: InteractiveSession, message: str) -> None:
 
 
 def skip_to_vote(session: InteractiveSession) -> None:
-    """ユーザー死亡時に VOTE ステップへスキップする。"""
-    session.discussion_round = 0
+    """ユーザー死亡時に残りの議論ラウンドを AI のみで実行し、VOTE ステップへスキップする。"""
+    max_rounds = get_discussion_rounds(session.game.day)
+    while session.discussion_round < max_rounds:
+        advance_to_discussion(session)
     session.step = GameStep.VOTE
 
 
