@@ -85,3 +85,23 @@ class TestExtractDiscussionsByDay:
         )
         result = _extract_discussions_by_day(game)
         assert result == {}
+
+
+class TestExportGameLog:
+    """GET /play/{game_id}/export のテスト。"""
+
+    def test_export_returns_log_json(self) -> None:
+        session = interactive_store.create("テスト", rng=random.Random(42))
+        response = client.get(f"/play/{session.game_id}/export")
+        assert response.status_code == 200
+        data = response.json()
+        assert "log" in data
+        assert isinstance(data["log"], list)
+        assert len(data["log"]) > 0
+        assert "Content-Disposition" in response.headers
+        assert f"game-log-{session.game_id}.json" in response.headers["Content-Disposition"]
+        interactive_store.delete(session.game_id)
+
+    def test_export_returns_404_for_missing_game(self) -> None:
+        response = client.get("/play/nonexistent/export")
+        assert response.status_code == 404
