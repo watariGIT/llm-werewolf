@@ -67,6 +67,7 @@ MAX_MESSAGE_LENGTH = 500
 
 _DAY_HEADER_PREFIX = "--- Day "
 _SPEECH_PREFIX = "[発言] "
+_EXECUTION_PREFIX = "[処刑] "
 
 
 def _extract_discussions_by_day(game: GameState) -> dict[int, list[str]]:
@@ -91,6 +92,26 @@ def _extract_discussions_by_day(game: GameState) -> dict[int, list[str]]:
                 discussions[current_day] = []
             discussions[current_day].append(msg)
     return discussions
+
+
+def _extract_current_execution_logs(game: GameState) -> list[str]:
+    """ゲームログから当日の処刑ログを抽出する。
+
+    Returns:
+        "[処刑] " プレフィックスを除去した処刑ログ文字列のリスト
+    """
+    execution_logs: list[str] = []
+    current_day = 0
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+        elif entry.startswith(_EXECUTION_PREFIX) and current_day == game.day:
+            execution_logs.append(entry[len(_EXECUTION_PREFIX) :])
+    return execution_logs
 
 
 class CreateGameRequest(BaseModel):
@@ -227,6 +248,9 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     all_discussions = _extract_discussions_by_day(session.game)
     past_discussions = {day: msgs for day, msgs in sorted(all_discussions.items()) if day < session.game.day}
 
+    # 当日の処刑ログ
+    current_execution_logs = _extract_current_execution_logs(session.game)
+
     return templates.TemplateResponse(
         request,
         "game.html",
@@ -241,6 +265,7 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
             "night_action_candidates": night_action_candidates,
             "game_id": game_id,
             "ordered_players": ordered_players,
+            "current_execution_logs": current_execution_logs,
             "past_discussions": past_discussions,
         },
     )
