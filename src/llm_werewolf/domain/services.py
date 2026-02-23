@@ -114,7 +114,7 @@ def check_victory(game: GameState) -> Team | None:
 
     判定ルール:
         - 人狼が全滅 → Team.VILLAGE
-        - 村人陣営の生存者数 ≦ 人狼の生存者数 → Team.WEREWOLF
+        - 人狼以外の生存者数 ≦ 人狼の生存者数 → Team.WEREWOLF
 
     Args:
         game: 判定対象の GameState
@@ -123,12 +123,12 @@ def check_victory(game: GameState) -> Team | None:
         勝利した陣営（Team）。未決着なら None
     """
     alive_werewolf_count = len(game.alive_werewolves)
-    alive_village_count = len(game.alive_village_team)
+    alive_non_werewolf_count = len(game.alive_players) - alive_werewolf_count
 
     if alive_werewolf_count == 0:
         return Team.VILLAGE
 
-    if alive_village_count <= alive_werewolf_count:
+    if alive_non_werewolf_count <= alive_werewolf_count:
         return Team.WEREWOLF
 
     return None

@@ -75,7 +75,7 @@ src/llm_werewolf/
 | `assign_roles` | 配役ロジック（9人にランダムで役職を割り当て） |
 | `create_game` | ゲーム初期化ファクトリ |
 | `create_game_with_role` | 指定プレイヤーに指定役職を割り当ててゲーム初期化 |
-| `check_victory` | 勝利判定（人狼全滅→村人勝利、村人陣営≦人狼→人狼勝利） |
+| `check_victory` | 勝利判定（人狼全滅→村人勝利、人狼以外の生存者≦人狼→人狼勝利） |
 | `can_guard` | 護衛制約チェック（狩人であること・自己護衛不可） |
 
 ### ゲームログサービス (`game_log.py`)
@@ -104,9 +104,11 @@ src/llm_werewolf/
 | `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（軸名）とプロンプト用テキストを保持する |
 | `assign_personalities` | AI人数分の特性組み合わせを生成する関数。各特性軸からランダムに1つ選択し、人格のバリエーションを作る |
 | `build_personality` | 特性リストからプロンプトに埋め込む人格テキストを組み立てる関数 |
-| `ActionMetrics` | 1回のアクション呼び出しのメトリクス（アクション種別・プレイヤー名・レイテンシ）を保持するデータクラス |
-| `GameMetrics` | 1ゲーム分のメトリクスを集約するデータクラス。`total_api_calls` / `average_latency` プロパティで統計を提供 |
-| `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシを計測して `GameMetrics` に記録する。LLMActionProvider を変更せずにメトリクスを収集可能 |
+| `ActionMetrics` | 1回のアクション呼び出しのメトリクス（アクション種別・プレイヤー名・レイテンシ・入力トークン数・出力トークン数）を保持するデータクラス |
+| `GameMetrics` | 1ゲーム分のメトリクスを集約するデータクラス。`total_api_calls` / `average_latency` / `total_input_tokens` / `total_output_tokens` / `total_tokens` プロパティで統計を提供。`estimated_cost_usd(model_name)` メソッドでモデル別の推定コストを算出 |
+| `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシとトークン使用量を計測して `GameMetrics` に記録する。内部 Provider の `last_input_tokens` / `last_output_tokens` 属性からトークン情報を取得 |
+| `MODEL_PRICING` | モデル別の料金テーブル（USD per 1M tokens）。コスト推定に使用。該当しないモデルは推定不可（None） |
+| `estimate_cost` | モデル名とトークン数から推定コスト（USD）を計算するユーティリティ関数 |
 
 ## インフラ層
 
@@ -168,7 +170,7 @@ src/llm_werewolf/
 
 | ファイル | 説明 |
 |---------|------|
-| `scripts/benchmark.py` | CLI ベンチマークスクリプト。指定回数のゲームを一括実行し、陣営別勝率・平均ターン数・API 呼び出し回数・平均レイテンシ・護衛成功回数を集計して JSON 出力する。各ゲームの完全なログ（発言・投票・夜行動等）も結果に含まれる。`--compare-random` で RandomActionProvider との比較、`--random-only` で API KEY 不要の実行が可能 |
+| `scripts/benchmark.py` | CLI ベンチマークスクリプト。指定回数のゲームを一括実行し、陣営別勝率・平均ターン数・API 呼び出し回数・平均レイテンシ・護衛成功回数・トークン使用量（入力/出力/合計）・推定コスト（USD）を集計して JSON 出力する。各ゲームの完全なログ（発言・投票・夜行動等）も結果に含まれる。`--compare-random` で RandomActionProvider との比較、`--random-only` で API KEY 不要の実行が可能 |
 
 ## 命名規則
 
