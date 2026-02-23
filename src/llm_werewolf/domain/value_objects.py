@@ -15,6 +15,7 @@ class NightActionType(str, Enum):
 
     DIVINE = "divine"
     ATTACK = "attack"
+    GUARD = "guard"
 
 
 class Role(str, Enum):
@@ -23,10 +24,13 @@ class Role(str, Enum):
     VILLAGER = "villager"
     SEER = "seer"
     WEREWOLF = "werewolf"
+    KNIGHT = "knight"
+    MEDIUM = "medium"
+    MADMAN = "madman"
 
     @property
     def team(self) -> Team:
-        if self == Role.WEREWOLF:
+        if self in (Role.WEREWOLF, Role.MADMAN):
             return Team.WEREWOLF
         return Team.VILLAGE
 
@@ -44,6 +48,7 @@ class Role(str, Enum):
 _ROLE_NIGHT_ACTION: dict[Role, NightActionType] = {
     Role.SEER: NightActionType.DIVINE,
     Role.WEREWOLF: NightActionType.ATTACK,
+    Role.KNIGHT: NightActionType.GUARD,
 }
 
 

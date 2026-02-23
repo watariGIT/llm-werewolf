@@ -45,8 +45,8 @@ src/llm_werewolf/
 | クラス | 説明 |
 |--------|------|
 | `Team` | 陣営（`village`, `werewolf`） |
-| `Role` | 役職（`villager`, `seer`, `werewolf`）。`night_action_type` / `has_night_action` プロパティで夜行動メタデータを提供 |
-| `NightActionType` | 夜行動種別（`divine`, `attack`）。`Role` のメタデータとして使用 |
+| `Role` | 役職（`villager`, `seer`, `werewolf`, `knight`, `medium`, `madman`）。`night_action_type` / `has_night_action` プロパティで夜行動メタデータを提供 |
+| `NightActionType` | 夜行動種別（`divine`, `attack`, `guard`）。`Role` のメタデータとして使用 |
 | `Phase` | フェーズ（`day`, `night`） |
 | `PlayerStatus` | 生存状態（`alive`, `dead`） |
 
