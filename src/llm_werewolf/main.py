@@ -65,6 +65,33 @@ interactive_store = InteractiveSessionStore()
 MAX_PLAYER_NAME_LENGTH = 50
 MAX_MESSAGE_LENGTH = 500
 
+_DAY_HEADER_PREFIX = "--- Day "
+_SPEECH_PREFIX = "[発言] "
+
+
+def _extract_discussions_by_day(game: GameState) -> dict[int, list[str]]:
+    """ゲームログから日ごとの発言を抽出する。
+
+    Returns:
+        {day: ["PlayerName: message", ...]} の辞書
+    """
+    discussions: dict[int, list[str]] = {}
+    current_day = 0
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            # "--- Day 1 （昼フェーズ） ---" から日数を抽出
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+        elif entry.startswith(_SPEECH_PREFIX) and current_day > 0:
+            msg = entry[len(_SPEECH_PREFIX) :]
+            if current_day not in discussions:
+                discussions[current_day] = []
+            discussions[current_day].append(msg)
+    return discussions
+
 
 class CreateGameRequest(BaseModel):
     player_names: list[str]
@@ -196,6 +223,10 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     name_to_player = {p.name: p for p in session.game.players}
     ordered_players = [name_to_player[name] for name in session.display_order if name in name_to_player]
 
+    # 過去日の議論ログ（当日より前の日のみ）
+    all_discussions = _extract_discussions_by_day(session.game)
+    past_discussions = {day: msgs for day, msgs in sorted(all_discussions.items()) if day < session.game.day}
+
     return templates.TemplateResponse(
         request,
         "game.html",
@@ -210,6 +241,7 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
             "night_action_candidates": night_action_candidates,
             "game_id": game_id,
             "ordered_players": ordered_players,
+            "past_discussions": past_discussions,
         },
     )
 
