@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -155,6 +157,8 @@ def save_result(result: dict[str, Any], output_path: Path) -> None:
 
 
 def main() -> None:
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="LLM 人狼ベンチマーク")
     parser.add_argument("--games", type=int, default=10, help="実行するゲーム数 (デフォルト: 10)")
     parser.add_argument("--compare-random", action="store_true", help="RandomActionProvider との比較も実行")
