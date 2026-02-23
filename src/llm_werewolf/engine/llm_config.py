@@ -11,6 +11,9 @@ from dataclasses import dataclass
 DEFAULT_MODEL_NAME = "gpt-4o-mini"
 DEFAULT_TEMPERATURE = 0.7
 
+GM_DEFAULT_MODEL = "gpt-4o-mini"
+GM_DEFAULT_TEMPERATURE = 0.3
+
 
 @dataclass(frozen=True)
 class LLMConfig:
@@ -43,5 +46,34 @@ def load_llm_config() -> LLMConfig:
             raise ValueError(f"OPENAI_TEMPERATURE は 0.0〜2.0 の範囲で指定してください: {temperature}")
     else:
         temperature = DEFAULT_TEMPERATURE
+
+    return LLMConfig(model_name=model_name, temperature=temperature, api_key=api_key)
+
+
+def load_gm_config() -> LLMConfig:
+    """GM-AI 用の LLMConfig を環境変数から生成する。
+
+    GM_MODEL_NAME, GM_TEMPERATURE でプレイヤー AI とは独立に指定可能。
+    API キーは OPENAI_API_KEY を共有する。
+
+    Raises:
+        ValueError: OPENAI_API_KEY が未設定または空文字の場合
+    """
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError("環境変数 OPENAI_API_KEY が設定されていません")
+
+    model_name = os.environ.get("GM_MODEL_NAME", GM_DEFAULT_MODEL).strip()
+
+    temperature_str = os.environ.get("GM_TEMPERATURE", "").strip()
+    if temperature_str:
+        try:
+            temperature = float(temperature_str)
+        except ValueError:
+            raise ValueError(f"GM_TEMPERATURE の値が不正です: {temperature_str!r}")
+        if not (0.0 <= temperature <= 2.0):
+            raise ValueError(f"GM_TEMPERATURE は 0.0〜2.0 の範囲で指定してください: {temperature}")
+    else:
+        temperature = GM_DEFAULT_TEMPERATURE
 
     return LLMConfig(model_name=model_name, temperature=temperature, api_key=api_key)

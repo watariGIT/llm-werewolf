@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 import random
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.services import check_victory
 from llm_werewolf.domain.value_objects import NightActionType, Phase, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
+
+if TYPE_CHECKING:
+    from llm_werewolf.engine.game_master import GameMasterProvider
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
@@ -34,11 +40,13 @@ class GameEngine:
         providers: dict[str, ActionProvider],
         rng: random.Random | None = None,
         on_phase_end: Callable[[GameState], None] | None = None,
+        gm_provider: GameMasterProvider | None = None,
     ) -> None:
         self._game = game
         self._providers = providers
         self._rng = rng if rng is not None else random.Random()
         self._on_phase_end = on_phase_end
+        self._gm_provider = gm_provider
         # 発言順をランダムに決定
         names = [p.name for p in game.players]
         self._speaking_order: tuple[str, ...] = tuple(self._rng.sample(names, len(names)))
@@ -90,6 +98,11 @@ class GameEngine:
 
         # 霊媒結果通知 (Day 2以降)
         game = notify_medium_result(game)
+
+        # GM-AI 要約 (Day 2以降)
+        if game.day >= 2 and self._gm_provider is not None:
+            summary_json = self._gm_provider.summarize(game)
+            game = replace(game, gm_summary=summary_json, gm_summary_log_offset=len(game.log))
 
         # 議論
         game = self._discussion_phase(game)

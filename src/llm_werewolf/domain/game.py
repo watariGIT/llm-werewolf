@@ -15,6 +15,8 @@ class GameState:
     divined_history: tuple[tuple[str, str], ...] = ()
     guard_history: tuple[tuple[str, str], ...] = ()
     medium_results: tuple[tuple[int, str, bool], ...] = ()
+    gm_summary: str | None = None
+    gm_summary_log_offset: int = 0
 
     @property
     def alive_players(self) -> tuple[Player, ...]:

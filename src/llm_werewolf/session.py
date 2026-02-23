@@ -18,8 +18,9 @@ from llm_werewolf.domain.value_objects import NightActionType, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.game_logic import get_discussion_rounds
+from llm_werewolf.engine.game_master import GameMasterProvider
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
-from llm_werewolf.engine.llm_config import LLMConfig
+from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config
 from llm_werewolf.engine.llm_provider import LLMActionProvider
 from llm_werewolf.engine.prompts import assign_personalities, build_personality
 from llm_werewolf.engine.random_provider import RandomActionProvider
@@ -66,6 +67,7 @@ class InteractiveSession:
     night_messages: list[str] = field(default_factory=list)
     discussion_round: int = 0
     winner: Team | None = None
+    gm_provider: GameMasterProvider | None = None
 
 
 class GameSessionStore:
@@ -99,15 +101,21 @@ class GameSessionStore:
         game_id = self._generate_unique_id()
         initial_state = create_game(player_names, rng=rng)
 
+        gm_provider: GameMasterProvider | None = None
         if config is not None:
             personalities = assign_personalities(len(player_names), rng or random.Random())
             providers: dict[str, ActionProvider] = {
                 p.name: LLMActionProvider(config, rng=rng, personality=build_personality(traits))
                 for p, traits in zip(initial_state.players, personalities)
             }
+            try:
+                gm_config = load_gm_config()
+                gm_provider = GameMasterProvider(gm_config)
+            except ValueError:
+                pass
         else:
             providers = {p.name: RandomActionProvider(rng=rng) for p in initial_state.players}
-        engine = GameEngine(initial_state, providers, rng=rng)
+        engine = GameEngine(initial_state, providers, rng=rng, gm_provider=gm_provider)
         final_state = engine.run()
 
         self._sessions[game_id] = final_state
@@ -178,6 +186,7 @@ class InteractiveSessionStore:
             game = game.add_log(f"[配役] {p.name}: {p.role.value}")
 
         providers: dict[str, ActionProvider]
+        gm_provider: GameMasterProvider | None = None
         if config is not None:
             personalities = assign_personalities(len(AI_NAMES), rng)
             providers = {
@@ -186,6 +195,11 @@ class InteractiveSessionStore:
                 )
                 for name, traits in zip(AI_NAMES, personalities)
             }
+            try:
+                gm_config = load_gm_config()
+                gm_provider = GameMasterProvider(gm_config)
+            except ValueError:
+                pass
         else:
             providers = {name: RandomActionProvider(rng=random.Random(rng.randint(0, 2**32))) for name in AI_NAMES}
 
@@ -202,6 +216,7 @@ class InteractiveSessionStore:
             rng=rng,
             speaking_order=speaking_order,
             display_order=speaking_order,
+            gm_provider=gm_provider,
         )
         self._sessions[game_id] = session
         return session
@@ -236,6 +251,7 @@ def _create_engine(session: InteractiveSession) -> InteractiveGameEngine:
         rng=session.rng,
         speaking_order=session.speaking_order,
         discussion_round=session.discussion_round,
+        gm_provider=session.gm_provider,
     )
 
 

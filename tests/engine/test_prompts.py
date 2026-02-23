@@ -1,12 +1,15 @@
 """プロンプトテンプレートのテスト。"""
 
 import random
+from dataclasses import replace as dc_replace
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
 from llm_werewolf.engine.prompts import (
     TRAIT_CATEGORIES,
+    _build_context,
+    _build_private_info,
     assign_personalities,
     build_attack_prompt,
     build_discuss_prompt,
@@ -427,3 +430,90 @@ class TestBuildDiscussPromptRules:
         player = game.players[1]  # Bob
         result = build_discuss_prompt(game, player)
         assert "自分の立場を明確に" in result
+
+
+class TestBuildSystemPromptGameSummarySchema:
+    """システムプロンプトに盤面情報スキーマが含まれることのテスト。"""
+
+    def test_contains_game_summary_schema(self) -> None:
+        result = build_system_prompt(Role.VILLAGER)
+        assert "盤面情報の読み方" in result
+
+    def test_all_roles_contain_game_summary_schema(self) -> None:
+        for role in Role:
+            result = build_system_prompt(role)
+            assert "盤面情報の読み方" in result
+
+
+class TestBuildContextWithGmSummary:
+    """_build_context の GM 要約ありテスト。"""
+
+    def test_uses_gm_summary_when_available(self) -> None:
+        game = _create_game()
+        gm_json = (
+            '{"alive":["Alice"],"dead":[],"vote_history":[],"claims":[],"contradictions":[],"player_summaries":[]}'
+        )
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        player = game.players[1]  # Bob
+        result = _build_context(game, player)
+        assert "盤面情報" in result
+        assert gm_json in result
+
+    def test_falls_back_to_full_log_without_gm_summary(self) -> None:
+        game = _create_game()
+        player = game.players[1]  # Bob
+        result = _build_context(game, player)
+        assert "これまでのログ" in result
+        assert "盤面情報" not in result
+
+    def test_includes_new_entries_after_offset(self) -> None:
+        game = _create_game()
+        gm_json = '{"alive":[],"dead":[],"vote_history":[],"claims":[],"contradictions":[],"player_summaries":[]}'
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        # offset 以降にログを追加
+        game = game.add_log("[発言] Bob: こんにちは")
+        player = game.players[1]  # Bob
+        result = _build_context(game, player)
+        assert "本日の出来事" in result
+        assert "こんにちは" in result
+
+
+class TestBuildPrivateInfo:
+    """_build_private_info のテスト。"""
+
+    def test_seer_sees_divine_results(self) -> None:
+        game = _create_game()
+        game = game.add_divine_history("Alice", "Bob")
+        player = game.players[0]  # Alice (seer)
+        result = _build_private_info(game, player)
+        assert "占い結果" in result
+        assert "Bob" in result
+
+    def test_medium_sees_medium_results(self) -> None:
+        game = _create_game()
+        game = game.add_medium_result(1, "Charlie", True)
+        player = game.players[5]  # Frank (medium)
+        result = _build_private_info(game, player)
+        assert "霊媒結果" in result
+        assert "Charlie" in result
+
+    def test_werewolf_sees_allies(self) -> None:
+        game = _create_game()
+        player = game.players[2]  # Charlie (werewolf)
+        result = _build_private_info(game, player)
+        assert "仲間の人狼" in result
+        assert "Heidi" in result
+
+    def test_knight_sees_guard_history(self) -> None:
+        game = _create_game()
+        game = game.add_guard_history("Eve", "Alice")
+        player = game.players[4]  # Eve (knight)
+        result = _build_private_info(game, player)
+        assert "護衛履歴" in result
+        assert "Alice" in result
+
+    def test_villager_has_no_private_info(self) -> None:
+        game = _create_game()
+        player = game.players[1]  # Bob (villager)
+        result = _build_private_info(game, player)
+        assert result == ""

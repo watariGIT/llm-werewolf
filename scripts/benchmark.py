@@ -25,6 +25,7 @@ from llm_werewolf.domain.services import check_victory, create_game  # noqa: E40
 from llm_werewolf.domain.value_objects import Team  # noqa: E402
 from llm_werewolf.engine.action_provider import ActionProvider  # noqa: E402
 from llm_werewolf.engine.game_engine import GameEngine  # noqa: E402
+from llm_werewolf.engine.game_master import GameMasterProvider  # noqa: E402
 from llm_werewolf.engine.metrics import GameMetrics, MetricsCollectingProvider, estimate_cost  # noqa: E402
 from llm_werewolf.engine.random_provider import RandomActionProvider  # noqa: E402
 
@@ -52,13 +53,14 @@ def run_single_game(
     rng: random.Random,
     model_name: str | None = None,
     on_phase_end: Callable[..., None] | None = None,
+    gm_provider: GameMasterProvider | None = None,
 ) -> dict[str, Any]:
     """1ゲームを実行し、結果を辞書で返す。"""
     game = create_game(PLAYER_NAMES, rng=rng)
     base_providers = provider_factory(rng)
     providers, metrics_list = _wrap_with_metrics(base_providers)
 
-    engine = GameEngine(game, providers, rng=rng, on_phase_end=on_phase_end)
+    engine = GameEngine(game, providers, rng=rng, on_phase_end=on_phase_end, gm_provider=gm_provider)
     final_state = engine.run()
 
     winner = check_victory(final_state)
@@ -108,6 +110,7 @@ def run_benchmark(
     provider_factory: ProviderFactory,
     provider_type: str,
     model_name: str | None = None,
+    gm_provider: GameMasterProvider | None = None,
 ) -> dict[str, Any]:
     """指定回数のゲームを実行し、統計を集計する。"""
     results: list[dict[str, Any]] = []
@@ -119,7 +122,9 @@ def run_benchmark(
         def on_phase_end(game_state: Any) -> None:
             pbar.set_postfix_str(_format_phase_status(game_state))
 
-        result = run_single_game(provider_factory, rng, model_name=model_name, on_phase_end=on_phase_end)
+        result = run_single_game(
+            provider_factory, rng, model_name=model_name, on_phase_end=on_phase_end, gm_provider=gm_provider
+        )
         result["game_index"] = i
         results.append(result)
         winner_label = "村人" if result["winner"] == "village" else "人狼"
@@ -245,7 +250,7 @@ def main() -> None:
 
     # LLM ベンチマーク
     if not args.random_only:
-        from llm_werewolf.engine.llm_config import load_llm_config
+        from llm_werewolf.engine.llm_config import load_gm_config, load_llm_config
         from llm_werewolf.engine.llm_provider import LLMActionProvider
         from llm_werewolf.engine.prompts import assign_personalities, build_personality
 
@@ -259,7 +264,17 @@ def main() -> None:
             )
             sys.exit(1)
 
+        # GM-AI プロバイダーの生成
+        gm_prov: GameMasterProvider | None = None
+        try:
+            gm_config = load_gm_config()
+            gm_prov = GameMasterProvider(gm_config)
+        except ValueError:
+            pass
+
         print(f"\n--- LLM ベンチマーク (model: {config.model_name}) ---")
+        if gm_prov:
+            print(f"  GM-AI: 有効 (model: {gm_config.model_name})")
 
         def llm_factory(rng: random.Random) -> dict[str, ActionProvider]:
             personalities = assign_personalities(len(PLAYER_NAMES), rng)
@@ -268,7 +283,7 @@ def main() -> None:
                 for name, traits in zip(PLAYER_NAMES, personalities)
             }
 
-        llm_result = run_benchmark(args.games, llm_factory, "llm", model_name=config.model_name)
+        llm_result = run_benchmark(args.games, llm_factory, "llm", model_name=config.model_name, gm_provider=gm_prov)
         print_summary(llm_result)
         all_results["llm"] = llm_result
 
