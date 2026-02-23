@@ -143,6 +143,27 @@
             color: #ef4444;
             font-size: 1.1rem;
         }
+        .btn:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .btn:disabled:hover {
+            background-color: #555;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 1.2rem;
+            height: 1.2rem;
+            border: 3px solid #555;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-left: 0.5rem;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
         @media (max-width: 600px) {
             .header {
                 flex-direction: column;
@@ -412,5 +433,34 @@
         </div>
         {% endif %}
     </div>
+    <script>
+        document.querySelectorAll('form').forEach(function(form) {
+            var submitted = false;
+            form.addEventListener('submit', function(e) {
+                if (submitted) {
+                    e.preventDefault();
+                    return;
+                }
+                submitted = true;
+                var btn = form.querySelector('button[type="submit"]');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = 'AIプレイヤーが順番に考え中...';
+                    var spinner = document.createElement('span');
+                    spinner.className = 'loading-spinner';
+                    btn.parentNode.insertBefore(spinner, btn.nextSibling);
+                }
+                var textarea = form.querySelector('textarea');
+                if (textarea) {
+                    textarea.readOnly = true;
+                }
+                setTimeout(function() {
+                    form.querySelectorAll('input[type="radio"]').forEach(function(radio) {
+                        radio.disabled = true;
+                    });
+                }, 0);
+            });
+        });
+    </script>
 </body>
 </html>
