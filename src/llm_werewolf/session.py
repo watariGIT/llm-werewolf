@@ -21,6 +21,7 @@ from llm_werewolf.engine.game_logic import get_discussion_rounds
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
 from llm_werewolf.engine.llm_config import LLMConfig
 from llm_werewolf.engine.llm_provider import LLMActionProvider
+from llm_werewolf.engine.prompts import assign_personalities, build_personality
 from llm_werewolf.engine.random_provider import RandomActionProvider
 
 AI_NAMES: list[str] = ["AI-1", "AI-2", "AI-3", "AI-4"]
@@ -99,8 +100,10 @@ class GameSessionStore:
         initial_state = create_game(player_names, rng=rng)
 
         if config is not None:
+            personalities = assign_personalities(len(player_names), rng or random.Random())
             providers: dict[str, ActionProvider] = {
-                p.name: LLMActionProvider(config, rng=rng) for p in initial_state.players
+                p.name: LLMActionProvider(config, rng=rng, personality=build_personality(traits))
+                for p, traits in zip(initial_state.players, personalities)
             }
         else:
             providers = {p.name: RandomActionProvider(rng=rng) for p in initial_state.players}
@@ -176,7 +179,13 @@ class InteractiveSessionStore:
 
         providers: dict[str, ActionProvider]
         if config is not None:
-            providers = {name: LLMActionProvider(config, rng=random.Random(rng.randint(0, 2**32))) for name in AI_NAMES}
+            personalities = assign_personalities(len(AI_NAMES), rng)
+            providers = {
+                name: LLMActionProvider(
+                    config, rng=random.Random(rng.randint(0, 2**32)), personality=build_personality(traits)
+                )
+                for name, traits in zip(AI_NAMES, personalities)
+            }
         else:
             providers = {name: RandomActionProvider(rng=random.Random(rng.randint(0, 2**32))) for name in AI_NAMES}
 

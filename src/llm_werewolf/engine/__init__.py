@@ -5,9 +5,12 @@ from llm_werewolf.engine.llm_config import LLMConfig, load_llm_config
 from llm_werewolf.engine.llm_provider import LLMActionProvider
 from llm_werewolf.engine.metrics import ActionMetrics, GameMetrics, MetricsCollectingProvider
 from llm_werewolf.engine.prompts import (
+    PersonalityTrait,
+    assign_personalities,
     build_attack_prompt,
     build_discuss_prompt,
     build_divine_prompt,
+    build_personality,
     build_system_prompt,
     build_vote_prompt,
 )
@@ -23,10 +26,13 @@ __all__ = [
     "LLMActionProvider",
     "LLMConfig",
     "MetricsCollectingProvider",
+    "PersonalityTrait",
     "RandomActionProvider",
+    "assign_personalities",
     "build_attack_prompt",
     "build_discuss_prompt",
     "build_divine_prompt",
+    "build_personality",
     "build_system_prompt",
     "build_vote_prompt",
     "load_llm_config",
