@@ -13,16 +13,18 @@ from dataclasses import replace
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import check_victory
-from llm_werewolf.domain.value_objects import NightActionType, Phase, Team
+from llm_werewolf.domain.value_objects import NightActionType, Phase, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
+    execute_guard,
     find_night_actor,
     get_alive_speaking_order,
     get_discussion_rounds,
     get_night_action_candidates,
     notify_divine_result,
+    notify_medium_result,
     rotate_speaking_order,
     tally_votes,
 )
@@ -78,6 +80,7 @@ class InteractiveGameEngine:
             self._game = self._game.add_log(f"--- Day {self._game.day} （昼フェーズ） ---")
             self._game = replace(self._game, phase=Phase.DAY)
             self._game = notify_divine_result(self._game)
+            self._game = notify_medium_result(self._game)
 
         self._discussion_round += 1
         self._game = self._game.add_log(f"[議論] ラウンド {self._discussion_round}")
@@ -188,30 +191,40 @@ class InteractiveGameEngine:
         self,
         human_divine_target: str | None = None,
         human_attack_target: str | None = None,
+        human_guard_target: str | None = None,
     ) -> tuple[list[str], Team | None]:
-        """夜フェーズを解決する（占い + 襲撃 + 勝利判定）。
+        """夜フェーズを解決する（占い + 護衛 + 襲撃 + 勝利判定）。
 
         Returns:
             (夜メッセージリスト, 勝利陣営またはNone) のタプル
         """
         night_messages: list[str] = []
 
-        # 占いを実行
+        # 占い → 護衛 → 襲撃 の順に解決
         divine_result = self._resolve_divine(human_divine_target)
-
-        # 襲撃を実行
+        guard_target_name = self._resolve_guard(human_guard_target)
         attack_target_name = self._resolve_attack(human_attack_target)
-        if attack_target_name is not None:
-            attack_target = self._game.find_player(attack_target_name, alive_only=True)
-            if attack_target is not None:
-                dead_player = attack_target.killed()
-                self._game = self._game.replace_player(attack_target, dead_player)
-                self._game = self._game.add_log(f"[襲撃] {attack_target.name} が人狼に襲撃された")
-                night_messages.append(f"{attack_target.name} が人狼に襲撃された")
 
-                # 占い師が襲撃された場合、占い結果は無効
-                if divine_result is not None and attack_target.name == divine_result[0]:
-                    divine_result = None
+        # 襲撃処理（護衛判定を含む）
+        attacked_name: str | None = None
+        if attack_target_name is not None:
+            if guard_target_name is not None and guard_target_name == attack_target_name:
+                # 護衛成功（GJ）
+                self._game = self._game.add_log(f"[護衛成功] {attack_target_name} への襲撃は護衛により阻止された")
+                self._game = self._game.add_log("[襲撃] 今夜は誰も襲撃されなかった")
+                night_messages.append("今夜は誰も襲撃されなかった")
+            else:
+                attack_target = self._game.find_player(attack_target_name, alive_only=True)
+                if attack_target is not None:
+                    dead_player = attack_target.killed()
+                    self._game = self._game.replace_player(attack_target, dead_player)
+                    self._game = self._game.add_log(f"[襲撃] {attack_target.name} が人狼に襲撃された")
+                    night_messages.append(f"{attack_target.name} が人狼に襲撃された")
+                    attacked_name = attack_target.name
+
+                    # 占い師が襲撃された場合、占い結果は無効
+                    if divine_result is not None and attack_target.name == divine_result[0]:
+                        divine_result = None
 
         # 占い結果を記録
         if divine_result is not None:
@@ -219,8 +232,8 @@ class InteractiveGameEngine:
             self._game = self._game.add_divine_history(seer_name, target_name_rec)
 
         # 発言順を回転
-        if attack_target_name is not None:
-            self._speaking_order = rotate_speaking_order(self._speaking_order, attack_target_name)
+        if attacked_name is not None:
+            self._speaking_order = rotate_speaking_order(self._speaking_order, attacked_name)
 
         # 次の日へ
         self._game = replace(self._game, phase=Phase.DAY, day=self._game.day + 1)
@@ -263,11 +276,14 @@ class InteractiveGameEngine:
 
         executed_player = self._game.find_player(executed_name, alive_only=True)
         if executed_player is not None:
+            is_werewolf = executed_player.role == Role.WEREWOLF
             dead_player = executed_player.killed()
             self._game = self._game.replace_player(executed_player, dead_player)
             self._game = self._game.add_log(
                 f"[処刑] {executed_player.name} が処刑された（得票数: {vote_counts[executed_name]}）"
             )
+            # 霊媒結果を記録
+            self._game = self._game.add_medium_result(self._game.day, executed_player.name, is_werewolf)
 
         return check_victory(self._game)
 
@@ -298,6 +314,27 @@ class InteractiveGameEngine:
 
         self._game, result = execute_divine(self._game, seer, target_name)
         return result
+
+    def _resolve_guard(self, human_target: str | None = None) -> str | None:
+        """護衛を実行する。護衛対象名または None を返す。"""
+        knight = find_night_actor(self._game, NightActionType.GUARD)
+        if knight is None:
+            return None
+
+        candidates = get_night_action_candidates(self._game, knight)
+        if not candidates:
+            return None
+
+        if knight.name == self._human_player_name:
+            if human_target is None:
+                return None
+            target_name = human_target
+        else:
+            provider = self._providers[knight.name]
+            target_name = provider.guard(self._game, knight, candidates)
+
+        self._game, guard_target = execute_guard(self._game, knight, target_name)
+        return guard_target
 
     def _resolve_attack(self, human_target: str | None = None) -> str | None:
         """襲撃を実行する。襲撃対象名または None を返す。"""

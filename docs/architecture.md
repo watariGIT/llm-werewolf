@@ -92,8 +92,8 @@ src/llm_werewolf/
 |---------------------------|------|
 | `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃・護衛の行動を定義 |
 | `game_logic` | 両エンジン共通のゲームロジック関数群。占い結果通知・占い/襲撃/護衛実行・霊媒結果通知・投票集計・発言順管理・議論ラウンド数判定を提供。`find_night_actor` / `get_night_action_candidates` で役職メタデータに基づく汎用的な夜行動解決を提供 |
-| `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑→夜行動→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用 |
-| `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動の各メソッドを提供し、`game_logic` の共通関数を利用 |
+| `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑（霊媒結果記録）→夜行動（占い→護衛→襲撃、護衛成功判定）→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用 |
+| `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動（占い・襲撃・護衛）の各メソッドを提供し、護衛成功判定・霊媒結果通知を含む。`game_logic` の共通関数を利用 |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 | `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。プロンプトテンプレートとレスポンスパーサーを組み合わせて構築。API エラー時は指数バックオフで最大3回リトライし、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了、DEBUG: 詳細、WARNING: エラー/フォールバック） |
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
@@ -144,8 +144,8 @@ src/llm_werewolf/
 | `handle_auto_vote` | `InteractiveGameEngine.handle_auto_vote()` を呼び出し、ユーザー死亡時の AI のみ投票を処理。常に EXECUTION_RESULT へ遷移 |
 | `advance_from_execution_result` | `session.winner` が設定済みなら `_set_game_over()` で GAME_OVER へ、未設定なら `start_night_phase()` で夜フェーズへ遷移 |
 | `start_night_phase` | `InteractiveGameEngine.start_night()` を呼び出し、NIGHT_ACTION または即解決へ遷移 |
-| `handle_night_action` | ユーザーの夜行動を検証し `resolve_night_phase()` へ委譲 |
-| `resolve_night_phase` | `InteractiveGameEngine.resolve_night()` を呼び出し夜を完了 |
+| `handle_night_action` | ユーザーの夜行動（占い・襲撃・護衛対象選択）を検証し `resolve_night_phase()` へ委譲 |
+| `resolve_night_phase` | `InteractiveGameEngine.resolve_night()` を呼び出し夜を完了（占い・護衛・襲撃を解決） |
 
 ### Web エンドポイント (`main.py`)
 
