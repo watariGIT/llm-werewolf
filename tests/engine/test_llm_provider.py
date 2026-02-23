@@ -387,6 +387,23 @@ class TestRetry:
         assert mock_structured.invoke.call_count == 1
         provider._sleep.assert_not_called()
 
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_unexpected_exception_falls_back_structured(self, mock_chat_openai: MagicMock) -> None:
+        """構造化出力: 予期しない例外（ValidationError 等）はフォールバックする。"""
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [ValueError("Pydantic validation failed")],
+        )
+
+        rng = random.Random(42)
+        provider = LLMActionProvider(_create_config(), rng=rng)
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        result = provider.vote(game, game.players[0], candidates)
+
+        assert result in ("Charlie", "Dave")
+        assert mock_structured.invoke.call_count == 1
+
 
 class TestFallback:
     """フォールバック動作のテスト。"""

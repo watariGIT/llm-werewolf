@@ -121,6 +121,9 @@ class LLMActionProvider:
                 else:
                     logger.warning("LLM API クライアントエラー %d: %s。リトライしません。", e.status_code, e)
                     return None
+            except Exception as e:
+                logger.warning("構造化出力の処理中に予期しない例外が発生しました: %s。フォールバックします。", e)
+                return None
         logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
         return None
 
