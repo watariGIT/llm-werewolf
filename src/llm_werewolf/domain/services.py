@@ -211,6 +211,3 @@ def can_guard(game: GameState, knight: Player, target: Player) -> None:
         raise ValueError(f"{target.name} is dead and cannot be guarded")
     if knight.name == target.name:
         raise ValueError(f"{knight.name} cannot guard themselves")
-    last_guard_target = game.get_last_guard_target(knight.name)
-    if last_guard_target == target.name:
-        raise ValueError(f"{knight.name} cannot guard {target.name} consecutively")

@@ -197,6 +197,9 @@ ROLE_MAP: dict[str, Role] = {
     "villager": Role.VILLAGER,
     "seer": Role.SEER,
     "werewolf": Role.WEREWOLF,
+    "knight": Role.KNIGHT,
+    "medium": Role.MEDIUM,
+    "madman": Role.MADMAN,
 }
 
 

@@ -71,9 +71,8 @@ def execute_divine(game: GameState, seer: Player, target_name: str) -> tuple[Gam
 
 
 def get_guard_candidates(game: GameState, knight: Player) -> tuple[Player, ...]:
-    """護衛可能な対象候補を取得する。自分自身と前回護衛対象を除外する。"""
-    last_guard_target = game.get_last_guard_target(knight.name)
-    return tuple(p for p in game.alive_players if p.name != knight.name and p.name != last_guard_target)
+    """護衛可能な対象候補を取得する。自分自身を除外する。"""
+    return tuple(p for p in game.alive_players if p.name != knight.name)
 
 
 def execute_guard(game: GameState, knight: Player, target_name: str) -> tuple[GameState, str | None]:

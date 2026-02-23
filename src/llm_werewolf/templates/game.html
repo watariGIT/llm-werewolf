@@ -62,6 +62,9 @@
         .role-villager { background-color: #2563eb; }
         .role-seer { background-color: #7c3aed; }
         .role-werewolf { background-color: #dc2626; }
+        .role-knight { background-color: #059669; }
+        .role-medium { background-color: #d97706; }
+        .role-madman { background-color: #be185d; }
         .message-list { list-style: none; }
         .message-list li {
             padding: 0.6rem 0;
@@ -240,6 +243,9 @@
                     {% if human_player.role.value == "villager" %}村人
                     {% elif human_player.role.value == "seer" %}占い師
                     {% elif human_player.role.value == "werewolf" %}人狼
+                    {% elif human_player.role.value == "knight" %}狩人
+                    {% elif human_player.role.value == "medium" %}霊媒師
+                    {% elif human_player.role.value == "madman" %}狂人
                     {% endif %}
                 </span>
                 です
@@ -428,6 +434,22 @@
                     <button type="submit" class="btn">襲撃する</button>
                 </div>
             </form>
+            {% elif night_action_type == "guard" %}
+            <h2>護衛 - Night {{ game.day }}</h2>
+            <p style="margin-bottom: 1rem;">護衛する対象を選んでください:</p>
+            <form action="/play/{{ game_id }}/night-action" method="post">
+                <div class="radio-group">
+                    {% for p in night_action_candidates %}
+                    <label>
+                        <input type="radio" name="target" value="{{ p.name }}" required>
+                        {{ p.name }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="actions">
+                    <button type="submit" class="btn">護衛する</button>
+                </div>
+            </form>
             {% endif %}
         </div>
         {% endif %}
@@ -456,6 +478,16 @@
                             </div>
                         {% endif %}
                     {% endfor %}
+                {% endif %}
+            {% endif %}
+
+            {% if human_player and human_player.role.value == "medium" and human_player.is_alive %}
+                {% if game.medium_results %}
+                    {% set last_result = game.medium_results[-1] %}
+                    <div class="event-msg divine" style="margin-top: 1rem;">
+                        霊媒結果: {{ last_result[1] }} は
+                        {% if last_result[2] %}人狼{% else %}人狼ではない{% endif %}
+                    </div>
                 {% endif %}
             {% endif %}
 
