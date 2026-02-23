@@ -445,7 +445,7 @@
                 var btn = form.querySelector('button[type="submit"]');
                 if (btn) {
                     btn.disabled = true;
-                    btn.textContent = 'AIが考え中...';
+                    btn.textContent = 'AIプレイヤーが順番に考え中...';
                     var spinner = document.createElement('span');
                     spinner.className = 'loading-spinner';
                     btn.parentNode.insertBefore(spinner, btn.nextSibling);
@@ -454,9 +454,11 @@
                 if (textarea) {
                     textarea.readOnly = true;
                 }
-                form.querySelectorAll('input[type="radio"]').forEach(function(radio) {
-                    radio.disabled = true;
-                });
+                setTimeout(function() {
+                    form.querySelectorAll('input[type="radio"]').forEach(function(radio) {
+                        radio.disabled = true;
+                    });
+                }, 0);
             });
         });
     </script>
