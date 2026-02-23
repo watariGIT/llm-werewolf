@@ -28,26 +28,30 @@ from llm_werewolf.engine.random_provider import RandomActionProvider  # noqa: E4
 PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"]
 
 
-def _create_providers(
-    provider_factory: Callable[[], ActionProvider],
+ProviderFactory = Callable[[random.Random], dict[str, ActionProvider]]
+
+
+def _wrap_with_metrics(
+    base_providers: dict[str, ActionProvider],
 ) -> tuple[dict[str, ActionProvider], list[GameMetrics]]:
-    """全プレイヤー分の MetricsCollectingProvider を作成する。"""
+    """全プレイヤー分の MetricsCollectingProvider でラップする。"""
     metrics_list: list[GameMetrics] = []
     providers: dict[str, ActionProvider] = {}
     for name in PLAYER_NAMES:
         gm = GameMetrics()
         metrics_list.append(gm)
-        providers[name] = MetricsCollectingProvider(provider_factory(), gm)
+        providers[name] = MetricsCollectingProvider(base_providers[name], gm)
     return providers, metrics_list
 
 
 def run_single_game(
-    provider_factory: Callable[[], ActionProvider],
+    provider_factory: ProviderFactory,
     rng: random.Random,
 ) -> dict[str, Any]:
     """1ゲームを実行し、結果を辞書で返す。"""
     game = create_game(PLAYER_NAMES, rng=rng)
-    providers, metrics_list = _create_providers(provider_factory)
+    base_providers = provider_factory(rng)
+    providers, metrics_list = _wrap_with_metrics(base_providers)
 
     engine = GameEngine(game, providers, rng=rng)
     final_state = engine.run()
@@ -60,18 +64,22 @@ def run_single_game(
     all_latencies = [a.elapsed_seconds for m in metrics_list for a in m.actions]
     avg_latency = sum(all_latencies) / len(all_latencies) if all_latencies else 0.0
 
+    # 護衛成功回数をログから集計
+    guard_success_count = sum(1 for entry in final_state.log if "[護衛成功]" in entry)
+
     return {
         "winner": winner_str,
         "turns": final_state.day - 1,
         "api_calls": total_calls,
         "average_latency": round(avg_latency, 4),
+        "guard_success_count": guard_success_count,
         "log": list(final_state.log),
     }
 
 
 def run_benchmark(
     games_count: int,
-    provider_factory: Callable[[], ActionProvider],
+    provider_factory: ProviderFactory,
     provider_type: str,
     model_name: str | None = None,
 ) -> dict[str, Any]:
@@ -92,6 +100,7 @@ def run_benchmark(
     total_turns = sum(r["turns"] for r in results)
     total_calls = sum(r["api_calls"] for r in results)
     all_latencies = [r["average_latency"] for r in results if r["api_calls"] > 0]
+    total_guard_successes = sum(r["guard_success_count"] for r in results)
 
     metadata: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -109,6 +118,8 @@ def run_benchmark(
             "average_turns": round(total_turns / games_count, 2) if games_count > 0 else 0,
             "total_api_calls": total_calls,
             "average_latency": round(sum(all_latencies) / len(all_latencies), 4) if all_latencies else 0,
+            "total_guard_successes": total_guard_successes,
+            "average_guard_successes": round(total_guard_successes / games_count, 2) if games_count > 0 else 0,
         },
         "games": results,
     }
@@ -131,6 +142,7 @@ def print_summary(result: dict[str, Any]) -> None:
     print(f"  平均ターン数: {summary['average_turns']:.2f}")
     print(f"  API 呼び出し回数: {summary['total_api_calls']}")
     print(f"  平均レイテンシ: {summary['average_latency']:.4f}s")
+    print(f"  護衛成功回数: {summary['total_guard_successes']} (平均: {summary['average_guard_successes']:.2f})")
     print("=" * 50)
 
 
@@ -164,8 +176,8 @@ def main() -> None:
     if args.random_only or args.compare_random:
         print("\n--- Random ベンチマーク ---")
 
-        def random_factory() -> ActionProvider:
-            return RandomActionProvider()
+        def random_factory(rng: random.Random) -> dict[str, ActionProvider]:
+            return {name: RandomActionProvider() for name in PLAYER_NAMES}
 
         random_result = run_benchmark(args.games, random_factory, "random")
         print_summary(random_result)
@@ -175,6 +187,7 @@ def main() -> None:
     if not args.random_only:
         from llm_werewolf.engine.llm_config import load_llm_config
         from llm_werewolf.engine.llm_provider import LLMActionProvider
+        from llm_werewolf.engine.prompts import assign_personalities, build_personality
 
         try:
             config = load_llm_config()
@@ -188,8 +201,12 @@ def main() -> None:
 
         print(f"\n--- LLM ベンチマーク (model: {config.model_name}) ---")
 
-        def llm_factory() -> ActionProvider:
-            return LLMActionProvider(config)
+        def llm_factory(rng: random.Random) -> dict[str, ActionProvider]:
+            personalities = assign_personalities(len(PLAYER_NAMES), rng)
+            return {
+                name: LLMActionProvider(config, personality=build_personality(traits))
+                for name, traits in zip(PLAYER_NAMES, personalities)
+            }
 
         llm_result = run_benchmark(args.games, llm_factory, "llm", model_name=config.model_name)
         print_summary(llm_result)
