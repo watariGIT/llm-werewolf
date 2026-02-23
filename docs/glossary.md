@@ -9,6 +9,9 @@
 | 村人 | Villager | `villager` | 特殊能力を持たない一般の村人 |
 | 占い師 | Seer | `seer` | 毎晩1人を占い、人狼か否かを知る能力を持つ |
 | 人狼 | Werewolf | `werewolf` | 毎晩1人を襲撃して殺害する |
+| 狩人 | Knight | `knight` | 毎晩1人を護衛し、人狼の襲撃から守る |
+| 霊媒師 | Medium | `medium` | 処刑された人が人狼だったか否かを知る |
+| 狂人 | Madman | `madman` | 人狼陣営だが占いでは村人と判定される |
 
 ## 陣営 (Team)
 
@@ -31,6 +34,7 @@
 | 夜行動種別 | Night Action Type | `NightActionType` | 役職が持つ夜行動の種別を表す値オブジェクト |
 | 占い | Divine | `NightActionType.DIVINE` | 占い師の夜行動 |
 | 襲撃 | Attack | `NightActionType.ATTACK` | 人狼の夜行動 |
+| 護衛 | Guard | `NightActionType.GUARD` | 狩人の夜行動 |
 
 ## アクション (Action)
 
