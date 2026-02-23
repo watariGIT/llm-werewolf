@@ -373,9 +373,9 @@ class TestBuildDiscussPromptRules:
         result = build_discuss_prompt(game, player)
         assert "名前を付けない" in result
 
-    def test_contains_specific_observation_instruction(self) -> None:
-        """具体的な観察を述べる指示が含まれること。"""
+    def test_contains_clear_stance_instruction(self) -> None:
+        """自分の立場を明確にする指示が含まれること。"""
         game = _create_game()
         player = game.players[1]  # Bob
         result = build_discuss_prompt(game, player)
-        assert "具体的な観察" in result
+        assert "自分の立場を明確に" in result

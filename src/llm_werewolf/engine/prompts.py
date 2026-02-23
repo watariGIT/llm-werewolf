@@ -39,19 +39,42 @@ SPEAKING_STYLES: tuple[PersonalityTrait, ...] = (
 )
 
 DISCUSSION_ATTITUDES: tuple[PersonalityTrait, ...] = (
-    PersonalityTrait(category="議論態度", description="積極的に疑いを指摘する。怪しいと感じたらすぐに追及する"),
-    PersonalityTrait(category="議論態度", description="慎重に根拠を求める。発言の論理的な裏付けを重視する"),
-    PersonalityTrait(category="議論態度", description="全体の意見をまとめようとする。対立する意見の共通点を見つける"),
-    PersonalityTrait(category="議論態度", description="直感を大事にする。第一印象や雰囲気で判断し、それを率直に伝える"),
+    PersonalityTrait(
+        category="議論態度",
+        description="積極的に疑いを指摘する。少しでも怪しいと感じたら名指しで追及し、投票先を早めに宣言する",
+    ),
+    PersonalityTrait(
+        category="議論態度",
+        description="慎重に根拠を求める。他の人の主張に「根拠は？」と問い返し、証拠のない推理には反論する",
+    ),
+    PersonalityTrait(
+        category="議論態度",
+        description="多数派に流されず独自の視点を持つ。皆が同じ人を疑っていても別の可能性を提示する",
+    ),
+    PersonalityTrait(
+        category="議論態度",
+        description="直感を大事にする。第一印象で「この人は怪しい」「この人は信用できる」と断言する",
+    ),
 )
 
 THINKING_STYLES: tuple[PersonalityTrait, ...] = (
     PersonalityTrait(
-        category="思考スタイル", description="論理的・分析的に考える。投票パターンや発言の整合性を重視する"
+        category="思考スタイル",
+        description="投票パターンや発言の矛盾を分析する。"
+        "「○○は昨日△△と言ったのに今日は逆のことを言っている」と指摘する",
     ),
-    PersonalityTrait(category="思考スタイル", description="感情的・共感的に考える。プレイヤーの態度や感情の変化に敏感"),
-    PersonalityTrait(category="思考スタイル", description="観察重視で考える。発言量の変化や沈黙のタイミングに注目する"),
-    PersonalityTrait(category="思考スタイル", description="戦略的に考える。誰を残すべきか、陣営全体の利益を意識する"),
+    PersonalityTrait(
+        category="思考スタイル",
+        description="プレイヤーの態度や感情の変化に注目する。「○○は急に黙った」「○○の反応が不自然」と指摘する",
+    ),
+    PersonalityTrait(
+        category="思考スタイル",
+        description="発言量や沈黙に注目する。「○○はあまり発言していない」「○○は話題を逸らしている」と指摘する",
+    ),
+    PersonalityTrait(
+        category="思考スタイル",
+        description="陣営全体の戦略を考える。「ここで○○を処刑すれば残り人狼は1人」等の戦略的分析をする",
+    ),
 )
 
 TRAIT_CATEGORIES: tuple[tuple[PersonalityTrait, ...], ...] = (
@@ -188,7 +211,7 @@ def build_system_prompt(role: Role, personality: str = "") -> str:
     """
     parts = [_BASE_RULES, _ROLE_INSTRUCTIONS[role]]
     if personality:
-        parts.append(f"## あなたの性格\n{personality}")
+        parts.append(f"## あなたの性格（必ず以下に従って発言してください）\n{personality}")
     return "\n\n".join(parts)
 
 
@@ -230,8 +253,9 @@ def build_discuss_prompt(game: GameState, player: Player) -> str:
 
 ## 発言のルール
 - 発言の冒頭に自分の名前を付けないでください（「{player.name}: 」のような接頭辞は不要です）
-- 初日でも他プレイヤーの発言の特徴や態度を具体的に指摘してください
-- 「怪しい人はいない」「まだわからない」だけで終わらず、具体的な観察や推理を述べてください
+- 他のプレイヤーが既に言ったことを繰り返さないでください。新しい視点や意見を提供しましょう
+- 必ず自分の立場を明確にしてください。「○○が怪しい」「○○に投票したい」など具体的な主張をしましょう
+- 盤面の整理（誰が生きている、何が起きた等）は皆が知っているので不要です
 - 占い結果や霊媒結果などの重要な情報を持っている場合は、必ず議論で公表してください
 - 他のプレイヤーが公表した占い結果や霊媒結果があれば、それに基づいて推理を展開してください"""
 
