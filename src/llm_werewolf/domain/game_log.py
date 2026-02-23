@@ -17,6 +17,9 @@ def _is_visible(log_entry: str, player: Player) -> bool:
     - [配役]: 自分の配役のみ見える
     - [占い結果]: 占い師本人のみ見える
     - [占い]: 占い師本人のみ見える
+    - [護衛]: 狩人本人のみ見える
+    - [霊媒結果]: 霊媒師本人のみ見える
+    - [人狼仲間]: 人狼のみ見える
     - その他: 全員に見える
     """
     if log_entry.startswith("[配役]"):
@@ -27,6 +30,15 @@ def _is_visible(log_entry: str, player: Player) -> bool:
 
     if log_entry.startswith("[占い]"):
         return player.role == Role.SEER and player.name in log_entry
+
+    if log_entry.startswith("[護衛]"):
+        return player.role == Role.KNIGHT and player.name in log_entry
+
+    if log_entry.startswith("[霊媒結果]"):
+        return player.role == Role.MEDIUM and player.name in log_entry
+
+    if log_entry.startswith("[人狼仲間]"):
+        return player.role == Role.WEREWOLF
 
     return True
 
