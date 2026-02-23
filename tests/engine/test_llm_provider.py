@@ -29,14 +29,22 @@ def _create_game() -> GameState:
         Player(name="Bob", role=Role.VILLAGER),
         Player(name="Charlie", role=Role.WEREWOLF),
         Player(name="Dave", role=Role.VILLAGER),
-        Player(name="Eve", role=Role.VILLAGER),
+        Player(name="Eve", role=Role.KNIGHT),
+        Player(name="Frank", role=Role.MEDIUM),
+        Player(name="Grace", role=Role.MADMAN),
+        Player(name="Heidi", role=Role.WEREWOLF),
+        Player(name="Ivan", role=Role.VILLAGER),
     )
     game = GameState(players=players, phase=Phase.DAY, day=1)
     game = game.add_log("[配役] Alice は占い師です")
     game = game.add_log("[配役] Bob は村人です")
     game = game.add_log("[配役] Charlie は人狼です")
     game = game.add_log("[配役] Dave は村人です")
-    game = game.add_log("[配役] Eve は村人です")
+    game = game.add_log("[配役] Eve は狩人です")
+    game = game.add_log("[配役] Frank は霊媒師です")
+    game = game.add_log("[配役] Grace は狂人です")
+    game = game.add_log("[配役] Heidi は人狼です")
+    game = game.add_log("[配役] Ivan は村人です")
     return game
 
 
@@ -200,6 +208,34 @@ class TestAttack:
         assert result == "Bob"
 
 
+class TestGuard:
+    """guard メソッドのテスト。"""
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_exact_match(self, mock_chat_openai: MagicMock) -> None:
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("Alice")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[0], game.players[1])  # Alice, Bob
+        result = provider.guard(game, game.players[4], candidates)  # Eve (knight)
+
+        assert result == "Alice"
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_partial_match(self, mock_chat_openai: MagicMock) -> None:
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("Aliceさんを護衛します。")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[0], game.players[1])
+        result = provider.guard(game, game.players[4], candidates)
+
+        assert result == "Alice"
+
+
 class TestRetry:
     """リトライ機構のテスト。"""
 
@@ -358,6 +394,22 @@ class TestFallback:
         assert result in ("Alice", "Bob")
         assert mock_instance.invoke.call_count == MAX_RETRIES
 
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_guard_fallback(self, mock_chat_openai: MagicMock) -> None:
+        """guard のフォールバックはランダム選択する。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [_create_api_timeout_error()] * MAX_RETRIES
+
+        rng = random.Random(42)
+        provider = LLMActionProvider(_create_config(), rng=rng)
+        provider._sleep = MagicMock()
+        game = _create_game()
+        candidates = (game.players[0], game.players[1])
+        result = provider.guard(game, game.players[4], candidates)
+
+        assert result in ("Alice", "Bob")
+        assert mock_instance.invoke.call_count == MAX_RETRIES
+
 
 class TestLogging:
     """ロギング出力のテスト。"""
@@ -420,6 +472,21 @@ class TestLogging:
 
         info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
         assert any("player=Charlie" in m and "action=attack" in m for m in info_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_info_log_on_guard_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
+        """guard 成功時に INFO ログが出力される。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("Alice")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[0], game.players[1])
+        with caplog.at_level(logging.INFO, logger="llm_werewolf.engine.llm_provider"):
+            provider.guard(game, game.players[4], candidates)
+
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        assert any("player=Eve" in m and "action=guard" in m for m in info_messages)
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_debug_log_contains_prompt_and_response(

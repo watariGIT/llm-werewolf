@@ -24,6 +24,7 @@ from llm_werewolf.engine.prompts import (
     build_attack_prompt,
     build_discuss_prompt,
     build_divine_prompt,
+    build_guard_prompt,
     build_system_prompt,
     build_vote_prompt,
 )
@@ -171,7 +172,16 @@ class LLMActionProvider:
         return parse_candidate_response(result.content, candidate_names, self._rng, action_type="attack")
 
     def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
-        """護衛対象をランダムで選択する（LLM プロンプト未実装のためフォールバック）。"""
-        selected = self._rng.choice(candidates).name
-        logger.info("guard フォールバック: 狩人 %s の護衛対象をランダムで %s に決定しました。", knight.name, selected)
-        return selected
+        """護衛対象を LLM で選択する。"""
+        system_prompt = build_system_prompt(knight.role, self._personality)
+        user_prompt = build_guard_prompt(game, knight, candidates)
+        result = self._call_llm(system_prompt, user_prompt)
+        candidate_names = tuple(c.name for c in candidates)
+        if result is None:
+            selected = self._rng.choice(candidate_names)
+            logger.warning(
+                "guard フォールバック: 狩人 %s の護衛対象をランダムで %s に決定しました。", knight.name, selected
+            )
+            return selected
+        logger.info("LLM アクション完了: player=%s, action=guard, elapsed=%.2fs", knight.name, result.elapsed)
+        return parse_candidate_response(result.content, candidate_names, self._rng, action_type="guard")

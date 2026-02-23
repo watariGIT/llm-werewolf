@@ -11,6 +11,7 @@ from llm_werewolf.engine.prompts import (
     build_attack_prompt,
     build_discuss_prompt,
     build_divine_prompt,
+    build_guard_prompt,
     build_personality,
     build_system_prompt,
     build_vote_prompt,
@@ -18,20 +19,30 @@ from llm_werewolf.engine.prompts import (
 
 
 def _create_game() -> GameState:
-    """テスト用のゲーム状態を作成する。"""
+    """テスト用のゲーム状態を作成する（9人村）。"""
     players = (
         Player(name="Alice", role=Role.SEER),
         Player(name="Bob", role=Role.VILLAGER),
         Player(name="Charlie", role=Role.WEREWOLF),
         Player(name="Dave", role=Role.VILLAGER),
-        Player(name="Eve", role=Role.VILLAGER),
+        Player(name="Eve", role=Role.KNIGHT),
+        Player(name="Frank", role=Role.MEDIUM),
+        Player(name="Grace", role=Role.MADMAN),
+        Player(name="Heidi", role=Role.WEREWOLF),
+        Player(name="Ivan", role=Role.VILLAGER),
     )
     game = GameState(players=players, phase=Phase.DAY, day=1)
     game = game.add_log("[配役] Alice は占い師です")
     game = game.add_log("[配役] Bob は村人です")
     game = game.add_log("[配役] Charlie は人狼です")
     game = game.add_log("[配役] Dave は村人です")
-    game = game.add_log("[配役] Eve は村人です")
+    game = game.add_log("[配役] Eve は狩人です")
+    game = game.add_log("[配役] Frank は霊媒師です")
+    game = game.add_log("[配役] Grace は狂人です")
+    game = game.add_log("[配役] Heidi は人狼です")
+    game = game.add_log("[配役] Ivan は村人です")
+    game = game.add_log("[人狼仲間] Charlie の仲間の人狼は Heidi です")
+    game = game.add_log("[人狼仲間] Heidi の仲間の人狼は Charlie です")
     return game
 
 
@@ -59,6 +70,36 @@ class TestBuildSystemPrompt:
             assert "人狼ゲーム" in result
             assert "日本語" in result
             assert "投票は公開" in result
+
+    def test_base_rules_describe_nine_player_game(self) -> None:
+        """ベースルールが9人村仕様であること。"""
+        result = build_system_prompt(Role.VILLAGER)
+        assert "9人" in result
+        assert "人狼2" in result
+        assert "狩人1" in result
+        assert "霊媒師1" in result
+        assert "狂人1" in result
+
+    def test_knight_prompt_contains_constraints(self) -> None:
+        """狩人のプロンプトに護衛制約が含まれること。"""
+        result = build_system_prompt(Role.KNIGHT)
+        assert "自分自身は護衛できません" in result
+        assert "連続で同じ人を護衛" in result
+
+    def test_medium_prompt_contains_role(self) -> None:
+        result = build_system_prompt(Role.MEDIUM)
+        assert "霊媒師" in result
+        assert "翌朝" in result
+
+    def test_madman_prompt_contains_role(self) -> None:
+        result = build_system_prompt(Role.MADMAN)
+        assert "狂人" in result
+        assert "人狼陣営" in result
+
+    def test_werewolf_prompt_mentions_two_wolves(self) -> None:
+        """人狼のプロンプトに2人いる旨が含まれること。"""
+        result = build_system_prompt(Role.WEREWOLF)
+        assert "人狼は2人" in result
 
     def test_all_roles_contain_glossary_terms(self) -> None:
         for role in Role:
@@ -120,12 +161,11 @@ class TestBuildVotePrompt:
     def test_contains_candidates(self) -> None:
         game = _create_game()
         player = game.players[0]  # Alice
-        candidates = (game.players[1], game.players[2], game.players[3], game.players[4])
+        candidates = (game.players[1], game.players[2], game.players[3])
         result = build_vote_prompt(game, player, candidates)
         assert "- Bob" in result
         assert "- Charlie" in result
         assert "- Dave" in result
-        assert "- Eve" in result
 
     def test_contains_vote_instruction(self) -> None:
         game = _create_game()
@@ -202,6 +242,62 @@ class TestBuildAttackPrompt:
         candidates = (game.players[0],)
         result = build_attack_prompt(game, werewolf, candidates)
         assert "夜" in result
+
+    def test_contains_ally_werewolf_info(self) -> None:
+        """人狼の仲間情報がプロンプトに含まれること。"""
+        game = _create_game()
+        werewolf = game.players[2]  # Charlie (werewolf)
+        candidates = (game.players[0], game.players[1])
+        result = build_attack_prompt(game, werewolf, candidates)
+        assert "## 仲間の人狼" in result
+        assert "Heidi" in result
+
+    def test_no_ally_section_when_alone(self) -> None:
+        """人狼が1人の場合は仲間セクションが含まれないこと。"""
+        from dataclasses import replace as dc_replace
+
+        game = _create_game()
+        # Heidi を死亡させる
+        heidi = game.players[7]
+        dead_heidi = dc_replace(heidi, status=heidi.status.__class__("dead"))
+        game = game.replace_player(heidi, dead_heidi)
+        werewolf = game.players[2]  # Charlie (werewolf)
+        candidates = (game.players[0], game.players[1])
+        result = build_attack_prompt(game, werewolf, candidates)
+        assert "## 仲間の人狼" not in result
+
+
+class TestBuildGuardPrompt:
+    """build_guard_prompt のテスト。"""
+
+    def test_contains_candidates(self) -> None:
+        game = _create_game()
+        knight = game.players[4]  # Eve (knight)
+        candidates = (game.players[0], game.players[1])
+        result = build_guard_prompt(game, knight, candidates)
+        assert "- Alice" in result
+        assert "- Bob" in result
+
+    def test_contains_guard_instruction(self) -> None:
+        game = _create_game()
+        knight = game.players[4]  # Eve (knight)
+        candidates = (game.players[0],)
+        result = build_guard_prompt(game, knight, candidates)
+        assert "護衛対象の名前のみを返してください" in result
+
+    def test_contains_knight_role_label(self) -> None:
+        game = _create_game()
+        knight = game.players[4]  # Eve (knight)
+        candidates = (game.players[0],)
+        result = build_guard_prompt(game, knight, candidates)
+        assert "狩人" in result
+
+    def test_contains_player_name(self) -> None:
+        game = _create_game()
+        knight = game.players[4]  # Eve (knight)
+        candidates = (game.players[0],)
+        result = build_guard_prompt(game, knight, candidates)
+        assert "Eve" in result
 
 
 class TestPersonalitySystem:
