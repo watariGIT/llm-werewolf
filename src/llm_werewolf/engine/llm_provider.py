@@ -41,6 +41,8 @@ class _LLMResult(NamedTuple):
 
     content: str
     elapsed: float
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class LLMActionProvider:
@@ -59,10 +61,21 @@ class LLMActionProvider:
         )
         self._rng = rng if rng is not None else random.Random()
         self._personality = personality
+        self.last_input_tokens: int = 0
+        self.last_output_tokens: int = 0
 
     def _sleep(self, seconds: float) -> None:
         """スリープ処理。テスト時にモック可能。"""
         time.sleep(seconds)
+
+    def _update_token_usage(self, result: _LLMResult | None) -> None:
+        """最新のトークン使用量を更新する。"""
+        if result is not None:
+            self.last_input_tokens = result.input_tokens
+            self.last_output_tokens = result.output_tokens
+        else:
+            self.last_input_tokens = 0
+            self.last_output_tokens = 0
 
     def _call_llm(self, system_prompt: str, user_prompt: str) -> _LLMResult | None:
         """LLM を呼び出してレスポンステキストとメタデータを返す。
@@ -83,14 +96,20 @@ class LLMActionProvider:
                 content = str(response.content)
                 logger.debug("LLM レスポンス: %s", content)
                 usage = getattr(response, "usage_metadata", None)
+                input_tokens = 0
+                output_tokens = 0
                 if usage:
+                    input_tokens = usage.get("input_tokens", 0)
+                    output_tokens = usage.get("output_tokens", 0)
                     logger.debug(
                         "トークン使用量: input=%d, output=%d, total=%d",
-                        usage.get("input_tokens", 0),
-                        usage.get("output_tokens", 0),
-                        usage.get("total_tokens", 0),
+                        input_tokens,
+                        output_tokens,
+                        input_tokens + output_tokens,
                     )
-                return _LLMResult(content=content, elapsed=elapsed)
+                return _LLMResult(
+                    content=content, elapsed=elapsed, input_tokens=input_tokens, output_tokens=output_tokens
+                )
             except (openai.APITimeoutError, openai.RateLimitError) as e:
                 wait = 2**attempt
                 logger.warning(
@@ -120,6 +139,7 @@ class LLMActionProvider:
         system_prompt = build_system_prompt(player.role, self._personality)
         user_prompt = build_discuss_prompt(game, player)
         result = self._call_llm(system_prompt, user_prompt)
+        self._update_token_usage(result)
         if result is None:
             logger.warning("discuss フォールバック: プレイヤー %s の発言を定型文で代替します。", player.name)
             return FALLBACK_DISCUSS_MESSAGE
@@ -131,6 +151,7 @@ class LLMActionProvider:
         system_prompt = build_system_prompt(player.role, self._personality)
         user_prompt = build_vote_prompt(game, player, candidates)
         result = self._call_llm(system_prompt, user_prompt)
+        self._update_token_usage(result)
         candidate_names = tuple(c.name for c in candidates)
         if result is None:
             selected = self._rng.choice(candidate_names)
@@ -146,6 +167,7 @@ class LLMActionProvider:
         system_prompt = build_system_prompt(seer.role, self._personality)
         user_prompt = build_divine_prompt(game, seer, candidates)
         result = self._call_llm(system_prompt, user_prompt)
+        self._update_token_usage(result)
         candidate_names = tuple(c.name for c in candidates)
         if result is None:
             selected = self._rng.choice(candidate_names)
@@ -161,6 +183,7 @@ class LLMActionProvider:
         system_prompt = build_system_prompt(werewolf.role, self._personality)
         user_prompt = build_attack_prompt(game, werewolf, candidates)
         result = self._call_llm(system_prompt, user_prompt)
+        self._update_token_usage(result)
         candidate_names = tuple(c.name for c in candidates)
         if result is None:
             selected = self._rng.choice(candidate_names)
@@ -176,6 +199,7 @@ class LLMActionProvider:
         system_prompt = build_system_prompt(knight.role, self._personality)
         user_prompt = build_guard_prompt(game, knight, candidates)
         result = self._call_llm(system_prompt, user_prompt)
+        self._update_token_usage(result)
         candidate_names = tuple(c.name for c in candidates)
         if result is None:
             selected = self._rng.choice(candidate_names)

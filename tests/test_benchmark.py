@@ -41,7 +41,17 @@ class TestRunSingleGame:
         """結果辞書が全ての期待されるキーを持つこと。"""
         result = run_single_game(_random_factory, random.Random(0))
 
-        expected_keys = {"winner", "turns", "api_calls", "average_latency", "guard_success_count", "log"}
+        expected_keys = {
+            "winner",
+            "turns",
+            "api_calls",
+            "average_latency",
+            "guard_success_count",
+            "total_input_tokens",
+            "total_output_tokens",
+            "total_tokens",
+            "log",
+        }
         assert set(result.keys()) == expected_keys
 
     def test_guard_success_count_is_non_negative(self) -> None:

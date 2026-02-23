@@ -1,7 +1,7 @@
 """LLM 人狼ベンチマークスクリプト。
 
 指定回数のゲームを一括実行し、陣営別勝率・平均ターン数・
-API 呼び出し回数・平均レイテンシ等の統計を集計する。
+API 呼び出し回数・平均レイテンシ・トークン使用量・推定コスト等の統計を集計する。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from llm_werewolf.domain.services import check_victory, create_game  # noqa: E40
 from llm_werewolf.domain.value_objects import Team  # noqa: E402
 from llm_werewolf.engine.action_provider import ActionProvider  # noqa: E402
 from llm_werewolf.engine.game_engine import GameEngine  # noqa: E402
-from llm_werewolf.engine.metrics import GameMetrics, MetricsCollectingProvider  # noqa: E402
+from llm_werewolf.engine.metrics import GameMetrics, MetricsCollectingProvider, estimate_cost  # noqa: E402
 from llm_werewolf.engine.random_provider import RandomActionProvider  # noqa: E402
 
 PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"]
@@ -49,6 +49,7 @@ def _wrap_with_metrics(
 def run_single_game(
     provider_factory: ProviderFactory,
     rng: random.Random,
+    model_name: str | None = None,
 ) -> dict[str, Any]:
     """1ゲームを実行し、結果を辞書で返す。"""
     game = create_game(PLAYER_NAMES, rng=rng)
@@ -66,17 +67,29 @@ def run_single_game(
     all_latencies = [a.elapsed_seconds for m in metrics_list for a in m.actions]
     avg_latency = sum(all_latencies) / len(all_latencies) if all_latencies else 0.0
 
+    # トークン集計
+    total_input_tokens = sum(m.total_input_tokens for m in metrics_list)
+    total_output_tokens = sum(m.total_output_tokens for m in metrics_list)
+    total_tokens = total_input_tokens + total_output_tokens
+    cost = estimate_cost(model_name or "", total_input_tokens, total_output_tokens)
+
     # 護衛成功回数をログから集計
     guard_success_count = sum(1 for entry in final_state.log if "[護衛成功]" in entry)
 
-    return {
+    result: dict[str, Any] = {
         "winner": winner_str,
         "turns": final_state.day - 1,
         "api_calls": total_calls,
         "average_latency": round(avg_latency, 4),
         "guard_success_count": guard_success_count,
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
+        "total_tokens": total_tokens,
         "log": list(final_state.log),
     }
+    if cost is not None:
+        result["estimated_cost_usd"] = round(cost, 6)
+    return result
 
 
 def run_benchmark(
@@ -91,7 +104,7 @@ def run_benchmark(
     for i in range(games_count):
         rng = random.Random(i)
         print(f"  ゲーム {i + 1}/{games_count} 実行中...", end="", flush=True)
-        result = run_single_game(provider_factory, rng)
+        result = run_single_game(provider_factory, rng, model_name=model_name)
         result["game_index"] = i
         results.append(result)
         print(f" 完了 (勝者: {result['winner']}, ターン数: {result['turns']})")
@@ -104,6 +117,12 @@ def run_benchmark(
     all_latencies = [r["average_latency"] for r in results if r["api_calls"] > 0]
     total_guard_successes = sum(r["guard_success_count"] for r in results)
 
+    # トークン統計
+    total_input_tokens = sum(r["total_input_tokens"] for r in results)
+    total_output_tokens = sum(r["total_output_tokens"] for r in results)
+    total_tokens = total_input_tokens + total_output_tokens
+    total_cost = estimate_cost(model_name or "", total_input_tokens, total_output_tokens)
+
     metadata: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "games_count": games_count,
@@ -112,17 +131,26 @@ def run_benchmark(
     if model_name:
         metadata["model_name"] = model_name
 
+    summary: dict[str, Any] = {
+        "village_win_rate": round(village_wins / games_count, 4) if games_count > 0 else 0,
+        "werewolf_win_rate": round(werewolf_wins / games_count, 4) if games_count > 0 else 0,
+        "average_turns": round(total_turns / games_count, 2) if games_count > 0 else 0,
+        "total_api_calls": total_calls,
+        "average_latency": round(sum(all_latencies) / len(all_latencies), 4) if all_latencies else 0,
+        "total_guard_successes": total_guard_successes,
+        "average_guard_successes": round(total_guard_successes / games_count, 2) if games_count > 0 else 0,
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
+        "total_tokens": total_tokens,
+        "average_tokens_per_game": round(total_tokens / games_count) if games_count > 0 else 0,
+    }
+    if total_cost is not None:
+        summary["total_estimated_cost_usd"] = round(total_cost, 6)
+        summary["average_cost_per_game_usd"] = round(total_cost / games_count, 6) if games_count > 0 else 0
+
     return {
         "metadata": metadata,
-        "summary": {
-            "village_win_rate": round(village_wins / games_count, 4) if games_count > 0 else 0,
-            "werewolf_win_rate": round(werewolf_wins / games_count, 4) if games_count > 0 else 0,
-            "average_turns": round(total_turns / games_count, 2) if games_count > 0 else 0,
-            "total_api_calls": total_calls,
-            "average_latency": round(sum(all_latencies) / len(all_latencies), 4) if all_latencies else 0,
-            "total_guard_successes": total_guard_successes,
-            "average_guard_successes": round(total_guard_successes / games_count, 2) if games_count > 0 else 0,
-        },
+        "summary": summary,
         "games": results,
     }
 
@@ -145,6 +173,13 @@ def print_summary(result: dict[str, Any]) -> None:
     print(f"  API 呼び出し回数: {summary['total_api_calls']}")
     print(f"  平均レイテンシ: {summary['average_latency']:.4f}s")
     print(f"  護衛成功回数: {summary['total_guard_successes']} (平均: {summary['average_guard_successes']:.2f})")
+    input_t = summary["total_input_tokens"]
+    output_t = summary["total_output_tokens"]
+    print(f"  トークン合計: {summary['total_tokens']:,} (入力: {input_t:,}, 出力: {output_t:,})")
+    print(f"  平均トークン/ゲーム: {summary['average_tokens_per_game']:,}")
+    if "total_estimated_cost_usd" in summary:
+        print(f"  推定コスト合計: ${summary['total_estimated_cost_usd']:.4f}")
+        print(f"  推定コスト/ゲーム: ${summary['average_cost_per_game_usd']:.4f}")
     print("=" * 50)
 
 
