@@ -154,6 +154,7 @@ src/llm_werewolf/
 | `/play/{id}/discuss` | POST | ユーザー発言送信 |
 | `/play/{id}/vote` | POST | ユーザー投票送信 |
 | `/play/{id}/night-action` | POST | ユーザー夜行動送信（占い/襲撃対象） |
+| `/play/{id}/export` | GET | ゲームログを JSON 形式でエクスポート |
 | `/games` | POST | 一括実行ゲーム作成（API） |
 | `/games` | GET | 一括実行ゲーム一覧（API） |
 | `/games/{id}` | GET | 一括実行ゲーム状態取得（API） |
