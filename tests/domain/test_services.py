@@ -115,21 +115,55 @@ class TestCheckVictory:
         game = GameState(players=players)
         assert check_victory(game) == Team.WEREWOLF
 
-    def test_madman_not_counted_as_village_team(self) -> None:
-        """狂人は人狼陣営。村人陣営の生存者数に含まれない。"""
+    def test_madman_counted_as_non_werewolf_in_victory_check(self) -> None:
+        """狂人は人狼ではないため、勝利判定では人狼以外の生存者としてカウントされる。"""
         players = (
             Player(name="Alice", role=Role.VILLAGER, status=PlayerStatus.DEAD),
             Player(name="Bob", role=Role.SEER, status=PlayerStatus.DEAD),
             Player(name="Charlie", role=Role.VILLAGER, status=PlayerStatus.DEAD),
             Player(name="Dave", role=Role.KNIGHT, status=PlayerStatus.DEAD),
             Player(name="Eve", role=Role.MEDIUM, status=PlayerStatus.DEAD),
-            Player(name="Frank", role=Role.MADMAN),  # 狂人は人狼陣営
+            Player(name="Frank", role=Role.MADMAN),  # 狂人は人狼ではない
             Player(name="Grace", role=Role.VILLAGER),
             Player(name="Heidi", role=Role.WEREWOLF),
             Player(name="Ivan", role=Role.WEREWOLF, status=PlayerStatus.DEAD),
         )
         game = GameState(players=players)
-        # 村人陣営生存: Grace(1人), 人狼生存: Heidi(1人) → 人狼勝利
+        # 人狼以外の生存者: Frank + Grace = 2人, 人狼生存: Heidi = 1人 → ゲーム続行
+        assert check_victory(game) is None
+
+    def test_madman_with_two_werewolves_ongoing(self) -> None:
+        """狂人1 + 人狼2 + 村人2 = 人狼以外3人 > 人狼2人 → ゲーム続行。"""
+        players = (
+            Player(name="Alice", role=Role.VILLAGER, status=PlayerStatus.DEAD),
+            Player(name="Bob", role=Role.SEER, status=PlayerStatus.DEAD),
+            Player(name="Charlie", role=Role.VILLAGER, status=PlayerStatus.DEAD),
+            Player(name="Dave", role=Role.KNIGHT, status=PlayerStatus.DEAD),
+            Player(name="Eve", role=Role.MEDIUM),
+            Player(name="Frank", role=Role.MADMAN),
+            Player(name="Grace", role=Role.VILLAGER),
+            Player(name="Heidi", role=Role.WEREWOLF),
+            Player(name="Ivan", role=Role.WEREWOLF),
+        )
+        game = GameState(players=players)
+        # 人狼以外の生存者: Eve + Frank + Grace = 3人, 人狼: Heidi + Ivan = 2人 → ゲーム続行
+        assert check_victory(game) is None
+
+    def test_werewolf_wins_with_madman_alive(self) -> None:
+        """狂人1 + 人狼2 + 村人1 = 人狼以外2人 ≦ 人狼2人 → 人狼勝利。"""
+        players = (
+            Player(name="Alice", role=Role.VILLAGER, status=PlayerStatus.DEAD),
+            Player(name="Bob", role=Role.SEER, status=PlayerStatus.DEAD),
+            Player(name="Charlie", role=Role.VILLAGER, status=PlayerStatus.DEAD),
+            Player(name="Dave", role=Role.KNIGHT, status=PlayerStatus.DEAD),
+            Player(name="Eve", role=Role.MEDIUM, status=PlayerStatus.DEAD),
+            Player(name="Frank", role=Role.MADMAN),
+            Player(name="Grace", role=Role.VILLAGER),
+            Player(name="Heidi", role=Role.WEREWOLF),
+            Player(name="Ivan", role=Role.WEREWOLF),
+        )
+        game = GameState(players=players)
+        # 人狼以外の生存者: Frank + Grace = 2人, 人狼: Heidi + Ivan = 2人 → 人狼勝利
         assert check_victory(game) == Team.WEREWOLF
 
     def test_ongoing_game(self) -> None:
