@@ -169,3 +169,9 @@ class LLMActionProvider:
             return selected
         logger.info("LLM アクション完了: player=%s, action=attack, elapsed=%.2fs", werewolf.name, result.elapsed)
         return parse_candidate_response(result.content, candidate_names, self._rng, action_type="attack")
+
+    def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
+        """護衛対象をランダムで選択する（LLM プロンプト未実装のためフォールバック）。"""
+        selected = self._rng.choice(candidates).name
+        logger.info("guard フォールバック: 狩人 %s の護衛対象をランダムで %s に決定しました。", knight.name, selected)
+        return selected

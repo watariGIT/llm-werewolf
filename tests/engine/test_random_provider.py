@@ -49,6 +49,14 @@ class TestRandomActionProvider:
         name = provider.attack(game, game.players[1], candidates)
         assert name in {p.name for p in candidates}
 
+    def test_guard_returns_candidate_name(self) -> None:
+        rng = random.Random(42)
+        provider = RandomActionProvider(rng=rng)
+        game = self._create_game()
+        candidates = (game.players[0], game.players[2])
+        name = provider.guard(game, game.players[3], candidates)
+        assert name in {p.name for p in candidates}
+
     def test_deterministic_with_same_seed(self) -> None:
         game = self._create_game()
         candidates = game.alive_players

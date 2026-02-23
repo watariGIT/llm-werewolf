@@ -25,3 +25,7 @@ class ActionProvider(Protocol):
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         """襲撃対象プレイヤー名を返す。"""
         ...
+
+    def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
+        """護衛対象プレイヤー名を返す。"""
+        ...
