@@ -137,6 +137,27 @@
             text-align: center;
             margin-top: 1.5rem;
         }
+        .past-discussion {
+            margin-bottom: 1rem;
+        }
+        .past-discussion details {
+            background-color: #16213e;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+        }
+        .past-discussion summary {
+            padding: 0.8rem 1rem;
+            cursor: pointer;
+            color: #a0a0b0;
+            font-weight: bold;
+            user-select: none;
+        }
+        .past-discussion summary:hover {
+            color: #e0e0e0;
+        }
+        .past-discussion .detail-content {
+            padding: 0 1rem 0.8rem;
+        }
         .dead-notice {
             text-align: center;
             padding: 1rem;
@@ -229,6 +250,25 @@
 
         <!-- DISCUSSION: 議論フェーズ -->
         {% if step == "discussion" %}
+        {% if past_discussions %}
+        <div class="past-discussion">
+            {% for day, messages in past_discussions.items() %}
+            <details>
+                <summary>議論 - Day {{ day }}</summary>
+                <div class="detail-content">
+                    <ul class="message-list">
+                        {% for msg in messages %}
+                        <li>
+                            <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                            {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </details>
+            {% endfor %}
+        </div>
+        {% endif %}
         <div class="panel">
             <h2>議論 - Day {{ game.day }}</h2>
             {% if session.current_discussion %}
@@ -265,6 +305,25 @@
 
         <!-- VOTE: 投票フェーズ -->
         {% if step == "vote" %}
+        {% if past_discussions %}
+        <div class="past-discussion">
+            {% for day, messages in past_discussions.items() %}
+            <details>
+                <summary>議論 - Day {{ day }}</summary>
+                <div class="detail-content">
+                    <ul class="message-list">
+                        {% for msg in messages %}
+                        <li>
+                            <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                            {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </details>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% if session.current_discussion %}
         <div class="panel" style="max-height: 400px; overflow-y: auto;">
             <h2>議論 - Day {{ game.day }}</h2>
