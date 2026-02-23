@@ -109,6 +109,38 @@ class TestBuildSystemPrompt:
             assert "襲撃" in result
             assert "占い" in result
 
+    def test_villager_does_not_contain_other_role_strategies(self) -> None:
+        """村人のプロンプトに他役職の固有戦略が含まれないこと。"""
+        result = build_system_prompt(Role.VILLAGER)
+        assert "偽の占い師を名乗" not in result
+        assert "毎晩1人を護衛" not in result
+        assert "毎晩1人を襲撃" not in result
+
+    def test_seer_does_not_contain_guard_or_attack_details(self) -> None:
+        """占い師のプロンプトに護衛・襲撃の詳細が含まれないこと。"""
+        result = build_system_prompt(Role.SEER)
+        assert "毎晩1人を護衛" not in result
+        assert "毎晩1人を襲撃" not in result
+
+    def test_knight_does_not_contain_divine_or_attack_details(self) -> None:
+        """狩人のプロンプトに占い・襲撃の詳細が含まれないこと。"""
+        result = build_system_prompt(Role.KNIGHT)
+        assert "毎晩1人を占い" not in result
+        assert "毎晩1人を襲撃" not in result
+
+    def test_werewolf_knows_other_role_abilities(self) -> None:
+        """人狼は対策のために他役職の能力を知っていること。"""
+        result = build_system_prompt(Role.WEREWOLF)
+        assert "占い師" in result
+        assert "霊媒師" in result
+        assert "狩人" in result
+
+    def test_base_rules_do_not_contain_night_action_details(self) -> None:
+        """ベースルールに夜行動の詳細が含まれないこと。"""
+        result = build_system_prompt(Role.VILLAGER)
+        assert "人狼が1人を襲撃 / 占い師が1人を占う / 狩人が1人を護衛" not in result
+        assert "霊媒師は処刑されたプレイヤーが人狼だったかどうかを翌朝知る" not in result
+
 
 class TestBuildDiscussPrompt:
     """build_discuss_prompt のテスト。"""

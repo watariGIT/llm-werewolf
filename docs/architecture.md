@@ -100,7 +100,7 @@ src/llm_werewolf/
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供。構造化出力の `target` が候補者リストに含まれない場合のフォールバックとしても使用される |
-| `prompts` | LLM 用プロンプトテンプレート生成。役職別システムプロンプトとアクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。人格特性システム（`PersonalityTrait` / `TRAIT_CATEGORIES`）により、口調・議論態度・思考スタイルの独立した特性軸を組み合わせて多様なAI人格を生成する。襲撃プロンプトには仲間の人狼情報を含める |
+| `prompts` | LLM 用プロンプトテンプレート生成。共通ルール（`_BASE_RULES`）は最小限に抑え、各役職が知るべき情報のみを含む役職別指示（`_ROLE_INSTRUCTIONS`）と組み合わせてシステムプロンプトを構成する。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。人格特性システム（`PersonalityTrait` / `TRAIT_CATEGORIES`）により、口調・議論態度・思考スタイルの独立した特性軸を組み合わせて多様なAI人格を生成する。襲撃プロンプトには仲間の人狼情報を含める |
 | `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（軸名）とプロンプト用テキストを保持する |
 | `assign_personalities` | AI人数分の特性組み合わせを生成する関数。各特性軸からランダムに1つ選択し、人格のバリエーションを作る |
 | `build_personality` | 特性リストからプロンプトに埋め込む人格テキストを組み立てる関数 |
