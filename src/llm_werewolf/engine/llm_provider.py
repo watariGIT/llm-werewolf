@@ -57,6 +57,8 @@ class _StructuredLLMResult(NamedTuple):
 
     decision: CandidateDecision
     elapsed: float
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class LLMActionProvider:
@@ -82,7 +84,7 @@ class LLMActionProvider:
         """スリープ処理。テスト時にモック可能。"""
         time.sleep(seconds)
 
-    def _update_token_usage(self, result: _LLMResult | None) -> None:
+    def _update_token_usage(self, result: _LLMResult | _StructuredLLMResult | None) -> None:
         """最新のトークン使用量を更新する。"""
         if result is not None:
             self.last_input_tokens = result.input_tokens
@@ -97,7 +99,7 @@ class LLMActionProvider:
         API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
         リトライ上限到達時は None を返す。
         """
-        structured_llm = self._llm.with_structured_output(CandidateDecision)
+        structured_llm = self._llm.with_structured_output(CandidateDecision, include_raw=True)
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
@@ -108,11 +110,28 @@ class LLMActionProvider:
                 start = time.monotonic()
                 response = structured_llm.invoke(messages)
                 elapsed = time.monotonic() - start
-                if not isinstance(response, CandidateDecision):
+                parsed = response.get("parsed") if isinstance(response, dict) else response
+                if not isinstance(parsed, CandidateDecision):
                     logger.warning("構造化出力のパースに失敗しました。フォールバックします。")
                     return None
-                logger.debug("LLM 構造化レスポンス: target=%s, reason=%s", response.target, response.reason)
-                return _StructuredLLMResult(decision=response, elapsed=elapsed)
+                logger.debug("LLM 構造化レスポンス: target=%s, reason=%s", parsed.target, parsed.reason)
+                input_tokens = 0
+                output_tokens = 0
+                if isinstance(response, dict):
+                    raw = response.get("raw")
+                    usage = getattr(raw, "usage_metadata", None) if raw else None
+                    if usage:
+                        input_tokens = usage.get("input_tokens", 0)
+                        output_tokens = usage.get("output_tokens", 0)
+                        logger.debug(
+                            "トークン使用量: input=%d, output=%d, total=%d",
+                            input_tokens,
+                            output_tokens,
+                            input_tokens + output_tokens,
+                        )
+                return _StructuredLLMResult(
+                    decision=parsed, elapsed=elapsed, input_tokens=input_tokens, output_tokens=output_tokens
+                )
             except (openai.APITimeoutError, openai.RateLimitError) as e:
                 wait = 2**attempt
                 logger.warning(
@@ -225,6 +244,7 @@ class LLMActionProvider:
         4. API エラー時はランダムフォールバック
         """
         result = self._call_llm_structured(system_prompt, user_prompt)
+        self._update_token_usage(result)
         if result is None:
             selected = self._rng.choice(candidate_names)
             logger.warning(
