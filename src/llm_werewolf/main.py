@@ -287,6 +287,19 @@ async def submit_night_action(game_id: str, target: str = Form(...)) -> Redirect
     return RedirectResponse(url=f"/play/{game_id}", status_code=303)
 
 
+@app.get("/play/{game_id}/export")
+async def export_game_log(game_id: str) -> JSONResponse:
+    """ゲームログを JSON 形式でエクスポートする。"""
+    session = interactive_store.get(game_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    return JSONResponse(
+        content={"log": list(session.game.log)},
+        headers={"Content-Disposition": f'attachment; filename="game-log-{game_id}.json"'},
+    )
+
+
 @app.post("/play/{game_id}/vote")
 async def submit_vote(game_id: str, target: str = Form(...)) -> RedirectResponse:
     """ユーザー投票を送信する。"""
