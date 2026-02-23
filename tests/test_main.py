@@ -18,7 +18,7 @@ from llm_werewolf.session import SessionLimitExceeded
 
 client = TestClient(app, raise_server_exceptions=False)
 
-PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve"]
+PLAYER_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Heidi", "Ivan"]
 
 
 class TestSessionLimitExceededHandler:

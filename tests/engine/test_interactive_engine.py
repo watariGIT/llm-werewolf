@@ -7,7 +7,7 @@ from llm_werewolf.domain.value_objects import NightActionType, Role, Team
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
 from llm_werewolf.engine.random_provider import RandomActionProvider
 
-AI_NAMES = ["AI-1", "AI-2", "AI-3", "AI-4"]
+AI_NAMES = ["AI-1", "AI-2", "AI-3", "AI-4", "AI-5", "AI-6", "AI-7", "AI-8"]
 
 
 def _create_engine(

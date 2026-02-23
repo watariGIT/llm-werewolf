@@ -24,7 +24,7 @@ from llm_werewolf.engine.llm_provider import LLMActionProvider
 from llm_werewolf.engine.prompts import assign_personalities, build_personality
 from llm_werewolf.engine.random_provider import RandomActionProvider
 
-AI_NAMES: list[str] = ["AI-1", "AI-2", "AI-3", "AI-4"]
+AI_NAMES: list[str] = ["AI-1", "AI-2", "AI-3", "AI-4", "AI-5", "AI-6", "AI-7", "AI-8"]
 
 MAX_SESSIONS = 100
 
@@ -84,7 +84,7 @@ class GameSessionStore:
         """新規ゲームを作成し、一括実行して結果を保存する。
 
         Args:
-            player_names: プレイヤー名リスト（5人）
+            player_names: プレイヤー名リスト（9人）
             rng: テスト用の乱数生成器
             config: LLM設定。指定時は LLMActionProvider を使用、None 時は RandomActionProvider
 

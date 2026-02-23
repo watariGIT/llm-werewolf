@@ -11,7 +11,7 @@ from collections import Counter
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
-from llm_werewolf.domain.services import can_attack, can_divine
+from llm_werewolf.domain.services import can_attack, can_divine, can_guard
 from llm_werewolf.domain.value_objects import NightActionType, Role
 
 
@@ -70,6 +70,28 @@ def execute_divine(game: GameState, seer: Player, target_name: str) -> tuple[Gam
     return game, (seer.name, target_name, is_werewolf)
 
 
+def get_guard_candidates(game: GameState, knight: Player) -> tuple[Player, ...]:
+    """護衛可能な対象候補を取得する。自分自身と前回護衛対象を除外する。"""
+    last_guard_target = game.get_last_guard_target(knight.name)
+    return tuple(p for p in game.alive_players if p.name != knight.name and p.name != last_guard_target)
+
+
+def execute_guard(game: GameState, knight: Player, target_name: str) -> tuple[GameState, str | None]:
+    """護衛対象名が確定した後の護衛実行（検証＋ログ＋護衛履歴記録）。"""
+    target = game.find_player(target_name, alive_only=True)
+    if target is None:
+        return game, None
+
+    try:
+        can_guard(game, knight, target)
+    except ValueError:
+        return game, None
+
+    game = game.add_log(f"[護衛] {knight.name} が {target.name} を護衛した")
+    game = game.add_guard_history(knight.name, target.name)
+    return game, target_name
+
+
 def get_attack_candidates(game: GameState) -> tuple[Player, ...]:
     """襲撃可能な対象候補を取得する。"""
     return tuple(p for p in game.alive_players if p.role != Role.WEREWOLF)
@@ -125,7 +147,26 @@ def get_night_action_candidates(game: GameState, player: Player) -> tuple[Player
         return get_divine_candidates(game, player)
     if action_type == NightActionType.ATTACK:
         return get_attack_candidates(game)
+    if action_type == NightActionType.GUARD:
+        return get_guard_candidates(game, player)
     return ()
+
+
+def notify_medium_result(game: GameState) -> GameState:
+    """霊媒結果を通知する（Day 2+）。"""
+    if game.day < 2:
+        return game
+
+    medium_players = [p for p in game.alive_players if p.role == Role.MEDIUM]
+    if not medium_players:
+        return game
+
+    for day_num, name, is_werewolf in game.medium_results:
+        if day_num == game.day - 1:
+            result_text = "人狼" if is_werewolf else "人狼ではない"
+            game = game.add_log(f"[霊媒結果] {medium_players[0].name} の霊媒: {name} は {result_text}")
+
+    return game
 
 
 def get_discussion_rounds(day: int) -> int:

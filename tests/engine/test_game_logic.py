@@ -6,13 +6,16 @@ from llm_werewolf.domain.value_objects import NightActionType, Role
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
+    execute_guard,
     find_night_actor,
     get_alive_speaking_order,
     get_attack_candidates,
     get_discussion_rounds,
     get_divine_candidates,
+    get_guard_candidates,
     get_night_action_candidates,
     notify_divine_result,
+    notify_medium_result,
     rotate_speaking_order,
     tally_votes,
 )
@@ -24,8 +27,12 @@ def _make_game() -> GameState:
             Player(name="Alice", role=Role.SEER),
             Player(name="Bob", role=Role.WEREWOLF),
             Player(name="Charlie", role=Role.VILLAGER),
-            Player(name="Dave", role=Role.VILLAGER),
+            Player(name="Dave", role=Role.KNIGHT),
             Player(name="Eve", role=Role.VILLAGER),
+            Player(name="Frank", role=Role.MEDIUM),
+            Player(name="Grace", role=Role.VILLAGER),
+            Player(name="Heidi", role=Role.WEREWOLF),
+            Player(name="Ivan", role=Role.MADMAN),
         )
     )
 
@@ -48,7 +55,7 @@ class TestGetAliveSpeakingOrder:
     def test_empty_order_returns_alive_players(self) -> None:
         game = _make_game()
         result = get_alive_speaking_order(game, ())
-        assert len(result) == 5
+        assert len(result) == 9
 
 
 class TestNotifyDivineResult:
@@ -95,7 +102,16 @@ class TestGetDivineCandidates:
         game = _make_game()
         game = GameState(
             players=game.players,
-            divined_history=(("Alice", "Bob"), ("Alice", "Charlie"), ("Alice", "Dave"), ("Alice", "Eve")),
+            divined_history=(
+                ("Alice", "Bob"),
+                ("Alice", "Charlie"),
+                ("Alice", "Dave"),
+                ("Alice", "Eve"),
+                ("Alice", "Frank"),
+                ("Alice", "Grace"),
+                ("Alice", "Heidi"),
+                ("Alice", "Ivan"),
+            ),
         )
         seer = game.players[0]
         candidates = get_divine_candidates(game, seer)
@@ -140,6 +156,73 @@ class TestExecuteDivine:
         assert result is None
 
 
+class TestGetGuardCandidates:
+    def test_excludes_self(self) -> None:
+        game = _make_game()
+        knight = game.players[3]  # Dave
+        candidates = get_guard_candidates(game, knight)
+        names = [p.name for p in candidates]
+        assert "Dave" not in names
+        assert len(names) == 8  # 9 - 1 (self)
+
+    def test_excludes_last_guard_target(self) -> None:
+        game = _make_game()
+        game = game.add_guard_history("Dave", "Alice")
+        knight = game.players[3]  # Dave
+        candidates = get_guard_candidates(game, knight)
+        names = [p.name for p in candidates]
+        assert "Dave" not in names
+        assert "Alice" not in names
+        assert len(names) == 7  # 9 - 1 (self) - 1 (last target)
+
+    def test_allows_previous_non_last_target(self) -> None:
+        game = _make_game()
+        game = game.add_guard_history("Dave", "Alice")
+        game = game.add_guard_history("Dave", "Bob")
+        knight = game.players[3]
+        candidates = get_guard_candidates(game, knight)
+        names = [p.name for p in candidates]
+        assert "Alice" in names  # Alice was guarded before Bob, so allowed
+        assert "Bob" not in names  # Bob was last guarded
+
+
+class TestExecuteGuard:
+    def test_successful_guard(self) -> None:
+        game = _make_game()
+        knight = game.players[3]  # Dave
+        new_game, target_name = execute_guard(game, knight, "Alice")
+        assert target_name == "Alice"
+        assert any("[護衛]" in log for log in new_game.log)
+        assert new_game.get_last_guard_target("Dave") == "Alice"
+
+    def test_guard_invalid_target(self) -> None:
+        game = _make_game()
+        knight = game.players[3]
+        _, target_name = execute_guard(game, knight, "Unknown")
+        assert target_name is None
+
+    def test_guard_self_returns_none(self) -> None:
+        game = _make_game()
+        knight = game.players[3]
+        _, target_name = execute_guard(game, knight, "Dave")
+        assert target_name is None
+
+    def test_guard_dead_target_returns_none(self) -> None:
+        game = _make_game()
+        alice = game.players[0]
+        game = game.replace_player(alice, alice.killed())
+        knight = game.players[3]
+        _, target_name = execute_guard(game, knight, "Alice")
+        assert target_name is None
+
+    def test_consecutive_guard_returns_none(self) -> None:
+        game = _make_game()
+        game = game.add_guard_history("Dave", "Alice")
+        knight = game.players[3]
+        _, target_name = execute_guard(game, knight, "Alice")
+        assert target_name is None
+
+
 class TestGetAttackCandidates:
     def test_excludes_werewolves(self) -> None:
         game = _make_game()
@@ -174,6 +257,57 @@ class TestExecuteAttack:
         werewolf = game.players[1]
         _, target_name = execute_attack(game, werewolf, "Charlie")
         assert target_name is None
+
+
+class TestNotifyMediumResult:
+    def test_notifies_on_day2(self) -> None:
+        game = _make_game()
+        game = GameState(
+            players=game.players,
+            day=2,
+            medium_results=((1, "Charlie", False),),
+        )
+        result = notify_medium_result(game)
+        medium_logs = [log for log in result.log if "[霊媒結果]" in log]
+        assert len(medium_logs) == 1
+        assert "人狼ではない" in medium_logs[0]
+        assert "Frank" in medium_logs[0]
+
+    def test_notifies_werewolf_result(self) -> None:
+        game = _make_game()
+        game = GameState(
+            players=game.players,
+            day=2,
+            medium_results=((1, "Bob", True),),
+        )
+        result = notify_medium_result(game)
+        medium_logs = [log for log in result.log if "[霊媒結果]" in log]
+        assert len(medium_logs) == 1
+        assert "人狼" in medium_logs[0]
+        assert "人狼ではない" not in medium_logs[0]
+
+    def test_no_notification_on_day1(self) -> None:
+        game = _make_game()
+        result = notify_medium_result(game)
+        assert not any("[霊媒結果]" in log for log in result.log)
+
+    def test_no_notification_when_medium_dead(self) -> None:
+        game = _make_game()
+        frank = game.players[5]
+        game = game.replace_player(frank, frank.killed())
+        game = GameState(
+            players=game.players,
+            day=2,
+            medium_results=((1, "Charlie", False),),
+        )
+        result = notify_medium_result(game)
+        assert not any("[霊媒結果]" in log for log in result.log)
+
+    def test_no_notification_when_no_results(self) -> None:
+        game = _make_game()
+        game = GameState(players=game.players, day=2)
+        result = notify_medium_result(game)
+        assert not any("[霊媒結果]" in log for log in result.log)
 
 
 class TestTallyVotes:
@@ -242,6 +376,13 @@ class TestFindNightActor:
         assert actor.name == "Bob"
         assert actor.role == Role.WEREWOLF
 
+    def test_find_knight(self) -> None:
+        game = _make_game()
+        actor = find_night_actor(game, NightActionType.GUARD)
+        assert actor is not None
+        assert actor.name == "Dave"
+        assert actor.role == Role.KNIGHT
+
     def test_returns_none_when_dead(self) -> None:
         game = _make_game()
         alice = game.players[0]
@@ -265,6 +406,14 @@ class TestGetNightActionCandidates:
         candidates = get_night_action_candidates(game, werewolf)
         for p in candidates:
             assert p.role != Role.WEREWOLF
+
+    def test_guard_candidates(self) -> None:
+        game = _make_game()
+        knight = game.players[3]  # Dave
+        candidates = get_night_action_candidates(game, knight)
+        names = [p.name for p in candidates]
+        assert "Dave" not in names
+        assert "Alice" in names
 
     def test_villager_returns_empty(self) -> None:
         game = _make_game()
