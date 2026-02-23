@@ -381,8 +381,12 @@
             </ul>
             {% endif %}
             <div style="margin-top: 1rem;">
+                {% set ns = namespace(current_day=0) %}
                 {% for log_line in game.log %}
-                    {% if '[処刑]' in log_line %}
+                    {% if '--- Day ' in log_line %}
+                        {% set ns.current_day = log_line.split('Day ')[1].split(' ')[0] | int %}
+                    {% endif %}
+                    {% if '[処刑]' in log_line and ns.current_day == game.day %}
                     <div class="event-msg execution">{{ log_line.replace('[処刑] ', '') }}</div>
                     {% endif %}
                 {% endfor %}
