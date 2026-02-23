@@ -75,7 +75,7 @@ src/llm_werewolf/
 | `assign_roles` | 配役ロジック（9人にランダムで役職を割り当て） |
 | `create_game` | ゲーム初期化ファクトリ |
 | `create_game_with_role` | 指定プレイヤーに指定役職を割り当ててゲーム初期化 |
-| `check_victory` | 勝利判定（人狼全滅→村人勝利、村人陣営≦人狼→人狼勝利） |
+| `check_victory` | 勝利判定（人狼全滅→村人勝利、人狼以外の生存者≦人狼→人狼勝利） |
 | `can_guard` | 護衛制約チェック（狩人であること・自己護衛不可） |
 
 ### ゲームログサービス (`game_log.py`)
