@@ -165,25 +165,16 @@ class TestGetGuardCandidates:
         assert "Dave" not in names
         assert len(names) == 8  # 9 - 1 (self)
 
-    def test_excludes_last_guard_target(self) -> None:
+    def test_includes_last_guard_target(self) -> None:
+        """連続護衛が許可されているため、前回護衛対象も候補に含まれる"""
         game = _make_game()
         game = game.add_guard_history("Dave", "Alice")
         knight = game.players[3]  # Dave
         candidates = get_guard_candidates(game, knight)
         names = [p.name for p in candidates]
         assert "Dave" not in names
-        assert "Alice" not in names
-        assert len(names) == 7  # 9 - 1 (self) - 1 (last target)
-
-    def test_allows_previous_non_last_target(self) -> None:
-        game = _make_game()
-        game = game.add_guard_history("Dave", "Alice")
-        game = game.add_guard_history("Dave", "Bob")
-        knight = game.players[3]
-        candidates = get_guard_candidates(game, knight)
-        names = [p.name for p in candidates]
-        assert "Alice" in names  # Alice was guarded before Bob, so allowed
-        assert "Bob" not in names  # Bob was last guarded
+        assert "Alice" in names
+        assert len(names) == 8  # 9 - 1 (self)
 
 
 class TestExecuteGuard:
@@ -215,12 +206,14 @@ class TestExecuteGuard:
         _, target_name = execute_guard(game, knight, "Alice")
         assert target_name is None
 
-    def test_consecutive_guard_returns_none(self) -> None:
+    def test_consecutive_guard_succeeds(self) -> None:
+        """連続護衛が許可されているため、前回と同じ対象を護衛できる"""
         game = _make_game()
         game = game.add_guard_history("Dave", "Alice")
         knight = game.players[3]
-        _, target_name = execute_guard(game, knight, "Alice")
-        assert target_name is None
+        new_game, target_name = execute_guard(game, knight, "Alice")
+        assert target_name == "Alice"
+        assert new_game.get_last_guard_target("Dave") == "Alice"
 
 
 class TestGetAttackCandidates:

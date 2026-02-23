@@ -205,17 +205,10 @@ class TestCanGuard:
         with pytest.raises(ValueError, match="cannot guard themselves"):
             can_guard(game, knight, knight)
 
-    def test_consecutive_guard_raises(self) -> None:
+    def test_consecutive_guard_allowed(self) -> None:
+        """連続で同じ対象を護衛できる"""
         game = self._make_game()
         game = game.add_guard_history("Alice", "Charlie")
         knight = game.players[0]
-        target = game.players[2]
-        with pytest.raises(ValueError, match="cannot guard .* consecutively"):
-            can_guard(game, knight, target)
-
-    def test_guard_different_target_after_previous_guard(self) -> None:
-        game = self._make_game()
-        game = game.add_guard_history("Alice", "Charlie")
-        knight = game.players[0]
-        target = game.players[3]  # Dave
+        target = game.players[2]  # Charlie
         can_guard(game, knight, target)  # no exception
