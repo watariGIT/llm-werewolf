@@ -15,7 +15,7 @@ from typing import NamedTuple
 import openai
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
+from pydantic import BaseModel, Field, SecretStr
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
@@ -36,10 +36,24 @@ MAX_RETRIES = 3
 FALLBACK_DISCUSS_MESSAGE = "（通信エラーのため発言できませんでした）"
 
 
+class CandidateDecision(BaseModel):
+    """候補者選択の構造化レスポンス。"""
+
+    target: str = Field(description="選択した候補者の名前（候補者リストから正確に1つ選択）")
+    reason: str = Field(description="選択理由（1文）")
+
+
 class _LLMResult(NamedTuple):
     """LLM 呼び出し結果を保持する内部データ型。"""
 
     content: str
+    elapsed: float
+
+
+class _StructuredLLMResult(NamedTuple):
+    """構造化 LLM 呼び出し結果を保持する内部データ型。"""
+
+    decision: CandidateDecision
     elapsed: float
 
 
@@ -63,6 +77,52 @@ class LLMActionProvider:
     def _sleep(self, seconds: float) -> None:
         """スリープ処理。テスト時にモック可能。"""
         time.sleep(seconds)
+
+    def _call_llm_structured(self, system_prompt: str, user_prompt: str) -> _StructuredLLMResult | None:
+        """構造化出力で LLM を呼び出し、CandidateDecision を返す。
+
+        API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
+        リトライ上限到達時は None を返す。
+        """
+        structured_llm = self._llm.with_structured_output(CandidateDecision)
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+        logger.debug("LLM 構造化出力プロンプト:\n  system: %s\n  user: %s", system_prompt, user_prompt)
+        for attempt in range(MAX_RETRIES):
+            try:
+                start = time.monotonic()
+                response = structured_llm.invoke(messages)
+                elapsed = time.monotonic() - start
+                if not isinstance(response, CandidateDecision):
+                    logger.warning("構造化出力のパースに失敗しました。フォールバックします。")
+                    return None
+                logger.debug("LLM 構造化レスポンス: target=%s, reason=%s", response.target, response.reason)
+                return _StructuredLLMResult(decision=response, elapsed=elapsed)
+            except (openai.APITimeoutError, openai.RateLimitError) as e:
+                wait = 2**attempt
+                logger.warning(
+                    "LLM API エラー (試行 %d/%d): %s。%d秒後にリトライします。", attempt + 1, MAX_RETRIES, e, wait
+                )
+                self._sleep(wait)
+            except openai.APIStatusError as e:
+                if e.status_code >= 500:
+                    wait = 2**attempt
+                    logger.warning(
+                        "LLM API サーバーエラー %d (試行 %d/%d): %s。%d秒後にリトライします。",
+                        e.status_code,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        e,
+                        wait,
+                    )
+                    self._sleep(wait)
+                else:
+                    logger.warning("LLM API クライアントエラー %d: %s。リトライしません。", e.status_code, e)
+                    return None
+        logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
+        return None
 
     def _call_llm(self, system_prompt: str, user_prompt: str) -> _LLMResult | None:
         """LLM を呼び出してレスポンステキストとメタデータを返す。
@@ -126,62 +186,67 @@ class LLMActionProvider:
         logger.info("LLM アクション完了: player=%s, action=discuss, elapsed=%.2fs", player.name, result.elapsed)
         return parse_discuss_response(result.content)
 
+    def _select_candidate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        candidate_names: tuple[str, ...],
+        player_name: str,
+        action_type: str,
+    ) -> str:
+        """構造化出力で候補者を選択する共通メソッド。
+
+        1. 構造化出力で CandidateDecision を取得
+        2. target が候補者リストに含まれればそのまま返却
+        3. target が候補者リストに含まれなければ parse_candidate_response でフォールバック
+        4. API エラー時はランダムフォールバック
+        """
+        result = self._call_llm_structured(system_prompt, user_prompt)
+        if result is None:
+            selected = self._rng.choice(candidate_names)
+            logger.warning(
+                "%s フォールバック: プレイヤー %s の選択をランダムで %s に決定しました。",
+                action_type,
+                player_name,
+                selected,
+            )
+            return selected
+        decision = result.decision
+        logger.info(
+            "LLM アクション完了: player=%s, action=%s, elapsed=%.2fs, reason=%s",
+            player_name,
+            action_type,
+            result.elapsed,
+            decision.reason,
+        )
+        if decision.target in candidate_names:
+            return decision.target
+        return parse_candidate_response(decision.target, candidate_names, self._rng, action_type=action_type)
+
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         """投票先を LLM で選択する。"""
         system_prompt = build_system_prompt(player.role, self._personality)
         user_prompt = build_vote_prompt(game, player, candidates)
-        result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
-        if result is None:
-            selected = self._rng.choice(candidate_names)
-            logger.warning(
-                "vote フォールバック: プレイヤー %s の投票先をランダムで %s に決定しました。", player.name, selected
-            )
-            return selected
-        logger.info("LLM アクション完了: player=%s, action=vote, elapsed=%.2fs", player.name, result.elapsed)
-        return parse_candidate_response(result.content, candidate_names, self._rng, action_type="vote")
+        return self._select_candidate(system_prompt, user_prompt, candidate_names, player.name, "vote")
 
     def divine(self, game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
         """占い対象を LLM で選択する。"""
         system_prompt = build_system_prompt(seer.role, self._personality)
         user_prompt = build_divine_prompt(game, seer, candidates)
-        result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
-        if result is None:
-            selected = self._rng.choice(candidate_names)
-            logger.warning(
-                "divine フォールバック: 占い師 %s の占い対象をランダムで %s に決定しました。", seer.name, selected
-            )
-            return selected
-        logger.info("LLM アクション完了: player=%s, action=divine, elapsed=%.2fs", seer.name, result.elapsed)
-        return parse_candidate_response(result.content, candidate_names, self._rng, action_type="divine")
+        return self._select_candidate(system_prompt, user_prompt, candidate_names, seer.name, "divine")
 
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         """襲撃対象を LLM で選択する。"""
         system_prompt = build_system_prompt(werewolf.role, self._personality)
         user_prompt = build_attack_prompt(game, werewolf, candidates)
-        result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
-        if result is None:
-            selected = self._rng.choice(candidate_names)
-            logger.warning(
-                "attack フォールバック: 人狼 %s の襲撃対象をランダムで %s に決定しました。", werewolf.name, selected
-            )
-            return selected
-        logger.info("LLM アクション完了: player=%s, action=attack, elapsed=%.2fs", werewolf.name, result.elapsed)
-        return parse_candidate_response(result.content, candidate_names, self._rng, action_type="attack")
+        return self._select_candidate(system_prompt, user_prompt, candidate_names, werewolf.name, "attack")
 
     def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
         """護衛対象を LLM で選択する。"""
         system_prompt = build_system_prompt(knight.role, self._personality)
         user_prompt = build_guard_prompt(game, knight, candidates)
-        result = self._call_llm(system_prompt, user_prompt)
         candidate_names = tuple(c.name for c in candidates)
-        if result is None:
-            selected = self._rng.choice(candidate_names)
-            logger.warning(
-                "guard フォールバック: 狩人 %s の護衛対象をランダムで %s に決定しました。", knight.name, selected
-            )
-            return selected
-        logger.info("LLM アクション完了: player=%s, action=guard, elapsed=%.2fs", knight.name, result.elapsed)
-        return parse_candidate_response(result.content, candidate_names, self._rng, action_type="guard")
+        return self._select_candidate(system_prompt, user_prompt, candidate_names, knight.name, "guard")
