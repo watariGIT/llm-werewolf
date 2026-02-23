@@ -75,7 +75,10 @@ cp .env.example .env
 # .env を編集して OPENAI_API_KEY を設定
 
 # 開発サーバー起動
-uv run uvicorn llm_werewolf.main:app --reload
+uv run python -m llm_werewolf --reload
+
+# LLM デバッグモード（プロンプト・レスポンス・トークン数を表示）
+uv run python -m llm_werewolf --llm-debug --reload
 ```
 
 サーバー起動後、ブラウザで http://127.0.0.1:8000 にアクセスしてゲームをプレイできます。

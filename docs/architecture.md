@@ -21,6 +21,7 @@ src/llm_werewolf/
     interactive_engine.py  インタラクティブ用ステップ実行エンジン
     random_provider.py     ランダム行動プロバイダー（Mock版AI）
     llm_config.py          LLM設定の管理（環境変数バリデーション）
+  __main__.py          ← インフラ層（CLI エントリポイント）
   session.py           ← インフラ層（セッション管理）
   main.py              ← インフラ層（FastAPI, Jinja2）
   templates/

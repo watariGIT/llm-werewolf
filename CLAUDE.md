@@ -31,6 +31,8 @@
 uv sync                  # Install dependencies
 uv run tox               # Run lint, type check, and tests
 uv run tox -e integration # Run integration tests (OPENAI_API_KEY required)
+uv run python -m llm_werewolf              # Start web server
+uv run python -m llm_werewolf --llm-debug  # Start with LLM prompt/response/token logging
 ```
 
 ## Development Workflow

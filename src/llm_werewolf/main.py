@@ -39,6 +39,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
+# --llm-debug: LLM プロンプト・レスポンス・トークン使用量を標準出力に表示
+if os.environ.get("LLM_DEBUG", "").strip():
+    logging.getLogger("llm_werewolf.engine.llm_provider").setLevel(logging.DEBUG)
+    logging.getLogger("llm_werewolf.engine.game_master").setLevel(logging.DEBUG)
+    for _handler in logging.root.handlers:
+        _handler.setLevel(logging.DEBUG)
+
 logger = logging.getLogger(__name__)
 
 try:
