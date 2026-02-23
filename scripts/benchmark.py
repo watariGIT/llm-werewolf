@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -50,13 +51,14 @@ def run_single_game(
     provider_factory: ProviderFactory,
     rng: random.Random,
     model_name: str | None = None,
+    on_phase_end: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
     """1ゲームを実行し、結果を辞書で返す。"""
     game = create_game(PLAYER_NAMES, rng=rng)
     base_providers = provider_factory(rng)
     providers, metrics_list = _wrap_with_metrics(base_providers)
 
-    engine = GameEngine(game, providers, rng=rng)
+    engine = GameEngine(game, providers, rng=rng, on_phase_end=on_phase_end)
     final_state = engine.run()
 
     winner = check_victory(final_state)
@@ -92,6 +94,13 @@ def run_single_game(
     return result
 
 
+def _format_phase_status(game_state: Any) -> str:
+    """GameState からフェーズ表示文字列を生成する。"""
+    phase_label = "昼" if game_state.phase.value == "day" else "夜"
+    alive_count = len(game_state.alive_players)
+    return f"Day {game_state.day} {phase_label} (生存{alive_count}人)"
+
+
 def run_benchmark(
     games_count: int,
     provider_factory: ProviderFactory,
@@ -101,13 +110,18 @@ def run_benchmark(
     """指定回数のゲームを実行し、統計を集計する。"""
     results: list[dict[str, Any]] = []
 
-    for i in range(games_count):
+    pbar = tqdm(range(games_count), desc=f"{provider_type} ベンチマーク", unit="game")
+    for i in pbar:
         rng = random.Random(i)
-        print(f"  ゲーム {i + 1}/{games_count} 実行中...", end="", flush=True)
-        result = run_single_game(provider_factory, rng, model_name=model_name)
+
+        def on_phase_end(game_state: Any) -> None:
+            pbar.set_postfix_str(_format_phase_status(game_state))
+
+        result = run_single_game(provider_factory, rng, model_name=model_name, on_phase_end=on_phase_end)
         result["game_index"] = i
         results.append(result)
-        print(f" 完了 (勝者: {result['winner']}, ターン数: {result['turns']})")
+        winner_label = "村人" if result["winner"] == "village" else "人狼"
+        pbar.set_postfix_str(f"完了: {winner_label}勝利, {result['turns']}ターン")
 
     # 統計集計
     village_wins = sum(1 for r in results if r["winner"] == Team.VILLAGE.value)
