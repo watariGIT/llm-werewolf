@@ -45,6 +45,7 @@
 | 処刑 | Execution | `execution` | 投票により最多得票者を排除すること |
 | 襲撃 | Attack | `attack` | 夜フェーズで人狼が村人を殺害する行為 |
 | 占い | Divine | `divine` | 夜フェーズで占い師が対象の正体を確認する行為 |
+| 護衛 | Guard | `guard` | 夜フェーズで狩人が対象を人狼の襲撃から守る行為 |
 
 ## ゲーム状態 (Game State)
 
@@ -53,6 +54,8 @@
 | 生存 | Alive | `alive` | ゲームに参加中の状態 |
 | 死亡 | Dead | `dead` | 処刑または襲撃により排除された状態 |
 | 配役 | Role Assignment | `role_assignment` | ゲーム開始時に各プレイヤーに役職を割り当てること |
+| 護衛履歴 | Guard History | `guard_history` | 狩人の護衛対象の履歴 |
+| 霊媒結果 | Medium Result | `medium_result` | 霊媒師が処刑者について得た情報（人狼か否か） |
 
 ## 俗語・慣用表現
 
