@@ -167,7 +167,7 @@ src/llm_werewolf/
 
 | ファイル | 説明 |
 |---------|------|
-| `scripts/benchmark.py` | CLI ベンチマークスクリプト。指定回数のゲームを一括実行し、陣営別勝率・平均ターン数・API 呼び出し回数・平均レイテンシを集計して JSON 出力する。各ゲームの完全なログ（発言・投票・夜行動等）も結果に含まれる。`--compare-random` で RandomActionProvider との比較、`--random-only` で API KEY 不要の実行が可能 |
+| `scripts/benchmark.py` | CLI ベンチマークスクリプト。指定回数のゲームを一括実行し、陣営別勝率・平均ターン数・API 呼び出し回数・平均レイテンシ・護衛成功回数を集計して JSON 出力する。各ゲームの完全なログ（発言・投票・夜行動等）も結果に含まれる。`--compare-random` で RandomActionProvider との比較、`--random-only` で API KEY 不要の実行が可能 |
 
 ## 命名規則
 

@@ -5,7 +5,7 @@ from pathlib import Path
 # scripts/ はパッケージではないため、sys.path に追加してインポートする
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from benchmark import run_single_game  # noqa: E402
+from benchmark import run_benchmark, run_single_game  # noqa: E402
 
 from llm_werewolf.engine.random_provider import RandomActionProvider  # noqa: E402
 
@@ -36,5 +36,25 @@ class TestRunSingleGame:
         """結果辞書が全ての期待されるキーを持つこと。"""
         result = run_single_game(RandomActionProvider, random.Random(0))
 
-        expected_keys = {"winner", "turns", "api_calls", "average_latency", "log"}
+        expected_keys = {"winner", "turns", "api_calls", "average_latency", "guard_success_count", "log"}
         assert set(result.keys()) == expected_keys
+
+    def test_guard_success_count_is_non_negative(self) -> None:
+        """護衛成功回数が 0 以上であること。"""
+        result = run_single_game(RandomActionProvider, random.Random(0))
+
+        assert result["guard_success_count"] >= 0
+
+
+class TestRunBenchmark:
+    """run_benchmark() の統計集計を検証するテスト。"""
+
+    def test_summary_contains_guard_stats(self) -> None:
+        """summary に護衛成功の統計が含まれること。"""
+        result = run_benchmark(2, RandomActionProvider, "random")
+        summary = result["summary"]
+
+        assert "total_guard_successes" in summary
+        assert "average_guard_successes" in summary
+        assert summary["total_guard_successes"] >= 0
+        assert summary["average_guard_successes"] >= 0

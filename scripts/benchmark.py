@@ -60,11 +60,15 @@ def run_single_game(
     all_latencies = [a.elapsed_seconds for m in metrics_list for a in m.actions]
     avg_latency = sum(all_latencies) / len(all_latencies) if all_latencies else 0.0
 
+    # 護衛成功回数をログから集計
+    guard_success_count = sum(1 for entry in final_state.log if "[護衛成功]" in entry)
+
     return {
         "winner": winner_str,
         "turns": final_state.day - 1,
         "api_calls": total_calls,
         "average_latency": round(avg_latency, 4),
+        "guard_success_count": guard_success_count,
         "log": list(final_state.log),
     }
 
@@ -92,6 +96,7 @@ def run_benchmark(
     total_turns = sum(r["turns"] for r in results)
     total_calls = sum(r["api_calls"] for r in results)
     all_latencies = [r["average_latency"] for r in results if r["api_calls"] > 0]
+    total_guard_successes = sum(r["guard_success_count"] for r in results)
 
     metadata: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -109,6 +114,8 @@ def run_benchmark(
             "average_turns": round(total_turns / games_count, 2) if games_count > 0 else 0,
             "total_api_calls": total_calls,
             "average_latency": round(sum(all_latencies) / len(all_latencies), 4) if all_latencies else 0,
+            "total_guard_successes": total_guard_successes,
+            "average_guard_successes": round(total_guard_successes / games_count, 2) if games_count > 0 else 0,
         },
         "games": results,
     }
@@ -131,6 +138,7 @@ def print_summary(result: dict[str, Any]) -> None:
     print(f"  平均ターン数: {summary['average_turns']:.2f}")
     print(f"  API 呼び出し回数: {summary['total_api_calls']}")
     print(f"  平均レイテンシ: {summary['average_latency']:.4f}s")
+    print(f"  護衛成功回数: {summary['total_guard_successes']} (平均: {summary['average_guard_successes']:.2f})")
     print("=" * 50)
 
 
