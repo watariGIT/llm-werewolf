@@ -50,6 +50,7 @@ class _LLMResult(NamedTuple):
     elapsed: float
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_input_tokens: int = 0
 
 
 class _StructuredLLMResult(NamedTuple):
@@ -59,6 +60,7 @@ class _StructuredLLMResult(NamedTuple):
     elapsed: float
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_input_tokens: int = 0
 
 
 class LLMActionProvider:
@@ -79,6 +81,7 @@ class LLMActionProvider:
         self._personality = personality
         self.last_input_tokens: int = 0
         self.last_output_tokens: int = 0
+        self.last_cache_read_input_tokens: int = 0
 
     def _sleep(self, seconds: float) -> None:
         """スリープ処理。テスト時にモック可能。"""
@@ -89,9 +92,11 @@ class LLMActionProvider:
         if result is not None:
             self.last_input_tokens = result.input_tokens
             self.last_output_tokens = result.output_tokens
+            self.last_cache_read_input_tokens = result.cache_read_input_tokens
         else:
             self.last_input_tokens = 0
             self.last_output_tokens = 0
+            self.last_cache_read_input_tokens = 0
 
     def _call_llm_structured(self, system_prompt: str, user_prompt: str) -> _StructuredLLMResult | None:
         """構造化出力で LLM を呼び出し、CandidateDecision を返す。
@@ -117,20 +122,29 @@ class LLMActionProvider:
                 logger.debug("LLM 構造化レスポンス: target=%s, reason=%s", parsed.target, parsed.reason)
                 input_tokens = 0
                 output_tokens = 0
+                cache_read = 0
                 if isinstance(response, dict):
                     raw = response.get("raw")
                     usage = getattr(raw, "usage_metadata", None) if raw else None
                     if usage:
                         input_tokens = usage.get("input_tokens", 0)
                         output_tokens = usage.get("output_tokens", 0)
+                        details = usage.get("input_token_details", {})
+                        if details:
+                            cache_read = details.get("cache_read", 0)
                         logger.debug(
-                            "トークン使用量: input=%d, output=%d, total=%d",
+                            "トークン使用量: input=%d, output=%d, total=%d, cache_read=%d",
                             input_tokens,
                             output_tokens,
                             input_tokens + output_tokens,
+                            cache_read,
                         )
                 return _StructuredLLMResult(
-                    decision=parsed, elapsed=elapsed, input_tokens=input_tokens, output_tokens=output_tokens
+                    decision=parsed,
+                    elapsed=elapsed,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_read_input_tokens=cache_read,
                 )
             except (openai.APITimeoutError, openai.RateLimitError) as e:
                 wait = 2**attempt
@@ -180,17 +194,26 @@ class LLMActionProvider:
                 usage = getattr(response, "usage_metadata", None)
                 input_tokens = 0
                 output_tokens = 0
+                cache_read = 0
                 if usage:
                     input_tokens = usage.get("input_tokens", 0)
                     output_tokens = usage.get("output_tokens", 0)
+                    details = usage.get("input_token_details", {})
+                    if details:
+                        cache_read = details.get("cache_read", 0)
                     logger.debug(
-                        "トークン使用量: input=%d, output=%d, total=%d",
+                        "トークン使用量: input=%d, output=%d, total=%d, cache_read=%d",
                         input_tokens,
                         output_tokens,
                         input_tokens + output_tokens,
+                        cache_read,
                     )
                 return _LLMResult(
-                    content=content, elapsed=elapsed, input_tokens=input_tokens, output_tokens=output_tokens
+                    content=content,
+                    elapsed=elapsed,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_read_input_tokens=cache_read,
                 )
             except (openai.APITimeoutError, openai.RateLimitError) as e:
                 wait = 2**attempt
@@ -216,10 +239,16 @@ class LLMActionProvider:
         logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
         return None
 
+    def _prepend_personality(self, user_prompt: str) -> str:
+        """ユーザープロンプトの先頭に人格タグを付加する。"""
+        if self._personality:
+            return f"{self._personality}\n\n{user_prompt}"
+        return user_prompt
+
     def discuss(self, game: GameState, player: Player) -> str:
         """議論フェーズでの発言を LLM で生成する。"""
-        system_prompt = build_system_prompt(player.role, self._personality)
-        user_prompt = build_discuss_prompt(game, player)
+        system_prompt = build_system_prompt(player.role)
+        user_prompt = self._prepend_personality(build_discuss_prompt(game, player))
         result = self._call_llm(system_prompt, user_prompt)
         self._update_token_usage(result)
         if result is None:
@@ -268,28 +297,28 @@ class LLMActionProvider:
 
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         """投票先を LLM で選択する。"""
-        system_prompt = build_system_prompt(player.role, self._personality)
-        user_prompt = build_vote_prompt(game, player, candidates)
+        system_prompt = build_system_prompt(player.role)
+        user_prompt = self._prepend_personality(build_vote_prompt(game, player, candidates))
         candidate_names = tuple(c.name for c in candidates)
         return self._select_candidate(system_prompt, user_prompt, candidate_names, player.name, "vote")
 
     def divine(self, game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
         """占い対象を LLM で選択する。"""
-        system_prompt = build_system_prompt(seer.role, self._personality)
-        user_prompt = build_divine_prompt(game, seer, candidates)
+        system_prompt = build_system_prompt(seer.role)
+        user_prompt = self._prepend_personality(build_divine_prompt(game, seer, candidates))
         candidate_names = tuple(c.name for c in candidates)
         return self._select_candidate(system_prompt, user_prompt, candidate_names, seer.name, "divine")
 
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         """襲撃対象を LLM で選択する。"""
-        system_prompt = build_system_prompt(werewolf.role, self._personality)
-        user_prompt = build_attack_prompt(game, werewolf, candidates)
+        system_prompt = build_system_prompt(werewolf.role)
+        user_prompt = self._prepend_personality(build_attack_prompt(game, werewolf, candidates))
         candidate_names = tuple(c.name for c in candidates)
         return self._select_candidate(system_prompt, user_prompt, candidate_names, werewolf.name, "attack")
 
     def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
         """護衛対象を LLM で選択する。"""
-        system_prompt = build_system_prompt(knight.role, self._personality)
-        user_prompt = build_guard_prompt(game, knight, candidates)
+        system_prompt = build_system_prompt(knight.role)
+        user_prompt = self._prepend_personality(build_guard_prompt(game, knight, candidates))
         candidate_names = tuple(c.name for c in candidates)
         return self._select_candidate(system_prompt, user_prompt, candidate_names, knight.name, "guard")

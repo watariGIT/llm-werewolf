@@ -100,15 +100,15 @@ src/llm_werewolf/
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供。構造化出力の `target` が候補者リストに含まれない場合のフォールバックとしても使用される |
-| `prompts` | LLM 用プロンプトテンプレート生成。共通ルール（`_BASE_RULES`）は最小限に抑え、各役職が知るべき情報のみを含む役職別指示（`_ROLE_INSTRUCTIONS`）と組み合わせてシステムプロンプトを構成する。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。人格特性システム（`PersonalityTrait` / `TRAIT_CATEGORIES`）により、口調・議論態度・思考スタイルの独立した特性軸を組み合わせて多様なAI人格を生成する。襲撃プロンプトには仲間の人狼情報を含める |
-| `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（軸名）とプロンプト用テキストを保持する |
+| `prompts` | LLM 用プロンプトテンプレート生成。Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみ（共通ルール `_BASE_RULES` + 役職別指示 `_ROLE_INSTRUCTIONS` + 人格タグ解釈ルール `_PERSONALITY_TAG_RULES`）で構成し、同一役職のプレイヤーは常に同一のシステムプロンプトを受け取る。人格特性はタグ形式（例: `personality: tone=polite, stance=aggressive, style=strategic`）でユーザーメッセージ側に含める。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。襲撃プロンプトには仲間の人狼情報を含める |
+| `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（タグキー: tone/stance/style）・タグ値・説明文を保持する |
 | `assign_personalities` | AI人数分の特性組み合わせを生成する関数。各特性軸からランダムに1つ選択し、人格のバリエーションを作る |
-| `build_personality` | 特性リストからプロンプトに埋め込む人格テキストを組み立てる関数 |
-| `ActionMetrics` | 1回のアクション呼び出しのメトリクス（アクション種別・プレイヤー名・レイテンシ・入力トークン数・出力トークン数）を保持するデータクラス |
-| `GameMetrics` | 1ゲーム分のメトリクスを集約するデータクラス。`total_api_calls` / `average_latency` / `total_input_tokens` / `total_output_tokens` / `total_tokens` プロパティで統計を提供。`estimated_cost_usd(model_name)` メソッドでモデル別の推定コストを算出 |
-| `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシとトークン使用量を計測して `GameMetrics` に記録する。内部 Provider の `last_input_tokens` / `last_output_tokens` 属性からトークン情報を取得 |
-| `MODEL_PRICING` | モデル別の料金テーブル（USD per 1M tokens）。コスト推定に使用。該当しないモデルは推定不可（None） |
-| `estimate_cost` | モデル名とトークン数から推定コスト（USD）を計算するユーティリティ関数 |
+| `build_personality` | 特性リストから人格タグ文字列（例: `personality: tone=polite, stance=aggressive, style=strategic`）を組み立てる関数 |
+| `ActionMetrics` | 1回のアクション呼び出しのメトリクス（アクション種別・プレイヤー名・レイテンシ・入力トークン数・出力トークン数・キャッシュ済み入力トークン数）を保持するデータクラス |
+| `GameMetrics` | 1ゲーム分のメトリクスを集約するデータクラス。`total_api_calls` / `average_latency` / `total_input_tokens` / `total_output_tokens` / `total_tokens` / `total_cache_read_input_tokens` プロパティで統計を提供。`estimated_cost_usd(model_name)` メソッドでモデル別の推定コストを算出（キャッシュ割引を反映） |
+| `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシ・トークン使用量・キャッシュトークン数を計測して `GameMetrics` に記録する。内部 Provider の `last_input_tokens` / `last_output_tokens` / `last_cache_read_input_tokens` 属性からトークン情報を取得 |
+| `MODEL_PRICING` | モデル別の料金テーブル（USD per 1M tokens）。input / cached_input / output の3種類の料金を定義。コスト推定に使用。該当しないモデルは推定不可（None） |
+| `estimate_cost` | モデル名とトークン数から推定コスト（USD）を計算するユーティリティ関数。キャッシュ済みトークンには割引料金を適用 |
 
 ## インフラ層
 

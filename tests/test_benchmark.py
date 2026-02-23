@@ -49,6 +49,7 @@ class TestRunSingleGame:
             "guard_success_count",
             "total_input_tokens",
             "total_output_tokens",
+            "total_cache_read_input_tokens",
             "total_tokens",
             "log",
         }

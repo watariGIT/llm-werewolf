@@ -35,11 +35,16 @@ class TestActionMetrics:
         assert m.elapsed_seconds == 1.5
         assert m.input_tokens == 0
         assert m.output_tokens == 0
+        assert m.cache_read_input_tokens == 0
 
     def test_token_fields(self) -> None:
         m = ActionMetrics("discuss", "Alice", 1.0, input_tokens=100, output_tokens=50)
         assert m.input_tokens == 100
         assert m.output_tokens == 50
+
+    def test_cache_read_field(self) -> None:
+        m = ActionMetrics("discuss", "Alice", 1.0, input_tokens=100, output_tokens=50, cache_read_input_tokens=60)
+        assert m.cache_read_input_tokens == 60
 
 
 class TestGameMetrics:
@@ -50,6 +55,7 @@ class TestGameMetrics:
         assert gm.total_input_tokens == 0
         assert gm.total_output_tokens == 0
         assert gm.total_tokens == 0
+        assert gm.total_cache_read_input_tokens == 0
 
     def test_total_api_calls(self) -> None:
         gm = GameMetrics(
@@ -80,6 +86,15 @@ class TestGameMetrics:
         assert gm.total_output_tokens == 80
         assert gm.total_tokens == 380
 
+    def test_total_cache_read_input_tokens(self) -> None:
+        gm = GameMetrics(
+            actions=[
+                ActionMetrics("discuss", "Alice", 1.0, input_tokens=100, output_tokens=50, cache_read_input_tokens=30),
+                ActionMetrics("vote", "Bob", 2.0, input_tokens=200, output_tokens=30, cache_read_input_tokens=100),
+            ]
+        )
+        assert gm.total_cache_read_input_tokens == 130
+
     def test_estimated_cost_usd_known_model(self) -> None:
         gm = GameMetrics(
             actions=[
@@ -90,6 +105,26 @@ class TestGameMetrics:
         cost = gm.estimated_cost_usd("gpt-4o")
         assert cost is not None
         assert abs(cost - (2.50 + 1.00)) < 0.001
+
+    def test_estimated_cost_usd_with_cache(self) -> None:
+        """キャッシュトークンがある場合のコスト計算。"""
+        gm = GameMetrics(
+            actions=[
+                ActionMetrics(
+                    "discuss",
+                    "Alice",
+                    1.0,
+                    input_tokens=1_000_000,
+                    output_tokens=100_000,
+                    cache_read_input_tokens=500_000,
+                ),
+            ]
+        )
+        # gpt-4o: non_cached 500k * $2.50/1M + cached 500k * $1.25/1M + output 100k * $10.00/1M
+        cost = gm.estimated_cost_usd("gpt-4o")
+        assert cost is not None
+        expected = 500_000 * 2.50 / 1_000_000 + 500_000 * 1.25 / 1_000_000 + 100_000 * 10.00 / 1_000_000
+        assert abs(cost - expected) < 0.001
 
     def test_estimated_cost_usd_unknown_model(self) -> None:
         gm = GameMetrics(
@@ -121,14 +156,32 @@ class TestEstimateCost:
         assert cost is not None
         assert abs(cost - (0.25 + 2.00)) < 0.001
 
+    def test_with_cache_read_tokens(self) -> None:
+        """キャッシュトークンがある場合、割引料金が適用されること。"""
+        # gpt-4o: input $2.50/1M, cached_input $1.25/1M, output $10.00/1M
+        cost = estimate_cost("gpt-4o", 1_000_000, 100_000, cache_read_input_tokens=400_000)
+        assert cost is not None
+        # non_cached 600k * $2.50/1M + cached 400k * $1.25/1M + output 100k * $10.00/1M
+        expected = 600_000 * 2.50 / 1_000_000 + 400_000 * 1.25 / 1_000_000 + 100_000 * 10.00 / 1_000_000
+        assert abs(cost - expected) < 0.001
+
+    def test_zero_cache_backward_compatible(self) -> None:
+        """cache_read_input_tokens=0 の場合、従来と同じコスト。"""
+        cost_no_cache = estimate_cost("gpt-4o", 1_000_000, 100_000)
+        cost_zero_cache = estimate_cost("gpt-4o", 1_000_000, 100_000, cache_read_input_tokens=0)
+        assert cost_no_cache == cost_zero_cache
+
 
 class TestModelPricing:
     def test_all_models_have_input_and_output(self) -> None:
         for model, pricing in MODEL_PRICING.items():
             assert "input" in pricing, f"{model} missing 'input' price"
             assert "output" in pricing, f"{model} missing 'output' price"
+            assert "cached_input" in pricing, f"{model} missing 'cached_input' price"
             assert pricing["input"] >= 0, f"{model} has negative input price"
             assert pricing["output"] >= 0, f"{model} has negative output price"
+            assert pricing["cached_input"] >= 0, f"{model} has negative cached_input price"
+            assert pricing["cached_input"] <= pricing["input"], f"{model} cached price exceeds input price"
 
 
 class _TokenTrackingProvider:
@@ -137,30 +190,36 @@ class _TokenTrackingProvider:
     def __init__(self) -> None:
         self.last_input_tokens: int = 0
         self.last_output_tokens: int = 0
+        self.last_cache_read_input_tokens: int = 0
 
     def discuss(self, game: GameState, player: Player) -> str:
         self.last_input_tokens = 150
         self.last_output_tokens = 50
+        self.last_cache_read_input_tokens = 80
         return "テスト発言"
 
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         self.last_input_tokens = 200
         self.last_output_tokens = 10
+        self.last_cache_read_input_tokens = 120
         return candidates[0].name
 
     def divine(self, game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
         self.last_input_tokens = 180
         self.last_output_tokens = 10
+        self.last_cache_read_input_tokens = 100
         return candidates[0].name
 
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         self.last_input_tokens = 170
         self.last_output_tokens = 10
+        self.last_cache_read_input_tokens = 90
         return candidates[0].name
 
     def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
         self.last_input_tokens = 160
         self.last_output_tokens = 10
+        self.last_cache_read_input_tokens = 85
         return candidates[0].name
 
 
@@ -256,8 +315,10 @@ class TestMetricsCollectingProvider:
 
         assert metrics.actions[0].input_tokens == 150
         assert metrics.actions[0].output_tokens == 50
+        assert metrics.actions[0].cache_read_input_tokens == 80
         assert metrics.total_input_tokens == 150
         assert metrics.total_output_tokens == 50
+        assert metrics.total_cache_read_input_tokens == 80
 
     def test_vote_records_token_usage(self) -> None:
         inner = _TokenTrackingProvider()
@@ -290,10 +351,11 @@ class TestMetricsCollectingProvider:
         provider = MetricsCollectingProvider(inner, metrics)
 
         game = _create_game()
-        provider.discuss(game, game.players[0])  # input=150, output=50
+        provider.discuss(game, game.players[0])  # input=150, output=50, cache=80
         candidates = tuple(p for p in game.players if p.name != "Alice")
-        provider.vote(game, game.players[0], candidates)  # input=200, output=10
+        provider.vote(game, game.players[0], candidates)  # input=200, output=10, cache=120
 
         assert metrics.total_input_tokens == 350
         assert metrics.total_output_tokens == 60
         assert metrics.total_tokens == 410
+        assert metrics.total_cache_read_input_tokens == 200
