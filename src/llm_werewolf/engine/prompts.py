@@ -18,61 +18,75 @@ from llm_werewolf.domain.value_objects import Role
 
 @dataclass(frozen=True)
 class PersonalityTrait:
-    """人格特性の1要素。カテゴリ（軸）とプロンプト用テキストを保持する。"""
+    """人格特性の1要素。カテゴリ（タグキー）・タグ値・説明文を保持する。"""
 
     category: str
+    tag: str
     description: str
 
 
 # --- 特性軸の定義 ---
 
 SPEAKING_STYLES: tuple[PersonalityTrait, ...] = (
-    PersonalityTrait(category="口調", description="丁寧語で話す。「〜です」「〜ます」を使う"),
-    PersonalityTrait(category="口調", description="カジュアルな口調で話す。「〜だよね」「〜じゃん」を使う"),
+    PersonalityTrait(category="tone", tag="polite", description="丁寧語で話す。「〜です」「〜ます」を使う"),
     PersonalityTrait(
-        category="口調",
+        category="tone", tag="casual", description="カジュアルな口調で話す。「〜だよね」「〜じゃん」を使う"
+    ),
+    PersonalityTrait(
+        category="tone",
+        tag="provocative",
         description="やや挑発的な口調で話す。「〜なんじゃない？」「本当にそう思ってる？」のように問いかける",
     ),
     PersonalityTrait(
-        category="口調", description="穏やかで優しい口調で話す。「〜かもしれないね」「〜だといいんだけど」を使う"
+        category="tone",
+        tag="gentle",
+        description="穏やかで優しい口調で話す。「〜かもしれないね」「〜だといいんだけど」を使う",
     ),
 )
 
 DISCUSSION_ATTITUDES: tuple[PersonalityTrait, ...] = (
     PersonalityTrait(
-        category="議論態度",
+        category="stance",
+        tag="aggressive",
         description="積極的に疑いを指摘する。少しでも怪しいと感じたら名指しで追及し、投票先を早めに宣言する",
     ),
     PersonalityTrait(
-        category="議論態度",
+        category="stance",
+        tag="evidence-based",
         description="慎重に根拠を求める。他の人の主張に「根拠は？」と問い返し、証拠のない推理には反論する",
     ),
     PersonalityTrait(
-        category="議論態度",
+        category="stance",
+        tag="independent",
         description="多数派に流されず独自の視点を持つ。皆が同じ人を疑っていても別の可能性を提示する",
     ),
     PersonalityTrait(
-        category="議論態度",
+        category="stance",
+        tag="intuitive",
         description="直感を大事にする。第一印象で「この人は怪しい」「この人は信用できる」と断言する",
     ),
 )
 
 THINKING_STYLES: tuple[PersonalityTrait, ...] = (
     PersonalityTrait(
-        category="思考スタイル",
+        category="style",
+        tag="contradiction-analysis",
         description="投票パターンや発言の矛盾を分析する。"
         "「○○は昨日△△と言ったのに今日は逆のことを言っている」と指摘する",
     ),
     PersonalityTrait(
-        category="思考スタイル",
+        category="style",
+        tag="emotional-observation",
         description="プレイヤーの態度や感情の変化に注目する。「○○は急に黙った」「○○の反応が不自然」と指摘する",
     ),
     PersonalityTrait(
-        category="思考スタイル",
+        category="style",
+        tag="silence-focus",
         description="発言量や沈黙に注目する。「○○はあまり発言していない」「○○は話題を逸らしている」と指摘する",
     ),
     PersonalityTrait(
-        category="思考スタイル",
+        category="style",
+        tag="strategic",
         description="陣営全体の戦略を考える。「ここで○○を処刑すれば残り人狼は1人」等の戦略的分析をする",
     ),
 )
@@ -104,15 +118,19 @@ def assign_personalities(ai_count: int, rng: random.Random) -> list[tuple[Person
 
 
 def build_personality(traits: tuple[PersonalityTrait, ...]) -> str:
-    """特性リストから人格プロンプトテキストを組み立てる。
+    """特性リストから人格タグ文字列を組み立てる。
+
+    Prompt Caching を活用するため、短いタグ形式で返す。
+    タグの解釈ルールはシステムプロンプト側に固定文字列として含まれる。
 
     Args:
         traits: 特性のタプル
 
     Returns:
-        プロンプトに埋め込む人格テキスト
+        人格タグ文字列（例: "personality: tone=polite, stance=aggressive, style=strategic"）
     """
-    return "\n".join(f"- {t.description}" for t in traits)
+    tag_parts = ", ".join(f"{t.category}={t.tag}" for t in traits)
+    return f"personality: {tag_parts}"
 
 
 _BASE_RULES = """\
@@ -137,6 +155,19 @@ _BASE_RULES = """\
 - 霊媒: 処刑されたプレイヤーが人狼だったか否かを知る能力
 - 黒: 人狼（またはその疑いがある）こと
 - 白: 人狼でない（またはその可能性が高い）こと"""
+
+
+def _build_personality_tag_rules() -> str:
+    """人格タグの解釈ルールを生成する（システムプロンプト固定部分）。"""
+    lines = ["## 人格タグ", "userメッセージに personality タグが含まれる場合、以下に従って振る舞ってください:"]
+    for category_traits in TRAIT_CATEGORIES:
+        category = category_traits[0].category
+        tag_descriptions = " / ".join(f"{t.tag}={t.description}" for t in category_traits)
+        lines.append(f"- {category}: {tag_descriptions}")
+    return "\n".join(lines)
+
+
+_PERSONALITY_TAG_RULES = _build_personality_tag_rules()
 
 _ROLE_INSTRUCTIONS: dict[Role, str] = {
     Role.VILLAGER: """\
@@ -205,20 +236,20 @@ _ROLE_INSTRUCTIONS: dict[Role, str] = {
 }
 
 
-def build_system_prompt(role: Role, personality: str = "") -> str:
-    """役職と人格に応じたシステムプロンプトを生成する。
+def build_system_prompt(role: Role) -> str:
+    """役職に応じたシステムプロンプトを生成する。
+
+    Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみで構成される。
+    人格特性はユーザーメッセージ側でタグとして渡され、解釈ルールのみがここに含まれる。
+    同じ役職のプレイヤーは常に同一のシステムプロンプトを受け取る。
 
     Args:
         role: プレイヤーの役職
-        personality: 人格プロンプトテキスト（空文字列の場合は人格セクションなし）
 
     Returns:
-        システムプロンプト文字列
+        システムプロンプト文字列（固定）
     """
-    parts = [_BASE_RULES, _ROLE_INSTRUCTIONS[role]]
-    if personality:
-        parts.append(f"## あなたの性格（必ず以下に従って発言してください）\n{personality}")
-    return "\n\n".join(parts)
+    return "\n\n".join([_BASE_RULES, _ROLE_INSTRUCTIONS[role], _PERSONALITY_TAG_RULES])
 
 
 def _format_candidates(candidates: tuple[Player, ...]) -> str:

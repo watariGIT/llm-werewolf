@@ -16,23 +16,28 @@ from llm_werewolf.engine.action_provider import ActionProvider
 # 料金テーブル（USD per 1M tokens）
 # 料金は変動するため参考値。該当しないモデルの場合はコスト推定不可（None）。
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    "gpt-4o": {"input": 2.50, "output": 10.00},
-    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "gpt-5-mini": {"input": 0.25, "output": 2.00},
+    "gpt-4o": {"input": 2.50, "cached_input": 1.25, "output": 10.00},
+    "gpt-4o-mini": {"input": 0.15, "cached_input": 0.075, "output": 0.60},
+    "gpt-5-mini": {"input": 0.25, "cached_input": 0.125, "output": 2.00},
 }
 
 
-def estimate_cost(model_name: str, input_tokens: int, output_tokens: int) -> float | None:
+def estimate_cost(
+    model_name: str, input_tokens: int, output_tokens: int, cache_read_input_tokens: int = 0
+) -> float | None:
     """モデル名とトークン数から推定コスト（USD）を計算する。
 
+    キャッシュ済みトークンがある場合は割引料金で計算する。
     料金テーブルに該当しないモデルの場合は None を返す。
     """
     pricing = MODEL_PRICING.get(model_name)
     if pricing is None:
         return None
-    input_cost = input_tokens * pricing["input"] / 1_000_000
+    non_cached = input_tokens - cache_read_input_tokens
+    input_cost = non_cached * pricing["input"] / 1_000_000
+    cached_cost = cache_read_input_tokens * pricing["cached_input"] / 1_000_000
     output_cost = output_tokens * pricing["output"] / 1_000_000
-    return input_cost + output_cost
+    return input_cost + cached_cost + output_cost
 
 
 @dataclass
@@ -44,6 +49,7 @@ class ActionMetrics:
     elapsed_seconds: float
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_input_tokens: int = 0
 
 
 @dataclass
@@ -74,9 +80,15 @@ class GameMetrics:
     def total_tokens(self) -> int:
         return self.total_input_tokens + self.total_output_tokens
 
+    @property
+    def total_cache_read_input_tokens(self) -> int:
+        return sum(a.cache_read_input_tokens for a in self.actions)
+
     def estimated_cost_usd(self, model_name: str) -> float | None:
         """モデル名に基づく推定コスト（USD）を返す。該当しないモデルは None。"""
-        return estimate_cost(model_name, self.total_input_tokens, self.total_output_tokens)
+        return estimate_cost(
+            model_name, self.total_input_tokens, self.total_output_tokens, self.total_cache_read_input_tokens
+        )
 
 
 class MetricsCollectingProvider:
@@ -94,7 +106,10 @@ class MetricsCollectingProvider:
         elapsed = time.monotonic() - start
         input_tokens: int = getattr(self._inner, "last_input_tokens", 0)
         output_tokens: int = getattr(self._inner, "last_output_tokens", 0)
-        self._metrics.actions.append(ActionMetrics(action_type, player_name, elapsed, input_tokens, output_tokens))
+        cache_read: int = getattr(self._inner, "last_cache_read_input_tokens", 0)
+        self._metrics.actions.append(
+            ActionMetrics(action_type, player_name, elapsed, input_tokens, output_tokens, cache_read)
+        )
 
     def discuss(self, game: GameState, player: Player) -> str:
         start = time.monotonic()

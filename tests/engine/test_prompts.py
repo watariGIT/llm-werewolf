@@ -339,6 +339,13 @@ class TestPersonalitySystem:
         for category in TRAIT_CATEGORIES:
             assert len(category) >= 4
 
+    def test_trait_has_tag_field(self) -> None:
+        """各特性に tag フィールドが存在すること。"""
+        for category_traits in TRAIT_CATEGORIES:
+            for trait in category_traits:
+                assert trait.tag, f"特性 {trait.description} に tag が未設定"
+                assert trait.category in ("tone", "stance", "style")
+
     def test_assign_personalities_returns_correct_count(self) -> None:
         """assign_personalities が指定人数分の人格を返すこと。"""
         rng = random.Random(42)
@@ -367,31 +374,40 @@ class TestPersonalitySystem:
         result2 = assign_personalities(4, random.Random(42))
         assert result1 == result2
 
-    def test_build_personality_formats_traits(self) -> None:
-        """build_personality が各特性を箇条書きで返すこと。"""
+    def test_build_personality_returns_tag_format(self) -> None:
+        """build_personality がタグ形式の文字列を返すこと。"""
         rng = random.Random(42)
         traits = assign_personalities(1, rng)[0]
         result = build_personality(traits)
+        assert result.startswith("personality: ")
         for trait in traits:
-            assert trait.description in result
-        assert result.startswith("- ")
+            assert f"{trait.category}={trait.tag}" in result
 
-    def test_build_system_prompt_with_personality(self) -> None:
-        """personality を渡すと性格セクションが含まれること。"""
-        personality = "- 丁寧語で話す\n- 積極的に疑いを指摘する"
-        result = build_system_prompt(Role.VILLAGER, personality=personality)
-        assert "あなたの性格" in result
-        assert "丁寧語で話す" in result
-        assert "積極的に疑いを指摘する" in result
+    def test_build_personality_tag_format_structure(self) -> None:
+        """build_personality がカンマ区切りのタグ形式であること。"""
+        from llm_werewolf.engine.prompts import DISCUSSION_ATTITUDES, SPEAKING_STYLES, THINKING_STYLES
 
-    def test_build_system_prompt_without_personality(self) -> None:
-        """personality 未指定時は従来と同じ出力であること。"""
+        traits = (SPEAKING_STYLES[0], DISCUSSION_ATTITUDES[1], THINKING_STYLES[2])
+        result = build_personality(traits)
+        assert result == "personality: tone=polite, stance=evidence-based, style=silence-focus"
+
+    def test_build_system_prompt_contains_personality_tag_rules(self) -> None:
+        """システムプロンプトに人格タグ解釈ルールが含まれること。"""
         result = build_system_prompt(Role.VILLAGER)
-        assert "あなたの性格" not in result
+        assert "人格タグ" in result
+        assert "tone" in result
+        assert "stance" in result
+        assert "style" in result
 
-    def test_build_system_prompt_with_empty_personality(self) -> None:
-        """空文字列の personality では性格セクションが含まれないこと。"""
-        result = build_system_prompt(Role.VILLAGER, personality="")
+    def test_build_system_prompt_is_fixed_for_same_role(self) -> None:
+        """同じ役職のシステムプロンプトが常に同一であること（Prompt Caching 対応）。"""
+        result1 = build_system_prompt(Role.VILLAGER)
+        result2 = build_system_prompt(Role.VILLAGER)
+        assert result1 == result2
+
+    def test_build_system_prompt_does_not_contain_personality_section(self) -> None:
+        """システムプロンプトに「あなたの性格」セクションが含まれないこと。"""
+        result = build_system_prompt(Role.VILLAGER)
         assert "あなたの性格" not in result
 
 

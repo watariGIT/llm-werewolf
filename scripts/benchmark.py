@@ -72,8 +72,9 @@ def run_single_game(
     # トークン集計
     total_input_tokens = sum(m.total_input_tokens for m in metrics_list)
     total_output_tokens = sum(m.total_output_tokens for m in metrics_list)
+    total_cache_read = sum(m.total_cache_read_input_tokens for m in metrics_list)
     total_tokens = total_input_tokens + total_output_tokens
-    cost = estimate_cost(model_name or "", total_input_tokens, total_output_tokens)
+    cost = estimate_cost(model_name or "", total_input_tokens, total_output_tokens, total_cache_read)
 
     # 護衛成功回数をログから集計
     guard_success_count = sum(1 for entry in final_state.log if "[護衛成功]" in entry)
@@ -86,6 +87,7 @@ def run_single_game(
         "guard_success_count": guard_success_count,
         "total_input_tokens": total_input_tokens,
         "total_output_tokens": total_output_tokens,
+        "total_cache_read_input_tokens": total_cache_read,
         "total_tokens": total_tokens,
         "log": list(final_state.log),
     }
@@ -134,8 +136,9 @@ def run_benchmark(
     # トークン統計
     total_input_tokens = sum(r["total_input_tokens"] for r in results)
     total_output_tokens = sum(r["total_output_tokens"] for r in results)
+    total_cache_read = sum(r["total_cache_read_input_tokens"] for r in results)
     total_tokens = total_input_tokens + total_output_tokens
-    total_cost = estimate_cost(model_name or "", total_input_tokens, total_output_tokens)
+    total_cost = estimate_cost(model_name or "", total_input_tokens, total_output_tokens, total_cache_read)
 
     metadata: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -155,6 +158,8 @@ def run_benchmark(
         "average_guard_successes": round(total_guard_successes / games_count, 2) if games_count > 0 else 0,
         "total_input_tokens": total_input_tokens,
         "total_output_tokens": total_output_tokens,
+        "total_cache_read_input_tokens": total_cache_read,
+        "cache_hit_rate": round(total_cache_read / total_input_tokens, 4) if total_input_tokens > 0 else 0,
         "total_tokens": total_tokens,
         "average_tokens_per_game": round(total_tokens / games_count) if games_count > 0 else 0,
     }
@@ -189,7 +194,9 @@ def print_summary(result: dict[str, Any]) -> None:
     print(f"  護衛成功回数: {summary['total_guard_successes']} (平均: {summary['average_guard_successes']:.2f})")
     input_t = summary["total_input_tokens"]
     output_t = summary["total_output_tokens"]
+    cache_t = summary["total_cache_read_input_tokens"]
     print(f"  トークン合計: {summary['total_tokens']:,} (入力: {input_t:,}, 出力: {output_t:,})")
+    print(f"  キャッシュ済み入力: {cache_t:,} (ヒット率: {summary['cache_hit_rate']:.1%})")
     print(f"  平均トークン/ゲーム: {summary['average_tokens_per_game']:,}")
     if "total_estimated_cost_usd" in summary:
         print(f"  推定コスト合計: ${summary['total_estimated_cost_usd']:.4f}")
