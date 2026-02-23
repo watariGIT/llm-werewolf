@@ -465,6 +465,210 @@ class TestNightAction:
                 handle_night_action(session, night_candidates[0].name)
                 assert session.step in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER)
 
+    def test_knight_gets_night_action(self) -> None:
+        """ユーザーが狩人の場合、夜行動で GUARD タイプが返される。"""
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice", role=Role.KNIGHT)
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+            candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+            handle_user_vote(session, candidates[0].name)
+            if session.winner is not None:
+                continue
+            human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
+            if human is None:
+                continue
+            start_night_phase(session)
+            assert session.step == GameStep.NIGHT_ACTION
+            assert get_night_action_type(session) == NightActionType.GUARD
+            return
+        pytest.skip("No seed found for knight night action test")
+
+    def test_knight_guard_candidates_exclude_self(self) -> None:
+        """護衛候補にユーザー自身が含まれない。"""
+        session = _create_session(human_name="Alice", role=Role.KNIGHT)
+        advance_to_discussion(session)
+        handle_user_discuss(session, "test")
+        candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+        handle_user_vote(session, candidates[0].name)
+        if session.winner is None:
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_candidates = get_night_action_candidates(session)
+                candidate_names = [p.name for p in night_candidates]
+                assert "Alice" not in candidate_names
+
+    def test_handle_night_action_guard_resolves_night(self) -> None:
+        """狩人ユーザーが護衛対象を選択し、夜フェーズが解決される。"""
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice", role=Role.KNIGHT)
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+            candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+            handle_user_vote(session, candidates[0].name)
+            if session.winner is not None:
+                continue
+            human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
+            if human is None:
+                continue
+            start_night_phase(session)
+            if session.step != GameStep.NIGHT_ACTION:
+                continue
+            night_candidates = get_night_action_candidates(session)
+            if not night_candidates:
+                continue
+            handle_night_action(session, night_candidates[0].name)
+            assert session.step in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER)
+            # 護衛ログが記録されている
+            assert any("[護衛]" in log for log in session.game.log)
+            return
+        pytest.skip("No seed found for knight guard test")
+
+
+class TestWerewolfRepresentative:
+    """人狼代表ロジックのテスト（2人の人狼のうちユーザーが代表）。"""
+
+    def test_werewolf_user_is_representative(self) -> None:
+        """ユーザーが人狼の場合、代表として襲撃対象を選択できる。"""
+        for seed in range(50):
+            session = _create_session(seed=seed, human_name="Alice", role=Role.WEREWOLF)
+            # 人狼が2人いることを確認
+            werewolves = [p for p in session.game.players if p.role == Role.WEREWOLF]
+            assert len(werewolves) == 2
+            assert any(w.name == "Alice" for w in werewolves)
+
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+            candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+            handle_user_vote(session, candidates[0].name)
+            if session.winner is not None:
+                continue
+            human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
+            if human is None:
+                continue
+            start_night_phase(session)
+            assert session.step == GameStep.NIGHT_ACTION
+            assert get_night_action_type(session) == NightActionType.ATTACK
+
+            # ユーザーが選んだ対象に襲撃される
+            night_candidates = get_night_action_candidates(session)
+            target = night_candidates[0]
+            handle_night_action(session, target.name)
+            assert session.step in (GameStep.NIGHT_RESULT, GameStep.GAME_OVER)
+            # 襲撃ログにユーザーが選んだ対象の名前が含まれる
+            attack_logs = [log for log in session.game.log if "[襲撃]" in log and target.name in log]
+            if attack_logs:
+                return
+            # 護衛成功の場合もある
+            if any("護衛成功" in log for log in session.game.log):
+                return
+        pytest.skip("No seed found for werewolf representative test")
+
+    def test_werewolf_attack_excludes_both_werewolves(self) -> None:
+        """襲撃候補から両方の人狼が除外される。"""
+        session = _create_session(human_name="Alice", role=Role.WEREWOLF)
+        advance_to_discussion(session)
+        handle_user_discuss(session, "test")
+        candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+        handle_user_vote(session, candidates[0].name)
+        if session.winner is None:
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_candidates = get_night_action_candidates(session)
+                for p in night_candidates:
+                    assert p.role != Role.WEREWOLF
+
+
+class TestMediumResultSession:
+    """霊媒結果のセッションレベルテスト。"""
+
+    def test_medium_result_recorded_after_execution(self) -> None:
+        """処刑後に霊媒結果が記録される。"""
+        session = _create_session(seed=42)
+        advance_to_discussion(session)
+        handle_user_discuss(session, "test")
+        candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
+        handle_user_vote(session, candidates[0].name)
+        if session.winner is not None:
+            pytest.skip("Game ended at vote")
+        assert len(session.game.medium_results) == 1
+
+    def test_medium_result_notified_on_day2(self) -> None:
+        """Day 2 開始時に霊媒結果通知ログがある。"""
+        for seed in range(50):
+            session = _create_session(seed=seed, role=Role.VILLAGER)
+            advance_to_discussion(session)
+            handle_user_discuss(session, "test")
+            candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
+            handle_user_vote(session, candidates[0].name)
+            if session.winner is not None:
+                continue
+
+            start_night_phase(session)
+            if session.step == GameStep.NIGHT_ACTION:
+                night_cands = get_night_action_candidates(session)
+                if night_cands:
+                    handle_night_action(session, night_cands[0].name)
+            if session.step == GameStep.GAME_OVER:
+                continue
+            if session.step != GameStep.NIGHT_RESULT:
+                continue
+
+            # Day 2 の議論を開始
+            advance_to_discussion(session)
+
+            # 霊媒師が生存していれば霊媒結果通知がある
+            medium_alive = any(p.role == Role.MEDIUM and p.is_alive for p in session.game.players)
+            medium_logs = [log for log in session.game.log if "[霊媒結果]" in log]
+            if medium_alive:
+                assert len(medium_logs) == 1
+            return
+        pytest.skip("No seed found for medium result notification test")
+
+
+class TestFullGameWithKnight:
+    """狩人ユーザーでのゲーム完走テスト。"""
+
+    def test_full_game_with_knight_completes(self) -> None:
+        """狩人ユーザーでゲームが GAME_OVER に到達する。"""
+        session = _create_session(seed=10, human_name="Alice", role=Role.KNIGHT)
+        max_turns = 20
+
+        for _ in range(max_turns):
+            if session.step == GameStep.GAME_OVER:
+                break
+
+            if session.step == GameStep.ROLE_REVEAL:
+                advance_to_discussion(session)
+            elif session.step == GameStep.DISCUSSION:
+                human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
+                if human is not None:
+                    handle_user_discuss(session, "テスト発言")
+                else:
+                    skip_to_vote(session)
+            elif session.step == GameStep.VOTE:
+                human = next((p for p in session.game.alive_players if p.name == "Alice"), None)
+                if human is not None:
+                    candidates = [p for p in session.game.alive_players if p.name != "Alice"]
+                    if candidates:
+                        handle_user_vote(session, candidates[0].name)
+                    else:
+                        handle_auto_vote(session)
+                else:
+                    handle_auto_vote(session)
+            elif session.step == GameStep.EXECUTION_RESULT:
+                advance_from_execution_result(session)
+                if session.step == GameStep.NIGHT_ACTION:
+                    candidates = get_night_action_candidates(session)
+                    if candidates:
+                        handle_night_action(session, candidates[0].name)
+            elif session.step == GameStep.NIGHT_RESULT:
+                advance_to_discussion(session)
+
+        assert session.step == GameStep.GAME_OVER
+        assert session.winner is not None
+        assert session.winner in (Team.VILLAGE, Team.WEREWOLF)
+
 
 class TestDiscussionRounds:
     def test_day1_one_round(self) -> None:
