@@ -64,11 +64,7 @@ uv run tox               # Must pass lint, type check, and tests
 5. Create PR with `gh pr create`
 6. `/review-pr` for code review (results posted as PR comment) → `/fix-review` to address feedback
 7. Merge after user confirmation
-8. Clean up the worktree
-   ```bash
-   cd <original-repo-root>
-   git worktree remove .worktrees/<branch-name>
-   ```
+8. Worktree cleanup is done manually by the user (do NOT run `git worktree remove`)
 9. `/create-issue` for creating Issues with a unified template (labels, related Issues, dedup check)
 
 ### GitHub CLI Reference

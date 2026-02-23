@@ -129,10 +129,5 @@ PR 作成後、`/review-pr` スキルを実行してコードレビューを行�
 
 ### Step 10: worktree のクリーンアップ
 
-マージ完了後、worktree を削除する。
-
-```bash
-# メインのリポジトリルートに戻る
-cd <元のリポジトリルート>
-git worktree remove .worktrees/<branch-name>
-```
+worktree の削除はユーザーが手動で行う（VS Code のファイルロックにより `git worktree remove` が失敗するため）。
+マージ完了後、ユーザーに worktree の手動削除を案内する。
