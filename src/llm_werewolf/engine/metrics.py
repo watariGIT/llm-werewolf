@@ -1,7 +1,7 @@
 """メトリクス収集モジュール。
 
 ActionProvider をラップするデコレータパターンで、
-LLMActionProvider を変更せずにレイテンシ等のメトリクスを計測する。
+LLMActionProvider を変更せずにレイテンシ・トークン使用量等のメトリクスを計測する。
 """
 
 from __future__ import annotations
@@ -13,6 +13,27 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.engine.action_provider import ActionProvider
 
+# 料金テーブル（USD per 1M tokens）
+# 料金は変動するため参考値。該当しないモデルの場合はコスト推定不可（None）。
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    "gpt-4o": {"input": 2.50, "output": 10.00},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gpt-5-mini": {"input": 0.25, "output": 2.00},
+}
+
+
+def estimate_cost(model_name: str, input_tokens: int, output_tokens: int) -> float | None:
+    """モデル名とトークン数から推定コスト（USD）を計算する。
+
+    料金テーブルに該当しないモデルの場合は None を返す。
+    """
+    pricing = MODEL_PRICING.get(model_name)
+    if pricing is None:
+        return None
+    input_cost = input_tokens * pricing["input"] / 1_000_000
+    output_cost = output_tokens * pricing["output"] / 1_000_000
+    return input_cost + output_cost
+
 
 @dataclass
 class ActionMetrics:
@@ -21,6 +42,8 @@ class ActionMetrics:
     action_type: str
     player_name: str
     elapsed_seconds: float
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 @dataclass
@@ -39,9 +62,25 @@ class GameMetrics:
             return 0.0
         return sum(a.elapsed_seconds for a in self.actions) / len(self.actions)
 
+    @property
+    def total_input_tokens(self) -> int:
+        return sum(a.input_tokens for a in self.actions)
+
+    @property
+    def total_output_tokens(self) -> int:
+        return sum(a.output_tokens for a in self.actions)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.total_input_tokens + self.total_output_tokens
+
+    def estimated_cost_usd(self, model_name: str) -> float | None:
+        """モデル名に基づく推定コスト（USD）を返す。該当しないモデルは None。"""
+        return estimate_cost(model_name, self.total_input_tokens, self.total_output_tokens)
+
 
 class MetricsCollectingProvider:
-    """ActionProvider をラップし、各呼び出しのレイテンシを計測するデコレータ。"""
+    """ActionProvider をラップし、各呼び出しのレイテンシとトークン使用量を計測するデコレータ。"""
 
     def __init__(self, inner: ActionProvider, metrics: GameMetrics) -> None:
         self._inner = inner
@@ -53,7 +92,9 @@ class MetricsCollectingProvider:
 
     def _record(self, action_type: str, player_name: str, start: float) -> None:
         elapsed = time.monotonic() - start
-        self._metrics.actions.append(ActionMetrics(action_type, player_name, elapsed))
+        input_tokens: int = getattr(self._inner, "last_input_tokens", 0)
+        output_tokens: int = getattr(self._inner, "last_output_tokens", 0)
+        self._metrics.actions.append(ActionMetrics(action_type, player_name, elapsed, input_tokens, output_tokens))
 
     def discuss(self, game: GameState, player: Player) -> str:
         start = time.monotonic()
