@@ -1,5 +1,6 @@
 import random
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import replace
 
 from llm_werewolf.domain.game import GameState
@@ -32,10 +33,12 @@ class GameEngine:
         game: GameState,
         providers: dict[str, ActionProvider],
         rng: random.Random | None = None,
+        on_phase_end: Callable[[GameState], None] | None = None,
     ) -> None:
         self._game = game
         self._providers = providers
         self._rng = rng if rng is not None else random.Random()
+        self._on_phase_end = on_phase_end
         # 発言順をランダムに決定
         names = [p.name for p in game.players]
         self._speaking_order: tuple[str, ...] = tuple(self._rng.sample(names, len(names)))
@@ -52,6 +55,8 @@ class GameEngine:
         while True:
             # 昼フェーズ
             self._game = self._day_phase()
+            if self._on_phase_end:
+                self._on_phase_end(self._game)
             winner = check_victory(self._game)
             if winner is not None:
                 self._game = self._log_winner(winner)
@@ -59,6 +64,8 @@ class GameEngine:
 
             # 夜フェーズ
             self._game = self._night_phase()
+            if self._on_phase_end:
+                self._on_phase_end(self._game)
             winner = check_victory(self._game)
             if winner is not None:
                 self._game = self._log_winner(winner)

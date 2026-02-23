@@ -484,6 +484,57 @@ class TestMediumResult:
         assert len(medium_logs) == 0
 
 
+class TestOnPhaseEndCallback:
+    """on_phase_end コールバックのテスト。"""
+
+    def test_callback_called_on_each_phase(self) -> None:
+        """昼・夜の各フェーズ完了後にコールバックが呼ばれること。"""
+        rng = random.Random(42)
+        game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"], rng=rng)
+        providers = _create_all_random_providers(game, rng)
+
+        phase_states: list[GameState] = []
+
+        def on_phase_end(state: GameState) -> None:
+            phase_states.append(state)
+
+        engine = GameEngine(game=game, providers=providers, rng=rng, on_phase_end=on_phase_end)
+        engine.run()
+
+        # 少なくとも昼1回 + 夜1回 = 2回以上呼ばれる
+        assert len(phase_states) >= 2
+
+    def test_callback_receives_game_state(self) -> None:
+        """コールバックに渡される GameState が有効であること。"""
+        rng = random.Random(42)
+        game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"], rng=rng)
+        providers = _create_all_random_providers(game, rng)
+
+        phase_states: list[GameState] = []
+
+        def on_phase_end(state: GameState) -> None:
+            phase_states.append(state)
+
+        engine = GameEngine(game=game, providers=providers, rng=rng, on_phase_end=on_phase_end)
+        engine.run()
+
+        for state in phase_states:
+            assert isinstance(state, GameState)
+            assert state.day >= 1
+            assert len(state.log) > 0
+
+    def test_no_callback_by_default(self) -> None:
+        """on_phase_end 未指定時にエラーが発生しないこと。"""
+        rng = random.Random(42)
+        game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"], rng=rng)
+        providers = _create_all_random_providers(game, rng)
+
+        engine = GameEngine(game=game, providers=providers, rng=rng)
+        result = engine.run()
+
+        assert any("ゲーム終了" in log for log in result.log)
+
+
 class TestNinePlayerFullSimulation:
     """9人でのゲーム完走テスト。"""
 
