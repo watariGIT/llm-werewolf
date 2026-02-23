@@ -90,3 +90,11 @@
 | 夜結果 | Night Result | `night_result` | 夜フェーズの襲撃・占い結果を表示するステップ |
 | ゲーム終了 | Game Over | `game_over` | 勝敗が決定したステップ |
 | インタラクティブセッション | Interactive Session | `interactive_session` | ユーザーがブラウザで対戦するゲームセッション |
+
+## AI 種別
+
+| 日本語 | 英語 | コード上の名前 | 説明 |
+|--------|------|----------------|------|
+| プレイヤーAI | Player AI | `player_ai` | 各プレイヤーの議論・投票・夜行動を生成する LLM。`OPENAI_MODEL_NAME` / `OPENAI_TEMPERATURE` で設定 |
+| GM-AI | Game Master AI | `gm_ai` | 盤面整理 AI。Day 2 以降にゲームログを構造化 JSON に要約し、プレイヤー AI の推理品質を向上させる。`GM_MODEL_NAME` / `GM_TEMPERATURE` で独立に設定可能 |
+| 盤面要約 | Board Summary | `gm_summary` | GM-AI が生成する構造化 JSON。生存者/死亡者/投票履歴/CO情報/矛盾点/各プレイヤー要約を含む |

@@ -3,7 +3,7 @@ import random
 import pytest
 
 from llm_werewolf.domain.game import GameState
-from llm_werewolf.domain.game_log import format_log_for_context
+from llm_werewolf.domain.game_log import filter_log_entries, format_log_for_context, format_public_log
 from llm_werewolf.domain.services import create_game
 from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.random_provider import RandomActionProvider
@@ -179,3 +179,70 @@ class TestWerewolfAllyLogVisibility:
         for name in ("Charlie", "Diana", "Eve"):
             log_text = format_log_for_context(game, name)
             assert "[人狼仲間]" not in log_text
+
+
+class TestFormatPublicLog:
+    """format_public_log のテスト。"""
+
+    def test_excludes_private_entries(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.SEER),
+            Player(name="Bob", role=Role.WEREWOLF),
+        )
+        game = GameState(
+            players=players,
+            log=(
+                "[配役] Alice: seer",
+                "[発言] Alice: おはよう",
+                "[占い結果] Alice の占い: Bob は人狼",
+                "[占い] Alice が Bob を占った",
+                "[護衛] Eve が Alice を護衛した",
+                "[霊媒結果] Frank の霊媒: Bob は人狼だった",
+                "[人狼仲間] 人狼はBobです",
+                "[護衛成功] Alice への襲撃は護衛により阻止された",
+                "[投票] Alice → Bob",
+                "[処刑] Bob が処刑された",
+            ),
+        )
+        result = format_public_log(game)
+        assert "[発言] Alice: おはよう" in result
+        assert "[投票] Alice → Bob" in result
+        assert "[処刑] Bob が処刑された" in result
+        assert "[配役]" not in result
+        assert "[占い結果]" not in result
+        assert "[占い]" not in result
+        assert "[護衛]" not in result
+        assert "[霊媒結果]" not in result
+        assert "[人狼仲間]" not in result
+        assert "[護衛成功]" not in result
+
+    def test_empty_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (Player(name="Alice", role=Role.VILLAGER),)
+        game = GameState(players=players)
+        result = format_public_log(game)
+        assert result == ""
+
+
+class TestFilterLogEntries:
+    """filter_log_entries のテスト。"""
+
+    def test_filters_entries_by_player(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        player = Player(name="Alice", role=Role.VILLAGER)
+        entries = [
+            "[配役] Alice: villager",
+            "[配役] Bob: werewolf",
+            "[発言] Alice: test",
+        ]
+        result = filter_log_entries(entries, player)
+        assert "[配役] Alice" in result
+        assert "[配役] Bob" not in result
+        assert "[発言] Alice: test" in result

@@ -102,8 +102,10 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | 環境変数 | 説明 | デフォルト値 |
 |----------|------|-------------|
 | `OPENAI_API_KEY` | OpenAI API キー（必須） | — |
-| `OPENAI_MODEL_NAME` | 使用するモデル名 | `gpt-4o-mini` |
-| `OPENAI_TEMPERATURE` | 応答のランダム性（0.0〜2.0） | `0.7` |
+| `OPENAI_MODEL_NAME` | プレイヤー AI のモデル名 | `gpt-4o-mini` |
+| `OPENAI_TEMPERATURE` | プレイヤー AI の応答のランダム性（0.0〜2.0） | `0.7` |
+| `GM_MODEL_NAME` | GM-AI（盤面整理AI）のモデル名 | `gpt-4o-mini` |
+| `GM_TEMPERATURE` | GM-AI の応答のランダム性（0.0〜2.0） | `0.3` |
 
 `OPENAI_API_KEY` が未設定の場合、起動時にエラーメッセージが表示されサーバーは起動しません。
 

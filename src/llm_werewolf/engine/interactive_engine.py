@@ -9,12 +9,16 @@ from __future__ import annotations
 import random
 from collections import Counter
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import check_victory
 from llm_werewolf.domain.value_objects import NightActionType, Phase, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
+
+if TYPE_CHECKING:
+    from llm_werewolf.engine.game_master import GameMasterProvider
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
@@ -46,6 +50,7 @@ class InteractiveGameEngine:
         rng: random.Random,
         speaking_order: tuple[str, ...],
         discussion_round: int = 0,
+        gm_provider: GameMasterProvider | None = None,
     ) -> None:
         self._game = game
         self._providers = providers
@@ -53,6 +58,7 @@ class InteractiveGameEngine:
         self._rng = rng
         self._speaking_order = speaking_order
         self._discussion_round = discussion_round
+        self._gm_provider = gm_provider
 
     @property
     def game(self) -> GameState:
@@ -81,6 +87,11 @@ class InteractiveGameEngine:
             self._game = replace(self._game, phase=Phase.DAY)
             self._game = notify_divine_result(self._game)
             self._game = notify_medium_result(self._game)
+
+            # GM-AI 要約 (Day 2以降)
+            if self._game.day >= 2 and self._gm_provider is not None:
+                summary_json = self._gm_provider.summarize(self._game)
+                self._game = replace(self._game, gm_summary=summary_json, gm_summary_log_offset=len(self._game.log))
 
         self._discussion_round += 1
         self._game = self._game.add_log(f"[議論] ラウンド {self._discussion_round}")

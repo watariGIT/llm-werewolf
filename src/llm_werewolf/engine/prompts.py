@@ -11,7 +11,7 @@ import random
 from dataclasses import dataclass
 
 from llm_werewolf.domain.game import GameState
-from llm_werewolf.domain.game_log import format_log_for_context
+from llm_werewolf.domain.game_log import filter_log_entries, format_log_for_context
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Role
 
@@ -169,6 +169,16 @@ def _build_personality_tag_rules() -> str:
 
 _PERSONALITY_TAG_RULES = _build_personality_tag_rules()
 
+_GAME_SUMMARY_SCHEMA = """\
+## 盤面情報の読み方
+議論の前に、JSON形式で整理された盤面情報が提供される場合があります:
+- alive/dead: 生存・死亡者情報
+- vote_history: 日ごとの投票履歴
+- claims: 役職CO情報と主張した結果
+- contradictions: 矛盾点（最大3件）
+- player_summaries: 各プレイヤーの立場要約
+この情報を活用して推理を行ってください。"""
+
 _ROLE_INSTRUCTIONS: dict[Role, str] = {
     Role.VILLAGER: """\
 ## あなたの役職: 村人
@@ -249,7 +259,7 @@ def build_system_prompt(role: Role) -> str:
     Returns:
         システムプロンプト文字列（固定）
     """
-    return "\n\n".join([_BASE_RULES, _ROLE_INSTRUCTIONS[role], _PERSONALITY_TAG_RULES])
+    return "\n\n".join([_BASE_RULES, _ROLE_INSTRUCTIONS[role], _PERSONALITY_TAG_RULES, _GAME_SUMMARY_SCHEMA])
 
 
 def _format_candidates(candidates: tuple[Player, ...]) -> str:
@@ -257,17 +267,82 @@ def _format_candidates(candidates: tuple[Player, ...]) -> str:
     return "\n".join(f"- {c.name}" for c in candidates)
 
 
+def _build_private_info(game: GameState, player: Player) -> str:
+    """プレイヤーの秘密情報を生成する。
+
+    GM 要約には含まれないプレイヤー固有の秘密情報を返す。
+
+    Args:
+        game: ゲーム状態
+        player: 対象プレイヤー
+
+    Returns:
+        秘密情報文字列。情報がない場合は空文字列。
+    """
+    lines: list[str] = []
+
+    if player.role == Role.SEER and game.divined_history:
+        seer_results = []
+        for seer, target in game.divined_history:
+            if seer == player.name:
+                t = game.find_player(target)
+                label = "人狼" if t and t.role == Role.WEREWOLF else "人狼ではない"
+                seer_results.append(f"- {target}: {label}")
+        if seer_results:
+            lines.append("## あなたの占い結果")
+            lines.extend(seer_results)
+
+    if player.role == Role.MEDIUM and game.medium_results:
+        medium_lines = [
+            f"- Day {day} 処刑 {name}: {'人狼' if is_werewolf else '人狼ではない'}"
+            for day, name, is_werewolf in game.medium_results
+        ]
+        if medium_lines:
+            lines.append("## あなたの霊媒結果")
+            lines.extend(medium_lines)
+
+    if player.role == Role.WEREWOLF:
+        allies = [p.name for p in game.alive_werewolves if p.name != player.name]
+        if allies:
+            lines.append(f"## 仲間の人狼\n{', '.join(allies)}")
+
+    if player.role == Role.KNIGHT and game.guard_history:
+        guard_targets = [target for knight, target in game.guard_history if knight == player.name]
+        if guard_targets:
+            lines.append(f"## あなたの護衛履歴\n{', '.join(guard_targets)}")
+
+    return "\n".join(lines)
+
+
 def _build_context(game: GameState, player: Player) -> str:
-    """ゲームコンテキスト（状況 + ログ）を生成する。"""
+    """ゲームコンテキスト（状況 + ログ）を生成する。
+
+    GM 要約がある場合はそれを活用し、新しいログのみを追加する。
+    GM 要約がない場合は従来通りフルログを返す。
+    """
     alive_names = "、".join(p.name for p in game.alive_players)
-    game_log = format_log_for_context(game, player.name)
 
     parts = [
         f"現在: {game.day}日目の{'昼' if game.phase.value == 'day' else '夜'}フェーズ",
         f"生存者: {alive_names}",
     ]
-    if game_log:
-        parts.append(f"\n## これまでのログ\n{game_log}")
+
+    if game.gm_summary:
+        parts.append(f"\n## 盤面情報\n{game.gm_summary}")
+
+        private_info = _build_private_info(game, player)
+        if private_info:
+            parts.append(f"\n{private_info}")
+
+        new_entries = game.log[game.gm_summary_log_offset :]
+        if new_entries:
+            new_log = filter_log_entries(new_entries, player)
+            if new_log:
+                parts.append(f"\n## 本日の出来事\n{new_log}")
+    else:
+        game_log = format_log_for_context(game, player.name)
+        if game_log:
+            parts.append(f"\n## これまでのログ\n{game_log}")
 
     return "\n".join(parts)
 
