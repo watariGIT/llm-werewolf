@@ -350,6 +350,8 @@ def handle_night_action(session: InteractiveSession, target_name: str) -> None:
         resolve_night_phase(session, human_divine_target=target_name)
     elif action_type == NightActionType.ATTACK:
         resolve_night_phase(session, human_attack_target=target_name)
+    elif action_type == NightActionType.GUARD:
+        resolve_night_phase(session, human_guard_target=target_name)
     else:
         resolve_night_phase(session)
 
@@ -358,10 +360,11 @@ def resolve_night_phase(
     session: InteractiveSession,
     human_divine_target: str | None = None,
     human_attack_target: str | None = None,
+    human_guard_target: str | None = None,
 ) -> None:
-    """夜フェーズを解決する（占い + 襲撃 + 勝利判定）。"""
+    """夜フェーズを解決する（占い + 護衛 + 襲撃 + 勝利判定）。"""
     engine = _create_engine(session)
-    night_messages, winner = engine.resolve_night(human_divine_target, human_attack_target)
+    night_messages, winner = engine.resolve_night(human_divine_target, human_attack_target, human_guard_target)
     _sync_engine_to_session(session, engine)
     session.night_messages = night_messages
 

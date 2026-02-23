@@ -321,3 +321,198 @@ class TestSpeakingOrder:
         round1_speakers = self._extract_speaker_order(result, round_num=1)
         round2_speakers = self._extract_speaker_order(result, round_num=2)
         assert round1_speakers == round2_speakers
+
+
+class TestGuardNightPhase:
+    """護衛の夜フェーズテスト。"""
+
+    def _setup_game_with_guard(
+        self, guard_target: str, attack_target: str, seed: int = 42
+    ) -> tuple[GameEngine, GameState]:
+        """護衛と襲撃の対象を制御できるテスト用セットアップ。"""
+        rng = random.Random(seed)
+        game = GameState(
+            players=(
+                Player(name="Alice", role=Role.SEER),
+                Player(name="Bob", role=Role.WEREWOLF),
+                Player(name="Charlie", role=Role.KNIGHT),
+                Player(name="Dave", role=Role.VILLAGER),
+                Player(name="Eve", role=Role.VILLAGER),
+                Player(name="Frank", role=Role.WEREWOLF),
+                Player(name="Grace", role=Role.MEDIUM),
+                Player(name="Heidi", role=Role.MADMAN),
+                Player(name="Ivan", role=Role.VILLAGER),
+            )
+        )
+
+        class FixedProvider(RandomActionProvider):
+            def __init__(self, fixed_guard: str | None = None, fixed_attack: str | None = None, **kwargs: object):
+                super().__init__(**kwargs)
+                self._fixed_guard = fixed_guard
+                self._fixed_attack = fixed_attack
+
+            def guard(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
+                if self._fixed_guard:
+                    return self._fixed_guard
+                return super().guard(game, player, candidates)
+
+            def attack(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
+                if self._fixed_attack:
+                    return self._fixed_attack
+                return super().attack(game, player, candidates)
+
+        providers: dict[str, RandomActionProvider] = {}
+        for p in game.players:
+            if p.name == "Charlie":
+                providers[p.name] = FixedProvider(fixed_guard=guard_target, rng=random.Random(rng.randint(0, 2**32)))
+            elif p.name == "Bob":
+                providers[p.name] = FixedProvider(fixed_attack=attack_target, rng=random.Random(rng.randint(0, 2**32)))
+            else:
+                providers[p.name] = RandomActionProvider(rng=random.Random(rng.randint(0, 2**32)))
+
+        engine = GameEngine(game=game, providers=providers, rng=rng)
+        engine._game = game  # noqa: SLF001
+        return engine, game
+
+    def test_guard_success_prevents_attack(self) -> None:
+        """護衛成功時に襲撃が無効化される。"""
+        engine, _ = self._setup_game_with_guard(guard_target="Alice", attack_target="Alice")
+        result = engine._night_phase()  # noqa: SLF001
+
+        # 護衛成功ログがある
+        assert any("[護衛成功]" in log for log in result.log)
+        # 「今夜は誰も襲撃されなかった」ログがある
+        assert any("今夜は誰も襲撃されなかった" in log for log in result.log)
+        # Alice は生存
+        alice = result.find_player("Alice")
+        assert alice is not None and alice.is_alive
+
+    def test_guard_failure_attack_succeeds(self) -> None:
+        """護衛失敗時に襲撃が成功する。"""
+        engine, _ = self._setup_game_with_guard(guard_target="Dave", attack_target="Alice")
+        result = engine._night_phase()  # noqa: SLF001
+
+        # 護衛成功ログがない
+        assert not any("[護衛成功]" in log for log in result.log)
+        # Alice が襲撃された
+        assert any("Alice が人狼に襲撃された" in log for log in result.log)
+        alice = result.find_player("Alice")
+        assert alice is not None and not alice.is_alive
+
+    def test_guard_success_no_speaking_order_rotation(self) -> None:
+        """護衛成功時は発言順が回転しない。"""
+        engine, _ = self._setup_game_with_guard(guard_target="Alice", attack_target="Alice")
+        order_before = engine._speaking_order  # noqa: SLF001
+        engine._night_phase()  # noqa: SLF001
+        # 護衛成功 → 誰も死んでいない → 発言順は変わらない
+        assert engine._speaking_order == order_before  # noqa: SLF001
+
+
+class TestMediumResult:
+    """霊媒結果テスト。"""
+
+    def test_medium_result_recorded_after_execution(self) -> None:
+        """処刑後に霊媒結果が記録される。"""
+        rng = random.Random(42)
+        game = GameState(
+            players=(
+                Player(name="Alice", role=Role.SEER),
+                Player(name="Bob", role=Role.WEREWOLF),
+                Player(name="Charlie", role=Role.KNIGHT),
+                Player(name="Dave", role=Role.VILLAGER),
+                Player(name="Eve", role=Role.VILLAGER),
+                Player(name="Frank", role=Role.WEREWOLF),
+                Player(name="Grace", role=Role.MEDIUM),
+                Player(name="Heidi", role=Role.MADMAN),
+                Player(name="Ivan", role=Role.VILLAGER),
+            )
+        )
+        providers = _create_all_random_providers(game, rng)
+        engine = GameEngine(game=game, providers=providers, rng=rng)
+
+        result = engine._day_phase()  # noqa: SLF001
+
+        # 霊媒結果が記録されている
+        assert len(result.medium_results) == 1
+
+    def test_medium_result_notified_on_day2(self) -> None:
+        """Day 2 の昼フェーズで霊媒結果が通知される。"""
+        rng = random.Random(42)
+        game = GameState(
+            players=(
+                Player(name="Alice", role=Role.SEER),
+                Player(name="Bob", role=Role.WEREWOLF),
+                Player(name="Charlie", role=Role.KNIGHT),
+                Player(name="Dave", role=Role.VILLAGER),
+                Player(name="Eve", role=Role.VILLAGER),
+                Player(name="Frank", role=Role.WEREWOLF),
+                Player(name="Grace", role=Role.MEDIUM),
+                Player(name="Heidi", role=Role.MADMAN),
+                Player(name="Ivan", role=Role.VILLAGER),
+            ),
+            day=2,
+            medium_results=((1, "Bob", True),),
+        )
+        providers = _create_all_random_providers(game, rng)
+        engine = GameEngine(game=game, providers=providers, rng=rng)
+
+        result = engine._day_phase()  # noqa: SLF001
+
+        medium_logs = [log for log in result.log if "[霊媒結果]" in log]
+        assert len(medium_logs) == 1
+        assert "Bob" in medium_logs[0]
+        assert "人狼" in medium_logs[0]
+
+    def test_no_medium_result_on_day1(self) -> None:
+        """Day 1 では霊媒結果は通知されない。"""
+        rng = random.Random(42)
+        game = GameState(
+            players=(
+                Player(name="Alice", role=Role.SEER),
+                Player(name="Bob", role=Role.WEREWOLF),
+                Player(name="Charlie", role=Role.VILLAGER),
+                Player(name="Dave", role=Role.VILLAGER),
+                Player(name="Eve", role=Role.MEDIUM),
+            ),
+        )
+        providers = _create_all_random_providers(game, rng)
+        engine = GameEngine(game=game, providers=providers, rng=rng)
+
+        result = engine._day_phase()  # noqa: SLF001
+
+        medium_logs = [log for log in result.log if "[霊媒結果]" in log]
+        assert len(medium_logs) == 0
+
+
+class TestNinePlayerFullSimulation:
+    """9人でのゲーム完走テスト。"""
+
+    def test_nine_player_game_completes(self) -> None:
+        """9人村（人狼2, 狩人1, 占い師1, 霊媒師1, 狂人1, 村人3）でゲームが完走する。"""
+        for seed in [42, 100, 200, 500, 999]:
+            rng = random.Random(seed)
+            game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"], rng=rng)
+            providers = _create_all_random_providers(game, rng)
+            engine = GameEngine(game=game, providers=providers, rng=rng)
+
+            result = engine.run()
+
+            assert any("ゲーム終了" in log for log in result.log)
+            # 護衛ログが存在する（狩人が行動した）
+            assert any("[護衛]" in log for log in result.log)
+
+    def test_nine_player_game_has_guard_and_medium(self) -> None:
+        """9人村で護衛と霊媒が実際に機能する。"""
+        rng = random.Random(42)
+        game = create_game(["Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan"], rng=rng)
+        providers = _create_all_random_providers(game, rng)
+        engine = GameEngine(game=game, providers=providers, rng=rng)
+
+        result = engine.run()
+
+        # 護衛ログが存在する
+        guard_logs = [log for log in result.log if "[護衛]" in log]
+        assert len(guard_logs) > 0
+
+        # 霊媒結果が記録されている（少なくとも1回は処刑が発生するはず）
+        assert len(result.medium_results) > 0
