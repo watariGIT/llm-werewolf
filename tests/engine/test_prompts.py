@@ -171,7 +171,7 @@ class TestBuildVotePrompt:
         player = game.players[0]
         candidates = (game.players[1],)
         result = build_vote_prompt(game, player, candidates)
-        assert "投票先の名前のみを返してください" in result
+        assert "候補者リストから正確に1人選び、名前と理由を返してください" in result
 
     def test_contains_player_name(self) -> None:
         game = _create_game()
@@ -197,7 +197,7 @@ class TestBuildDivinePrompt:
         seer = game.players[0]
         candidates = (game.players[1],)
         result = build_divine_prompt(game, seer, candidates)
-        assert "占い対象の名前のみを返してください" in result
+        assert "候補者リストから正確に1人選び、名前と理由を返してください" in result
 
     def test_contains_seer_role_label(self) -> None:
         game = _create_game()
@@ -223,7 +223,7 @@ class TestBuildAttackPrompt:
         werewolf = game.players[2]
         candidates = (game.players[0],)
         result = build_attack_prompt(game, werewolf, candidates)
-        assert "襲撃対象の名前のみを返してください" in result
+        assert "候補者リストから正確に1人選び、名前と理由を返してください" in result
 
     def test_contains_werewolf_role_label(self) -> None:
         game = _create_game()
@@ -282,7 +282,7 @@ class TestBuildGuardPrompt:
         knight = game.players[4]  # Eve (knight)
         candidates = (game.players[0],)
         result = build_guard_prompt(game, knight, candidates)
-        assert "護衛対象の名前のみを返してください" in result
+        assert "候補者リストから正確に1人選び、名前と理由を返してください" in result
 
     def test_contains_knight_role_label(self) -> None:
         game = _create_game()

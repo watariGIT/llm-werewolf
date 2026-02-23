@@ -2,6 +2,7 @@
 
 ChatOpenAI.invoke をモックして実 API を呼ばずにテストする。
 リトライ・フォールバック動作・ロギングのテストを含む。
+構造化出力 (with_structured_output) を使用する候補者選択アクションのテストも含む。
 """
 
 import logging
@@ -16,7 +17,12 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
 from llm_werewolf.engine.llm_config import LLMConfig
-from llm_werewolf.engine.llm_provider import FALLBACK_DISCUSS_MESSAGE, MAX_RETRIES, LLMActionProvider
+from llm_werewolf.engine.llm_provider import (
+    FALLBACK_DISCUSS_MESSAGE,
+    MAX_RETRIES,
+    CandidateDecision,
+    LLMActionProvider,
+)
 
 
 def _create_config() -> LLMConfig:
@@ -53,6 +59,28 @@ def _create_mock_response(content: str, usage_metadata: dict[str, int] | None = 
     mock.content = content
     mock.usage_metadata = usage_metadata
     return mock
+
+
+def _create_candidate_decision(target: str, reason: str = "テスト理由") -> CandidateDecision:
+    return CandidateDecision(target=target, reason=reason)
+
+
+def _setup_structured_mock(mock_chat_openai: MagicMock, return_value: CandidateDecision) -> MagicMock:
+    """with_structured_output().invoke が CandidateDecision を返すようにモックを設定する。"""
+    mock_instance = mock_chat_openai.return_value
+    mock_structured = MagicMock()
+    mock_instance.with_structured_output.return_value = mock_structured
+    mock_structured.invoke.return_value = return_value
+    return mock_structured
+
+
+def _setup_structured_mock_side_effect(mock_chat_openai: MagicMock, side_effect: list) -> MagicMock:
+    """with_structured_output().invoke に side_effect を設定する。"""
+    mock_instance = mock_chat_openai.return_value
+    mock_structured = MagicMock()
+    mock_instance.with_structured_output.return_value = mock_structured
+    mock_structured.invoke.side_effect = side_effect
+    return mock_structured
 
 
 def _create_api_timeout_error() -> openai.APITimeoutError:
@@ -122,12 +150,11 @@ class TestDiscuss:
 
 
 class TestVote:
-    """vote メソッドのテスト。"""
+    """vote メソッドのテスト（構造化出力）。"""
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_exact_match(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Charlie")
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Charlie"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -137,11 +164,12 @@ class TestVote:
         assert result == "Charlie"
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_partial_match(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Charlieさんに投票します。")
+    def test_target_not_in_candidates_falls_back_to_parse(self, mock_chat_openai: MagicMock) -> None:
+        """target が候補者リストにない場合、parse_candidate_response で部分一致フォールバックする。"""
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Charlieさん"))
 
-        provider = LLMActionProvider(_create_config())
+        rng = random.Random(42)
+        provider = LLMActionProvider(_create_config(), rng=rng)
         game = _create_game()
         candidates = (game.players[2], game.players[3])
         result = provider.vote(game, game.players[0], candidates)
@@ -149,9 +177,9 @@ class TestVote:
         assert result == "Charlie"
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_fallback_to_random(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("わかりません")
+    def test_completely_invalid_target_falls_back_to_random(self, mock_chat_openai: MagicMock) -> None:
+        """target が候補者名を含まない場合、ランダムフォールバックする。"""
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("わかりません"))
 
         rng = random.Random(42)
         provider = LLMActionProvider(_create_config(), rng=rng)
@@ -161,14 +189,26 @@ class TestVote:
 
         assert result in ("Charlie", "Dave")
 
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_reason_in_decision(self, mock_chat_openai: MagicMock) -> None:
+        """CandidateDecision の reason フィールドが正しく取得される。"""
+        decision = _create_candidate_decision("Charlie", reason="怪しい発言をしていたから")
+        _setup_structured_mock(mock_chat_openai, decision)
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        result = provider.vote(game, game.players[0], candidates)
+
+        assert result == "Charlie"
+
 
 class TestDivine:
-    """divine メソッドのテスト。"""
+    """divine メソッドのテスト（構造化出力）。"""
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_exact_match(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Bob")
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Bob"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -179,12 +219,11 @@ class TestDivine:
 
 
 class TestAttack:
-    """attack メソッドのテスト。"""
+    """attack メソッドのテスト（構造化出力）。"""
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_exact_match(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Alice")
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Alice"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -197,8 +236,7 @@ class TestAttack:
     def test_night_phase(self, mock_chat_openai: MagicMock) -> None:
         from dataclasses import replace
 
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Bob")
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Bob"))
 
         provider = LLMActionProvider(_create_config())
         game = replace(_create_game(), phase=Phase.NIGHT)
@@ -209,12 +247,11 @@ class TestAttack:
 
 
 class TestGuard:
-    """guard メソッドのテスト。"""
+    """guard メソッドのテスト（構造化出力）。"""
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_exact_match(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Alice")
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Alice"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -224,9 +261,8 @@ class TestGuard:
         assert result == "Alice"
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_partial_match(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Aliceさんを護衛します。")
+    def test_target_not_in_candidates_falls_back_to_parse(self, mock_chat_openai: MagicMock) -> None:
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Aliceさん"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -240,8 +276,8 @@ class TestRetry:
     """リトライ機構のテスト。"""
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_retry_on_timeout_then_success(self, mock_chat_openai: MagicMock) -> None:
-        """タイムアウト後にリトライで成功する。"""
+    def test_retry_on_timeout_then_success_discuss(self, mock_chat_openai: MagicMock) -> None:
+        """discuss: タイムアウト後にリトライで成功する。"""
         mock_instance = mock_chat_openai.return_value
         mock_instance.invoke.side_effect = [
             _create_api_timeout_error(),
@@ -258,13 +294,15 @@ class TestRetry:
         provider._sleep.assert_called_once_with(1)
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_retry_on_rate_limit_then_success(self, mock_chat_openai: MagicMock) -> None:
-        """レート制限後にリトライで成功する。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_rate_limit_error(),
-            _create_mock_response("Charlie"),
-        ]
+    def test_retry_on_rate_limit_then_success_structured(self, mock_chat_openai: MagicMock) -> None:
+        """構造化出力: レート制限後にリトライで成功する。"""
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_rate_limit_error(),
+                _create_candidate_decision("Charlie"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         provider._sleep = MagicMock()
@@ -273,16 +311,18 @@ class TestRetry:
         result = provider.vote(game, game.players[0], candidates)
 
         assert result == "Charlie"
-        assert mock_instance.invoke.call_count == 2
+        assert mock_structured.invoke.call_count == 2
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_retry_on_server_error_then_success(self, mock_chat_openai: MagicMock) -> None:
-        """サーバーエラー (5xx) 後にリトライで成功する。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_server_error(500),
-            _create_mock_response("Bob"),
-        ]
+    def test_retry_on_server_error_then_success_structured(self, mock_chat_openai: MagicMock) -> None:
+        """構造化出力: サーバーエラー (5xx) 後にリトライで成功する。"""
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_server_error(500),
+                _create_candidate_decision("Bob"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         provider._sleep = MagicMock()
@@ -291,7 +331,7 @@ class TestRetry:
         result = provider.divine(game, game.players[0], candidates)
 
         assert result == "Bob"
-        assert mock_instance.invoke.call_count == 2
+        assert mock_structured.invoke.call_count == 2
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_exponential_backoff(self, mock_chat_openai: MagicMock) -> None:
@@ -328,6 +368,42 @@ class TestRetry:
         assert mock_instance.invoke.call_count == 1
         provider._sleep.assert_not_called()
 
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_no_retry_on_client_error_structured(self, mock_chat_openai: MagicMock) -> None:
+        """構造化出力: クライアントエラー (4xx、429以外) はリトライしない。"""
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [_create_server_error(400)],
+        )
+
+        rng = random.Random(42)
+        provider = LLMActionProvider(_create_config(), rng=rng)
+        provider._sleep = MagicMock()
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        result = provider.vote(game, game.players[0], candidates)
+
+        assert result in ("Charlie", "Dave")
+        assert mock_structured.invoke.call_count == 1
+        provider._sleep.assert_not_called()
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_unexpected_exception_falls_back_structured(self, mock_chat_openai: MagicMock) -> None:
+        """構造化出力: 予期しない例外（ValidationError 等）はフォールバックする。"""
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [ValueError("Pydantic validation failed")],
+        )
+
+        rng = random.Random(42)
+        provider = LLMActionProvider(_create_config(), rng=rng)
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        result = provider.vote(game, game.players[0], candidates)
+
+        assert result in ("Charlie", "Dave")
+        assert mock_structured.invoke.call_count == 1
+
 
 class TestFallback:
     """フォールバック動作のテスト。"""
@@ -349,8 +425,10 @@ class TestFallback:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_vote_fallback(self, mock_chat_openai: MagicMock) -> None:
         """vote のフォールバックはランダム選択する。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [_create_rate_limit_error()] * MAX_RETRIES
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [_create_rate_limit_error()] * MAX_RETRIES,
+        )
 
         rng = random.Random(42)
         provider = LLMActionProvider(_create_config(), rng=rng)
@@ -360,13 +438,15 @@ class TestFallback:
         result = provider.vote(game, game.players[0], candidates)
 
         assert result in ("Charlie", "Dave")
-        assert mock_instance.invoke.call_count == MAX_RETRIES
+        assert mock_structured.invoke.call_count == MAX_RETRIES
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_divine_fallback(self, mock_chat_openai: MagicMock) -> None:
         """divine のフォールバックはランダム選択する。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [_create_server_error(503)] * MAX_RETRIES
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [_create_server_error(503)] * MAX_RETRIES,
+        )
 
         rng = random.Random(42)
         provider = LLMActionProvider(_create_config(), rng=rng)
@@ -376,13 +456,15 @@ class TestFallback:
         result = provider.divine(game, game.players[0], candidates)
 
         assert result in ("Bob", "Charlie")
-        assert mock_instance.invoke.call_count == MAX_RETRIES
+        assert mock_structured.invoke.call_count == MAX_RETRIES
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_attack_fallback(self, mock_chat_openai: MagicMock) -> None:
         """attack のフォールバックはランダム選択する。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [_create_api_timeout_error()] * MAX_RETRIES
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [_create_api_timeout_error()] * MAX_RETRIES,
+        )
 
         rng = random.Random(42)
         provider = LLMActionProvider(_create_config(), rng=rng)
@@ -392,13 +474,15 @@ class TestFallback:
         result = provider.attack(game, game.players[2], candidates)
 
         assert result in ("Alice", "Bob")
-        assert mock_instance.invoke.call_count == MAX_RETRIES
+        assert mock_structured.invoke.call_count == MAX_RETRIES
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_guard_fallback(self, mock_chat_openai: MagicMock) -> None:
         """guard のフォールバックはランダム選択する。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [_create_api_timeout_error()] * MAX_RETRIES
+        mock_structured = _setup_structured_mock_side_effect(
+            mock_chat_openai,
+            [_create_api_timeout_error()] * MAX_RETRIES,
+        )
 
         rng = random.Random(42)
         provider = LLMActionProvider(_create_config(), rng=rng)
@@ -408,7 +492,7 @@ class TestFallback:
         result = provider.guard(game, game.players[4], candidates)
 
         assert result in ("Alice", "Bob")
-        assert mock_instance.invoke.call_count == MAX_RETRIES
+        assert mock_structured.invoke.call_count == MAX_RETRIES
 
 
 class TestLogging:
@@ -430,9 +514,8 @@ class TestLogging:
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_info_log_on_vote_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        """vote 成功時に INFO ログが出力される。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Charlie")
+        """vote 成功時に INFO ログに reason が含まれる。"""
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Charlie", reason="発言が矛盾している"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -441,13 +524,14 @@ class TestLogging:
             provider.vote(game, game.players[0], candidates)
 
         info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
-        assert any("player=Alice" in m and "action=vote" in m for m in info_messages)
+        assert any(
+            "player=Alice" in m and "action=vote" in m and "reason=発言が矛盾している" in m for m in info_messages
+        )
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_info_log_on_divine_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         """divine 成功時に INFO ログが出力される。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Bob")
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Bob"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -461,8 +545,7 @@ class TestLogging:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_info_log_on_attack_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         """attack 成功時に INFO ログが出力される。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Alice")
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Alice"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -476,8 +559,7 @@ class TestLogging:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_info_log_on_guard_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         """guard 成功時に INFO ログが出力される。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("Alice")
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Alice"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -552,3 +634,20 @@ class TestLogging:
 
         warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
         assert any("フォールバック" in m for m in warning_messages)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_debug_log_on_structured_output(
+        self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """構造化出力の DEBUG ログにプロンプトとレスポンスが含まれる。"""
+        _setup_structured_mock(mock_chat_openai, _create_candidate_decision("Charlie", reason="怪しい"))
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        candidates = (game.players[2], game.players[3])
+        with caplog.at_level(logging.DEBUG, logger="llm_werewolf.engine.llm_provider"):
+            provider.vote(game, game.players[0], candidates)
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        assert any("構造化出力プロンプト" in m for m in debug_messages)
+        assert any("構造化レスポンス" in m and "target=Charlie" in m for m in debug_messages)

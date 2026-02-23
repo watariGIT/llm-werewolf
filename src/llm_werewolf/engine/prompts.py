@@ -284,7 +284,7 @@ def build_vote_prompt(game: GameState, player: Player, candidates: tuple[Player,
 ## 候補者
 {candidate_list}
 
-投票先の名前のみを返してください。"""
+候補者リストから正確に1人選び、名前と理由を返してください。"""
 
 
 def build_divine_prompt(game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
@@ -311,7 +311,7 @@ def build_divine_prompt(game: GameState, seer: Player, candidates: tuple[Player,
 - 議論で最も怪しい発言をしたプレイヤーを優先しましょう
 - 情報が少なく判断できないプレイヤーも有力な占い候補です
 
-占い対象の名前のみを返してください。"""
+候補者リストから正確に1人選び、名前と理由を返してください。"""
 
 
 def build_attack_prompt(game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
@@ -343,7 +343,7 @@ def build_attack_prompt(game: GameState, werewolf: Player, candidates: tuple[Pla
 - 占い師を名乗ったプレイヤーがいれば最優先で襲撃を検討しましょう
 - 自分を疑っているプレイヤーも優先的に排除を検討しましょう
 
-襲撃対象の名前のみを返してください。"""
+候補者リストから正確に1人選び、名前と理由を返してください。"""
 
 
 def build_guard_prompt(game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
@@ -366,4 +366,4 @@ def build_guard_prompt(game: GameState, knight: Player, candidates: tuple[Player
 ## 候補者
 {candidate_list}
 
-護衛対象の名前のみを返してください。"""
+候補者リストから正確に1人選び、名前と理由を返してください。"""
