@@ -6,6 +6,7 @@
 - Always use **uv** for package management (pip is prohibited)
 - Tests use pytest (`tests/` directory)
 - Bash で `&&` や `||` による複合コマンドを使わない（コマンドは1つずつ実行する）
+- Bash のパスは `E:/workspace/...` 形式を使う（`/E:/...` や `/e/...` は使わない）
 
 ## Project Structure
 
