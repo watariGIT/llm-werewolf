@@ -10,6 +10,7 @@ from llm_werewolf.engine.prompts import (
     TRAIT_CATEGORIES,
     _build_context,
     _build_private_info,
+    _extract_role_advice,
     assign_personalities,
     build_attack_prompt,
     build_discuss_prompt,
@@ -60,7 +61,7 @@ class TestBuildSystemPrompt:
     def test_seer_prompt_contains_role(self) -> None:
         result = build_system_prompt(Role.SEER)
         assert "占い師" in result
-        assert "占い結果を活用" in result
+        assert "占い結果は議論で積極的に公表" in result
 
     def test_werewolf_prompt_contains_role(self) -> None:
         result = build_system_prompt(Role.WEREWOLF)
@@ -451,7 +452,8 @@ class TestBuildContextWithGmSummary:
     def test_uses_gm_summary_when_available(self) -> None:
         game = _create_game()
         gm_json = (
-            '{"alive":["Alice"],"dead":[],"vote_history":[],"claims":[],"contradictions":[],"player_summaries":[]}'
+            '{"alive":["Alice"],"dead":[],"vote_history":[],'
+            '"claims":[],"contradictions":[],"player_summaries":[],"role_advice":[]}'
         )
         game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
         player = game.players[1]  # Bob
@@ -468,7 +470,10 @@ class TestBuildContextWithGmSummary:
 
     def test_includes_new_entries_after_offset(self) -> None:
         game = _create_game()
-        gm_json = '{"alive":[],"dead":[],"vote_history":[],"claims":[],"contradictions":[],"player_summaries":[]}'
+        gm_json = (
+            '{"alive":[],"dead":[],"vote_history":[],'
+            '"claims":[],"contradictions":[],"player_summaries":[],"role_advice":[]}'
+        )
         game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
         # offset 以降にログを追加
         game = game.add_log("[発言] Bob: こんにちは")
@@ -517,3 +522,148 @@ class TestBuildPrivateInfo:
         player = game.players[1]  # Bob (villager)
         result = _build_private_info(game, player)
         assert result == ""
+
+    def test_includes_gm_advice_for_matching_role(self) -> None:
+        """GM 要約に role_advice がある場合、該当役職のアドバイスが含まれること。"""
+        import json
+
+        game = _create_game()
+        gm_data = {
+            "alive": ["Alice"],
+            "dead": [],
+            "vote_history": [],
+            "claims": [],
+            "contradictions": [],
+            "player_summaries": [],
+            "role_advice": [
+                {
+                    "role": "占い師",
+                    "options": [
+                        {
+                            "action": "Dave を占う",
+                            "merit": "情報が少ないプレイヤーの白黒が判明する",
+                            "demerit": "Grace を放置するリスクがある",
+                        },
+                        {
+                            "action": "Grace を占う",
+                            "merit": "怪しいプレイヤーを確認できる",
+                            "demerit": "他の候補を見逃す可能性がある",
+                        },
+                    ],
+                },
+            ],
+        }
+        game = dc_replace(game, gm_summary=json.dumps(gm_data, ensure_ascii=False))
+        player = game.players[0]  # Alice (seer)
+        result = _build_private_info(game, player)
+        assert "GMからのアドバイス" in result
+        assert "Dave を占う" in result
+        assert "Grace を占う" in result
+        assert "メリット" in result
+        assert "デメリット" in result
+
+    def test_does_not_include_gm_advice_for_different_role(self) -> None:
+        """他の役職のアドバイスは含まれないこと。"""
+        import json
+
+        game = _create_game()
+        gm_data = {
+            "alive": ["Alice"],
+            "dead": [],
+            "vote_history": [],
+            "claims": [],
+            "contradictions": [],
+            "player_summaries": [],
+            "role_advice": [
+                {
+                    "role": "占い師",
+                    "options": [
+                        {"action": "Dave を占う", "merit": "メリット", "demerit": "デメリット"},
+                    ],
+                },
+            ],
+        }
+        game = dc_replace(game, gm_summary=json.dumps(gm_data, ensure_ascii=False))
+        player = game.players[1]  # Bob (villager)
+        result = _build_private_info(game, player)
+        assert "GMからのアドバイス" not in result
+        assert "Dave を占う" not in result
+
+
+class TestExtractRoleAdvice:
+    """_extract_role_advice のテスト。"""
+
+    def test_extracts_matching_role(self) -> None:
+        import json
+
+        gm_data = {
+            "role_advice": [
+                {
+                    "role": "村人",
+                    "options": [
+                        {
+                            "action": "投票で怪しい人を処刑する",
+                            "merit": "人狼を排除できる",
+                            "demerit": "間違えるリスク",
+                        },
+                    ],
+                },
+                {
+                    "role": "人狼",
+                    "options": [
+                        {"action": "占い師を襲撃する", "merit": "情報源を断てる", "demerit": "護衛されるリスク"},
+                    ],
+                },
+            ],
+        }
+        result = _extract_role_advice(json.dumps(gm_data, ensure_ascii=False), Role.VILLAGER)
+        assert "投票で怪しい人を処刑する" in result
+        assert "占い師を襲撃する" not in result
+
+    def test_returns_empty_for_no_match(self) -> None:
+        import json
+
+        gm_data = {
+            "role_advice": [
+                {
+                    "role": "村人",
+                    "options": [{"action": "行動", "merit": "利点", "demerit": "欠点"}],
+                },
+            ],
+        }
+        result = _extract_role_advice(json.dumps(gm_data, ensure_ascii=False), Role.SEER)
+        assert result == ""
+
+    def test_returns_empty_for_invalid_json(self) -> None:
+        result = _extract_role_advice("invalid json", Role.VILLAGER)
+        assert result == ""
+
+    def test_returns_empty_for_no_role_advice(self) -> None:
+        import json
+
+        gm_data = {"alive": ["Alice"], "dead": []}
+        result = _extract_role_advice(json.dumps(gm_data), Role.VILLAGER)
+        assert result == ""
+
+    def test_formats_multiple_options(self) -> None:
+        import json
+
+        gm_data = {
+            "role_advice": [
+                {
+                    "role": "狩人",
+                    "options": [
+                        {"action": "Alice を護衛する", "merit": "占い師COしている", "demerit": "ブラフの可能性"},
+                        {"action": "Frank を護衛する", "merit": "霊媒師COしている", "demerit": "狙われにくい"},
+                        {"action": "Dave を護衛する", "merit": "重要な発言をしている", "demerit": "根拠が弱い"},
+                    ],
+                },
+            ],
+        }
+        result = _extract_role_advice(json.dumps(gm_data, ensure_ascii=False), Role.KNIGHT)
+        assert "選択肢1" in result
+        assert "選択肢2" in result
+        assert "選択肢3" in result
+        assert "Alice を護衛する" in result
+        assert "Frank を護衛する" in result
+        assert "Dave を護衛する" in result

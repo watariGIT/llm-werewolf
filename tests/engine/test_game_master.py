@@ -8,9 +8,11 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
 from llm_werewolf.engine.game_master import (
+    AdviceOption,
     GameAnalysis,
     GameMasterProvider,
     PlayerSummary,
+    RoleAdvice,
     RoleClaim,
     extract_board_info,
 )
@@ -156,6 +158,45 @@ class TestGameMasterProviderSummarize:
         assert len(data["claims"]) == 1
         assert data["claims"][0]["player"] == "Alice"
 
+    def test_summarize_includes_role_advice(self) -> None:
+        """role_advice が JSON に含まれることを確認する。"""
+        game = _create_game_with_log()
+        config = LLMConfig(model_name="test-model", temperature=0.3, api_key="sk-test")
+
+        mock_analysis = GameAnalysis(
+            role_advice=[
+                RoleAdvice(
+                    role="占い師",
+                    options=[
+                        AdviceOption(
+                            action="Dave を占う",
+                            merit="情報が少ないプレイヤーの白黒が判明する",
+                            demerit="Grace を放置するリスクがある",
+                        ),
+                        AdviceOption(
+                            action="Grace を占う",
+                            merit="怪しいプレイヤーを確認できる",
+                            demerit="他の候補を見逃す可能性がある",
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        provider = GameMasterProvider(config)
+
+        with patch.object(provider, "_call_llm_analysis", return_value=mock_analysis):
+            result = provider.summarize(game)
+
+        import json
+
+        data = json.loads(result)
+        assert "role_advice" in data
+        assert len(data["role_advice"]) == 1
+        assert data["role_advice"][0]["role"] == "占い師"
+        assert len(data["role_advice"][0]["options"]) == 2
+        assert data["role_advice"][0]["options"][0]["action"] == "Dave を占う"
+
     def test_summarize_works_when_llm_fails(self) -> None:
         """LLM が失敗しても確定情報だけで JSON を返す。"""
         game = _create_game_with_log()
@@ -174,6 +215,7 @@ class TestGameMasterProviderSummarize:
         assert data["claims"] == []
         assert data["contradictions"] == []
         assert data["player_summaries"] == []
+        assert data["role_advice"] == []
 
     def test_token_usage_tracked(self) -> None:
         game = _create_game_with_log()
