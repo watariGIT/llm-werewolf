@@ -227,6 +227,8 @@
                         <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
                     {% elif step == "game_over" %}
                         <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
+                    {% elif p in werewolf_allies %}
+                        <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
                     {% endif %}
                 </div>
                 {% endfor %}
