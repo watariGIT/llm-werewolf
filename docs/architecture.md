@@ -160,6 +160,16 @@ src/llm_werewolf/
 | `handle_night_action` | ユーザーの夜行動（占い・襲撃・護衛対象選択）を検証し `resolve_night_phase()` へ委譲 |
 | `resolve_night_phase` | `InteractiveGameEngine.resolve_night()` を呼び出し夜を完了（占い・護衛・襲撃を解決） |
 
+#### ログ抽出ヘルパー関数
+
+`main.py` 内のプライベート関数として、ゲームログからテンプレート表示用データを抽出する。
+
+| 関数 | 説明 |
+|------|------|
+| `_extract_discussions_by_day` | ゲームログから日ごとの発言（`[発言]`）を抽出し `{day: [messages]}` を返す |
+| `_extract_current_execution_logs` | 当日の処刑ログ（`[処刑]`）を抽出しプレフィックスを除去して返す |
+| `_extract_events_by_day` | 日ごとの公開イベント（`[投票]`・`[処刑]`・`[襲撃]`）を `{day: [(type, text)]}` で返す。議論・投票フェーズで過去日の履歴表示に使用 |
+
 ### Web エンドポイント (`main.py`)
 
 | パス | メソッド | 説明 |

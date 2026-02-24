@@ -1,3 +1,41 @@
+{% macro past_day_details(past_days, past_discussions, past_events) %}
+{% if past_days %}
+<div class="past-discussion">
+    {% for day in past_days %}
+    <details>
+        <summary>Day {{ day }}</summary>
+        <div class="detail-content">
+            {% if past_discussions.get(day) %}
+            <ul class="message-list">
+                {% for msg in past_discussions[day] %}
+                <li>
+                    <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                    {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% if past_events.get(day) %}
+            <div class="past-events-section">
+                {% for event_type, event_text in past_events[day] %}
+                    {% if event_type == "vote" %}
+                    <div class="past-vote-entry">
+                        <span class="vote-arrow">&rarr;</span> {{ event_text }}
+                    </div>
+                    {% elif event_type == "execution" %}
+                    <div class="event-msg execution">{{ event_text }}</div>
+                    {% elif event_type == "attack" %}
+                    <div class="event-msg attack">{{ event_text }}</div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </details>
+    {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -161,6 +199,16 @@
         .past-discussion .detail-content {
             padding: 0 1rem 0.8rem;
         }
+        .past-events-section {
+            margin-top: 0.8rem;
+            padding-top: 0.8rem;
+            border-top: 1px solid #333;
+        }
+        .past-vote-entry {
+            padding: 0.2rem 0;
+            color: #c0c0d0;
+            font-size: 0.95rem;
+        }
         .dead-notice {
             text-align: center;
             padding: 1rem;
@@ -267,25 +315,7 @@
 
         <!-- DISCUSSION: 議論フェーズ -->
         {% if step == "discussion" %}
-        {% if past_discussions %}
-        <div class="past-discussion">
-            {% for day, messages in past_discussions.items() %}
-            <details>
-                <summary>議論 - Day {{ day }}</summary>
-                <div class="detail-content">
-                    <ul class="message-list">
-                        {% for msg in messages %}
-                        <li>
-                            <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
-                            {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            </details>
-            {% endfor %}
-        </div>
-        {% endif %}
+        {{ past_day_details(past_days, past_discussions, past_events) }}
         <div class="panel">
             <h2>議論 - Day {{ game.day }}</h2>
             {% if session.current_discussion %}
@@ -322,25 +352,7 @@
 
         <!-- VOTE: 投票フェーズ -->
         {% if step == "vote" %}
-        {% if past_discussions %}
-        <div class="past-discussion">
-            {% for day, messages in past_discussions.items() %}
-            <details>
-                <summary>議論 - Day {{ day }}</summary>
-                <div class="detail-content">
-                    <ul class="message-list">
-                        {% for msg in messages %}
-                        <li>
-                            <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
-                            {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            </details>
-            {% endfor %}
-        </div>
-        {% endif %}
+        {{ past_day_details(past_days, past_discussions, past_events) }}
         {% if session.current_discussion %}
         <div class="panel">
             <h2>議論 - Day {{ game.day }}</h2>
@@ -408,6 +420,36 @@
 
         <!-- NIGHT_ACTION: 夜行動選択 -->
         {% if step == "night_action" %}
+        {{ past_day_details(past_days, past_discussions, past_events) }}
+        <div class="past-discussion">
+            <details>
+                <summary>Day {{ game.day }}（今日）</summary>
+                <div class="detail-content">
+                    {% if session.current_discussion %}
+                    <ul class="message-list">
+                        {% for msg in session.current_discussion %}
+                        <li>
+                            <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                            {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    {% if session.current_votes %}
+                    <div class="past-events-section">
+                        {% for voter, target in session.current_votes.items() %}
+                        <div class="past-vote-entry">
+                            <span class="vote-arrow">&rarr;</span> {{ voter }} → {{ target }}
+                        </div>
+                        {% endfor %}
+                        {% for log_line in current_execution_logs %}
+                        <div class="event-msg execution">{{ log_line }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </details>
+        </div>
         <div class="panel">
             {% if night_action_type == "divine" %}
             <h2>占い - Night {{ game.day }}</h2>
