@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import random
 from dataclasses import dataclass
 
@@ -14,6 +16,8 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.game_log import filter_log_entries, format_log_for_context
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Role
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -177,52 +181,40 @@ _GAME_SUMMARY_SCHEMA = """\
 - claims: 役職CO情報と主張した結果
 - contradictions: 矛盾点（最大3件）
 - player_summaries: 各プレイヤーの立場要約
-この情報を活用して推理を行ってください。"""
+- role_advice: あなたの役職向けのおすすめ行動（複数の選択肢とメリット・デメリット）
+この情報を活用して推理を行ってください。
+GMからのアドバイスがある場合は参考にしつつ、最終的な判断は自分で行ってください。"""
 
 _ROLE_INSTRUCTIONS: dict[Role, str] = {
     Role.VILLAGER: """\
 ## あなたの役職: 村人
 - 特殊能力はありません
 - 情報の信頼度は 占い結果 > 霊媒結果 > 議論 の順です
-- 占い師や霊媒師にカミングアウトと結果の共有を呼びかけましょう
 - 占い結果や霊媒結果が共有されたら、議論よりもその情報を重視して投票先を判断してください
-- ただし偽の占い師（狂人や人狼）がいる可能性も考慮し、複数のCOがあれば慎重に真偽を見極めましょう
-- 怪しいと思うプレイヤーに投票して処刑を目指しましょう""",
+- ただし偽の占い師（狂人や人狼）がいる可能性も考慮し、複数のCOがあれば慎重に真偽を見極めましょう""",
     Role.SEER: """\
 ## あなたの役職: 占い師
 - 毎晩1人を占い、そのプレイヤーが人狼かどうかを知ることができます
 - 1日目の昼はまだ夜が来ていないため占い結果は存在しません
-- 占い結果を活用して村人陣営を勝利に導いてください
 - 占い結果は議論で積極的に公表してください
-- 例: 「私は占い師です。昨晩○○さんを占った結果、黒でした」と明確に伝える
 - 黒（人狼）の結果は最優先で報告し、処刑を強く主張してください
-- 白の結果も「○○さんは白でした」と共有し、村の推理材料にしましょう
-- 狩人が護衛してくれる可能性が高いので、早めにCOして情報共有することが有効です
-- 占い師が複数名乗り出た場合、狂人や人狼の偽占い師です。自分が本物だと主張しましょう""",
+- 白の結果も「○○さんは白でした」と共有し、村の推理材料にしましょう""",
     Role.WEREWOLF: """\
 ## あなたの役職: 人狼
 - 人狼は2人います。仲間の人狼が誰かはゲーム開始時に通知されます
 - 毎晩1人を襲撃して殺害できます
 - 自分が人狼であることを悟られないよう、村人のふりをしてください
+- 占い師に黒出しされた場合は冷静に対応し、その占い師の信頼性を攻撃しましょう
+- 黒出しに過剰反応せず、他の話題にも触れて自然に振る舞ってください
 
 ## 知っておくべき他役職の能力
 - 占い師: 毎晩1人を占い、人狼かどうかを知る。占われると正体がバレる
 - 霊媒師: 処刑されたプレイヤーが人狼だったかを翌朝知る
-- 狩人: 毎晩1人を護衛し、襲撃から守る
-
-## 戦略
-- 占い師を早めに排除することを検討しましょう
-- 議論では村人陣営に疑いを向けるよう誘導しましょう
-- 仲間の人狼と協力し、互いを庇いつつ村人陣営を減らしていきましょう
-- 占い師に黒出しされた場合は冷静に対応し、その占い師の信頼性を攻撃しましょう
-- 黒出しに過剰反応せず、他の話題にも触れて自然に振る舞ってください
-- 偽の占い師を名乗って村を混乱させることも有効な戦略です
-- ただし仲間の人狼と同時に占い師を名乗ると人狼陣営が集中してバレるので避けましょう""",
+- 狩人: 毎晩1人を護衛し、襲撃から守る""",
     Role.KNIGHT: """\
 ## あなたの役職: 狩人
 - 毎晩1人を護衛し、人狼の襲撃から守ることができます
 - 自分自身は護衛できません
-- 占い師や霊媒師がカミングアウトした場合、その人を最優先で護衛しましょう
 - 自分が狩人であることは基本的に公表しないでください（人狼に狙われるリスクがあります）
 - 議論では一般の村人として振る舞いながら、怪しいプレイヤーを見極めましょう""",
     Role.MEDIUM: """\
@@ -230,19 +222,14 @@ _ROLE_INSTRUCTIONS: dict[Role, str] = {
 - 処刑されたプレイヤーが人狼だったかどうかを翌朝知ることができます
 - 1日目の昼はまだ処刑が行われていないため霊媒結果は存在しません
 - 霊媒結果は議論で積極的に公表してください
-- 例: 「私は霊媒師です。昨日処刑された○○さんは人狼でした/ではありませんでした」
-- 霊媒結果を活用して村人陣営を勝利に導いてください
-- 処刑結果から人狼の残り人数を推理し、議論をリードしましょう
-- 狩人があなたを護衛してくれる可能性があるので、カミングアウトして情報共有を優先しましょう""",
+- 例: 「私は霊媒師です。昨日処刑された○○さんは人狼でした/ではありませんでした」""",
     Role.MADMAN: """\
 ## あなたの役職: 狂人
 - 人狼陣営ですが、占いでは村人と判定されます
 - 人狼が誰かは分かりませんが、人狼陣営の勝利を目指してください
 - 偽の占い師を名乗り、嘘の占い結果を発表して村を混乱させましょう。これが最も効果的な戦略です
 - ただし1日目はまだ夜が来ていないため「昨夜占った」とは言えません。1日目は占いCOだけして結果は2日目から発表しましょう
-- 例（2日目以降）: 「私は占い師です。○○さんを占った結果、黒（人狼）でした」と村人に偽の黒出しをする
-- 本物の占い師が名乗り出た場合、対抗して「自分こそ本物の占い師だ」と主張しましょう
-- 村人陣営の信頼を勝ち取りつつ、誤った方向に議論を誘導してください""",
+- 例（2日目以降）: 「私は占い師です。○○さんを占った結果、黒（人狼）でした」と村人に偽の黒出しをする""",
 }
 
 
@@ -267,10 +254,63 @@ def _format_candidates(candidates: tuple[Player, ...]) -> str:
     return "\n".join(f"- {c.name}" for c in candidates)
 
 
+_ROLE_NAME_MAP: dict[Role, str] = {
+    Role.VILLAGER: "村人",
+    Role.SEER: "占い師",
+    Role.WEREWOLF: "人狼",
+    Role.KNIGHT: "狩人",
+    Role.MEDIUM: "霊媒師",
+    Role.MADMAN: "狂人",
+}
+
+
+def _extract_role_advice(gm_summary: str, role: Role) -> str:
+    """GM 要約 JSON から指定役職のアドバイスを抽出して整形する。
+
+    Args:
+        gm_summary: GM 要約の JSON 文字列
+        role: プレイヤーの役職
+
+    Returns:
+        整形されたアドバイス文字列。該当なしの場合は空文字列。
+    """
+    role_name = _ROLE_NAME_MAP.get(role, "")
+    if not role_name:
+        return ""
+
+    try:
+        data = json.loads(gm_summary)
+    except (json.JSONDecodeError, TypeError):
+        logger.debug("GM 要約の JSON パースに失敗しました。アドバイスをスキップします。")
+        return ""
+
+    role_advice_list = data.get("role_advice", [])
+    if not role_advice_list:
+        return ""
+
+    for advice in role_advice_list:
+        if advice.get("role") == role_name:
+            options = advice.get("options", [])
+            if not options:
+                return ""
+            lines = ["## GMからのアドバイス（参考情報）"]
+            for i, option in enumerate(options, 1):
+                action = option.get("action", "")
+                merit = option.get("merit", "")
+                demerit = option.get("demerit", "")
+                lines.append(f"### 選択肢{i}: {action}")
+                lines.append(f"- メリット: {merit}")
+                lines.append(f"- デメリット: {demerit}")
+            return "\n".join(lines)
+
+    return ""
+
+
 def _build_private_info(game: GameState, player: Player) -> str:
     """プレイヤーの秘密情報を生成する。
 
     GM 要約には含まれないプレイヤー固有の秘密情報を返す。
+    GM 要約に役職別アドバイスがある場合、該当役職のアドバイスも含める。
 
     Args:
         game: ゲーム状態
@@ -310,6 +350,11 @@ def _build_private_info(game: GameState, player: Player) -> str:
         guard_targets = [target for knight, target in game.guard_history if knight == player.name]
         if guard_targets:
             lines.append(f"## あなたの護衛履歴\n{', '.join(guard_targets)}")
+
+    if game.gm_summary:
+        advice = _extract_role_advice(game.gm_summary, player.role)
+        if advice:
+            lines.append(advice)
 
     return "\n".join(lines)
 

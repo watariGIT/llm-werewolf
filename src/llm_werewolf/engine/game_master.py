@@ -52,12 +52,28 @@ class PlayerSummary(BaseModel):
     summary: str = Field(description="そのプレイヤーの立場・主張の要約（1文）")
 
 
+class AdviceOption(BaseModel):
+    """おすすめ行動の1選択肢。"""
+
+    action: str = Field(description="おすすめ行動（1文）")
+    merit: str = Field(description="メリット（1文）")
+    demerit: str = Field(description="デメリット（1文）")
+
+
+class RoleAdvice(BaseModel):
+    """1役職分のおすすめ行動。"""
+
+    role: str = Field(description="役職名（村人、占い師、霊媒師、狩人、狂人、人狼）")
+    options: list[AdviceOption] = Field(description="おすすめ行動の選択肢（2〜3件）")
+
+
 class GameAnalysis(BaseModel):
     """LLM が抽出する分析情報。"""
 
     claims: list[RoleClaim] = Field(default_factory=list, description="役職 CO 情報の一覧")
     contradictions: list[str] = Field(default_factory=list, description="検出された矛盾点（最大3件）")
     player_summaries: list[PlayerSummary] = Field(default_factory=list, description="各プレイヤーの立場要約")
+    role_advice: list[RoleAdvice] = Field(default_factory=list, description="役職別おすすめ行動")
 
 
 # --- 確定情報モデル（プログラム生成） ---
@@ -88,6 +104,7 @@ class GameBoardState(BaseModel):
     claims: list[RoleClaim]
     contradictions: list[str]
     player_summaries: list[PlayerSummary]
+    role_advice: list[RoleAdvice] = Field(default_factory=list)
 
 
 # --- 確定情報の抽出 ---
@@ -166,10 +183,20 @@ _GM_SYSTEM_PROMPT = """\
 - 生存者全員について、現時点での立場・主張を1文で要約
 - 例: 「占い師COし、○○を黒と主張している」「○○への投票を主張し積極的に追及している」
 
+### 4. role_advice（役職別おすすめ行動）
+- 6役職（村人、占い師、霊媒師、狩人、狂人、人狼）すべてについて、現在の盤面状況に応じたおすすめ行動を2〜3件提案
+- 各行動には merit（メリット）と demerit（デメリット）を1文ずつ付記
+- 公開情報のみに基づいて提案すること（真の役職は不明なので、各役職が取りうる最善の行動を想定する）
+- 具体的なプレイヤー名を挙げて、盤面に即した具体的な提案をすること
+- 例: role="占い師", options=[{action="まだ占っていない Dave を占う",
+  merit="情報が少ないプレイヤーの白黒が判明する",
+  demerit="既に怪しい Grace を放置するリスクがある"}, ...]
+
 ## 注意事項
 - 公開情報のみに基づいて分析してください
-- 推測や憶測は含めず、ログに記録された事実のみを抽出してください
-- player_summaries は生存者全員を含めてください"""
+- claims/contradictions/player_summaries では推測や憶測は含めず、ログに記録された事実のみを抽出してください
+- player_summaries は生存者全員を含めてください
+- role_advice は6役職すべてを含めてください"""
 
 
 def _build_gm_user_prompt(game: GameState) -> str:
@@ -223,6 +250,7 @@ class GameMasterProvider:
             claims=analysis.claims if analysis else [],
             contradictions=analysis.contradictions[:3] if analysis else [],
             player_summaries=analysis.player_summaries if analysis else [],
+            role_advice=analysis.role_advice if analysis else [],
         )
 
         return board.model_dump_json(ensure_ascii=False)

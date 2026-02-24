@@ -100,15 +100,17 @@ src/llm_werewolf/
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 | `CandidateDecision` | 候補者選択の構造化レスポンスモデル（Pydantic BaseModel）。`target`（選択した候補者名）と `reason`（選択理由）を保持する。`with_structured_output()` で LLM に型安全なレスポンスを強制し、パースエラーを削減する |
 | `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は従来のテキスト応答、候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。同一日内の議論ラウンド間で LangChain 会話履歴を保持し、前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる（日が変わると履歴はリセット）。API エラー時は指数バックオフで最大3回リトライし、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
-| `GameMasterProvider` | GM-AI プロバイダー。Day 2 以降にゲームログを構造化 JSON に整理し、プレイヤー AI の情報抽出負荷を削減する。確定情報（生存/死亡/投票）はプログラムで生成、分析情報（CO抽出/矛盾/要約）は LLM 構造化出力で抽出するハイブリッドアプローチ。`GameBoardState` を JSON 文字列として返す |
+| `GameMasterProvider` | GM-AI プロバイダー。Day 2 以降にゲームログを構造化 JSON に整理し、プレイヤー AI の情報抽出負荷を削減する。確定情報（生存/死亡/投票）はプログラムで生成、分析情報（CO抽出/矛盾/要約/役職別アドバイス）は LLM 構造化出力で抽出するハイブリッドアプローチ。`GameBoardState` を JSON 文字列として返す |
 | `extract_board_info` | `GameState` のログから確定的な盤面情報（生存者/死亡者/投票履歴）をプログラムで抽出する関数 |
-| `GameAnalysis` | LLM が抽出する分析情報の Pydantic モデル（claims/contradictions/player_summaries） |
+| `AdviceOption` | おすすめ行動の1選択肢を表す Pydantic モデル。action（行動）・merit（メリット）・demerit（デメリット）を保持する |
+| `RoleAdvice` | 1役職分のおすすめ行動を表す Pydantic モデル。role（役職名）と options（`AdviceOption` のリスト、2〜3件）を保持する |
+| `GameAnalysis` | LLM が抽出する分析情報の Pydantic モデル（claims/contradictions/player_summaries/role_advice） |
 | `GameBoardState` | 確定情報と分析情報を統合した盤面情報の Pydantic モデル |
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `load_gm_config` | GM-AI 用の `LLMConfig` を環境変数から生成するファクトリ関数。`GM_MODEL_NAME` / `GM_TEMPERATURE` でプレイヤー AI とは独立に指定可能。API キーは `OPENAI_API_KEY` を共有 |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供。構造化出力の `target` が候補者リストに含まれない場合のフォールバックとしても使用される |
-| `prompts` | LLM 用プロンプトテンプレート生成。Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみ（共通ルール `_BASE_RULES` + 役職別指示 `_ROLE_INSTRUCTIONS` + 人格タグ解釈ルール `_PERSONALITY_TAG_RULES`）で構成し、同一役職のプレイヤーは常に同一のシステムプロンプトを受け取る。人格特性はタグ形式（例: `personality: tone=polite, stance=aggressive, style=strategic`）でユーザーメッセージ側に含める。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。襲撃プロンプトには仲間の人狼情報を含める |
+| `prompts` | LLM 用プロンプトテンプレート生成。Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみ（共通ルール `_BASE_RULES` + 役職別指示 `_ROLE_INSTRUCTIONS` + 人格タグ解釈ルール `_PERSONALITY_TAG_RULES`）で構成し、同一役職のプレイヤーは常に同一のシステムプロンプトを受け取る。`_ROLE_INSTRUCTIONS` は役職の仕組み・制約に集中し、具体的な戦略アドバイスは GM-AI の動的提案に委譲する。人格特性はタグ形式（例: `personality: tone=polite, stance=aggressive, style=strategic`）でユーザーメッセージ側に含める。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。GM 要約に含まれる `role_advice` からプレイヤーの真の役職に対応するアドバイスを抽出し、秘密情報として注入する。襲撃プロンプトには仲間の人狼情報を含める |
 | `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（タグキー: tone/stance/style）・タグ値・説明文を保持する |
 | `assign_personalities` | AI人数分の特性組み合わせを生成する関数。各特性軸からランダムに1つ選択し、人格のバリエーションを作る |
 | `build_personality` | 特性リストから人格タグ文字列（例: `personality: tone=polite, stance=aggressive, style=strategic`）を組み立てる関数 |
