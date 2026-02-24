@@ -607,7 +607,7 @@ class TestLogging:
             provider.discuss(game, game.players[1])
 
         debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
-        assert any("LLM プロンプト:" in m for m in debug_messages)
+        assert any("LLM プロンプト" in m for m in debug_messages)
         assert any("LLM レスポンス:" in m and "テスト発言" in m for m in debug_messages)
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
@@ -721,3 +721,117 @@ class TestLogging:
 
         assert provider.last_input_tokens == 150
         assert provider.last_output_tokens == 60
+
+
+class TestDiscussConversationHistory:
+    """discuss メソッドの会話履歴テスト。"""
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_round1_uses_two_messages(self, mock_chat_openai: MagicMock) -> None:
+        """ラウンド1は SystemMessage + HumanMessage の2メッセージで invoke する。"""
+        from langchain_core.messages import HumanMessage as HM
+        from langchain_core.messages import SystemMessage as SM
+
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.return_value = _create_mock_response("ラウンド1の発言です。")
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        provider.discuss(game, game.players[1])  # Bob
+
+        call_args = mock_instance.invoke.call_args[0][0]
+        assert len(call_args) == 2
+        assert isinstance(call_args[0], SM)
+        assert isinstance(call_args[1], HM)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_round2_includes_history(self, mock_chat_openai: MagicMock) -> None:
+        """ラウンド2は履歴（AIMessage 含む）付きメッセージで invoke する。"""
+        from langchain_core.messages import AIMessage as AM
+        from langchain_core.messages import HumanMessage as HM
+        from langchain_core.messages import SystemMessage as SM
+
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_mock_response("ラウンド1の発言です。"),
+            _create_mock_response("ラウンド2の発言です。"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        player = game.players[1]  # Bob
+
+        # ラウンド1
+        provider.discuss(game, player)
+
+        # ラウンド2（ゲームログが更新された想定で同じ game.day で再呼び出し）
+        game2 = game.add_log("[発言] Alice: 何か発言")
+        provider.discuss(game2, player)
+
+        # 2回目の invoke の引数を検証
+        call_args = mock_instance.invoke.call_args_list[1][0][0]
+        assert len(call_args) == 4  # System + Human(R1) + AI(R1) + Human(R2)
+        assert isinstance(call_args[0], SM)
+        assert isinstance(call_args[1], HM)
+        assert isinstance(call_args[2], AM)
+        assert call_args[2].content == "ラウンド1の発言です。"
+        assert isinstance(call_args[3], HM)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_day_change_resets_history(self, mock_chat_openai: MagicMock) -> None:
+        """day が変わると履歴がリセットされ、新規メッセージリストに戻る。"""
+        from dataclasses import replace
+
+        from langchain_core.messages import HumanMessage as HM
+        from langchain_core.messages import SystemMessage as SM
+
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_mock_response("Day1の発言"),
+            _create_mock_response("Day2の発言"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        player = game.players[1]  # Bob
+
+        # Day 1
+        provider.discuss(game, player)
+
+        # Day 2（day を変更）
+        game_day2 = replace(game, day=2)
+        provider.discuss(game_day2, player)
+
+        # 2回目は新規メッセージリスト（2メッセージ）で呼ばれる
+        call_args = mock_instance.invoke.call_args_list[1][0][0]
+        assert len(call_args) == 2
+        assert isinstance(call_args[0], SM)
+        assert isinstance(call_args[1], HM)
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_fallback_does_not_update_history(self, mock_chat_openai: MagicMock) -> None:
+        """API エラーでフォールバックした場合、履歴は更新されない。"""
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_api_timeout_error(),
+            _create_api_timeout_error(),
+            _create_api_timeout_error(),
+            _create_mock_response("リトライ後の成功"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        provider._sleep = MagicMock()
+        game = _create_game()
+        player = game.players[1]  # Bob
+
+        # 1回目: 全リトライ失敗 → フォールバック
+        result1 = provider.discuss(game, player)
+        assert result1 == FALLBACK_DISCUSS_MESSAGE
+
+        # 2回目: 履歴は更新されていないので新規メッセージリスト（2メッセージ）で呼ばれる
+        result2 = provider.discuss(game, player)
+        assert result2 == "リトライ後の成功"
+
+        # 4回目の invoke（2回目の discuss）は2メッセージで呼ばれる
+        call_args = mock_instance.invoke.call_args_list[3][0][0]
+        assert len(call_args) == 2

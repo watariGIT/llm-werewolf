@@ -61,12 +61,19 @@ def filter_log_entries(entries: Sequence[str], player: Player) -> str:
     return "\n".join(visible)
 
 
-def format_log_for_context(game: GameState, player_name: str) -> str:
+_STATEMENT_PREFIX = "[発言]"
+
+
+def format_log_for_context(game: GameState, player_name: str, *, max_recent_statements: int = 30) -> str:
     """プレイヤー視点でフィルタリングしたゲームログを返す。
+
+    発言ログ（``[発言]`` プレフィックス）は ``max_recent_statements`` 件に制限し、
+    イベントログ（投票・処刑・襲撃等）は常に全件保持する。
 
     Args:
         game: ゲーム状態
         player_name: 視点プレイヤーの名前
+        max_recent_statements: 保持する直近の発言ログ件数。負の値で全件保持。
 
     Returns:
         フィルタリング済みのログ文字列（改行区切り）
@@ -78,7 +85,24 @@ def format_log_for_context(game: GameState, player_name: str) -> str:
     if player is None:
         raise ValueError(f"Player '{player_name}' not found in game")
 
-    return filter_log_entries(game.log, player)
+    visible = [(i, entry) for i, entry in enumerate(game.log) if _is_visible(entry, player)]
+
+    if max_recent_statements < 0:
+        return "\n".join(entry for _, entry in visible)
+
+    events: list[tuple[int, str]] = []
+    statements: list[tuple[int, str]] = []
+    for idx, entry in visible:
+        if entry.startswith(_STATEMENT_PREFIX):
+            statements.append((idx, entry))
+        else:
+            events.append((idx, entry))
+
+    if len(statements) > max_recent_statements:
+        statements = statements[-max_recent_statements:] if max_recent_statements > 0 else []
+
+    merged = sorted(events + statements, key=lambda x: x[0])
+    return "\n".join(entry for _, entry in merged)
 
 
 def format_public_log(game: GameState) -> str:

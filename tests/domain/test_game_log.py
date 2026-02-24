@@ -246,3 +246,82 @@ class TestFilterLogEntries:
         assert "[配役] Alice" in result
         assert "[配役] Bob" not in result
         assert "[発言] Alice: test" in result
+
+
+class TestLogVolumeControl:
+    """format_log_for_context のログ量制御テスト。"""
+
+    def _create_game_with_statements(self, count: int) -> GameState:
+        """指定数の発言ログ + イベントログを含むゲーム状態を作成する。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.VILLAGER),
+            Player(name="Bob", role=Role.VILLAGER),
+        )
+        log: list[str] = ["[配役] Alice: villager", "=== ゲーム開始 ===", "--- Day 1 ---"]
+        for i in range(count):
+            log.append(f"[発言] Alice: 発言{i}")
+        log.append("[投票] Alice → Bob")
+        log.append("[処刑] Bob が処刑された")
+        return GameState(players=players, log=tuple(log))
+
+    def test_keeps_all_when_under_limit(self) -> None:
+        """発言数がデフォルト制限(30)以下の場合、全件保持する。"""
+        game = self._create_game_with_statements(5)
+        result = format_log_for_context(game, "Alice")
+        for i in range(5):
+            assert f"発言{i}" in result
+
+    def test_trims_old_statements(self) -> None:
+        """発言数が max_recent_statements を超える場合、古い発言をトリムする。"""
+        game = self._create_game_with_statements(10)
+        result = format_log_for_context(game, "Alice", max_recent_statements=3)
+        # 古い発言（0〜6）はトリムされる
+        for i in range(7):
+            assert f"発言{i}" not in result
+        # 直近3件は残る
+        for i in range(7, 10):
+            assert f"発言{i}" in result
+
+    def test_events_always_kept(self) -> None:
+        """イベントログは量制御の対象外で常に保持される。"""
+        game = self._create_game_with_statements(10)
+        result = format_log_for_context(game, "Alice", max_recent_statements=0)
+        # 発言は全て除外される
+        assert "[発言]" not in result
+        # イベントは残る（[配役] は自分のもののみ見える）
+        assert "[配役] Alice: villager" in result
+        assert "=== ゲーム開始 ===" in result
+        assert "--- Day 1 ---" in result
+        assert "[投票] Alice → Bob" in result
+        assert "[処刑] Bob が処刑された" in result
+        # 結果の行数を確認（配役1 + 開始1 + Day区切り1 + 投票1 + 処刑1 = 5行）
+        lines = [line for line in result.split("\n") if line]
+        assert len(lines) == 5
+
+    def test_maintains_original_order(self) -> None:
+        """トリム後もイベントと発言の出現順が維持される。"""
+        game = self._create_game_with_statements(5)
+        result = format_log_for_context(game, "Alice", max_recent_statements=2)
+        lines = result.split("\n")
+        # イベント → 発言 → イベント の順番が維持されることを確認
+        statement_indices = [i for i, line in enumerate(lines) if line.startswith("[発言]")]
+        vote_index = next(i for i, line in enumerate(lines) if line.startswith("[投票]"))
+        # 発言は投票の前にある
+        assert all(si < vote_index for si in statement_indices)
+
+    def test_negative_keeps_all(self) -> None:
+        """負の値を指定した場合は全件保持する。"""
+        game = self._create_game_with_statements(50)
+        result = format_log_for_context(game, "Alice", max_recent_statements=-1)
+        for i in range(50):
+            assert f"発言{i}" in result
+
+    def test_zero_removes_all_statements(self) -> None:
+        """0を指定した場合は全発言が除外され、イベントのみ残る。"""
+        game = self._create_game_with_statements(5)
+        result = format_log_for_context(game, "Alice", max_recent_statements=0)
+        assert "[発言]" not in result
+        assert "[投票]" in result
