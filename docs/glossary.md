@@ -98,3 +98,5 @@
 | プレイヤーAI | Player AI | `player_ai` | 各プレイヤーの議論・投票・夜行動を生成する LLM。`OPENAI_MODEL_NAME` / `OPENAI_TEMPERATURE` で設定 |
 | GM-AI | Game Master AI | `gm_ai` | 盤面整理 AI。Day 2 以降にゲームログを構造化 JSON に要約し、プレイヤー AI の推理品質を向上させる。`GM_MODEL_NAME` / `GM_TEMPERATURE` で独立に設定可能 |
 | 盤面要約 | Board Summary | `gm_summary` | GM-AI が生成する構造化 JSON。生存者/死亡者/投票履歴/CO情報/矛盾点/各プレイヤー要約/役職別おすすめ行動を含む |
+| 会話履歴 | Conversation History | `discuss_messages` | 同一日内の議論ラウンド間で LLM に渡す会話コンテキスト。AIMessage として前回発言を保持し、ラウンド2以降で参照可能にする |
+| ログ量制御 | Log Volume Control | `max_recent_statements` | `format_log_for_context` で発言ログの件数を制限する仕組み。イベントログは常に保持される |

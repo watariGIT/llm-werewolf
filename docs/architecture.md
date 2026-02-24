@@ -84,7 +84,7 @@ src/llm_werewolf/
 | 関数 | 説明 |
 |------|------|
 | `filter_log_entries` | 任意のログエントリ列をプレイヤー視点でフィルタリングして文字列を返す |
-| `format_log_for_context` | プレイヤー視点でフィルタリングしたゲームログを生成（Step 2 の LLM コンテキスト用） |
+| `format_log_for_context` | プレイヤー視点でフィルタリングしたゲームログを生成（Step 2 の LLM コンテキスト用）。`max_recent_statements` パラメータで発言ログの件数を制御可能。イベントログ（投票・処刑・襲撃等）は常に保持され、発言ログのみが直近 N 件に制限される |
 | `format_public_log` | 全プレイヤーに見える公開ログのみを返す。GM-AI の入力用 |
 
 ## アプリケーション層 (`engine/`)
@@ -99,7 +99,7 @@ src/llm_werewolf/
 | `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動（占い・襲撃・護衛）の各メソッドを提供し、護衛成功判定・霊媒結果通知を含む。`game_logic` の共通関数を利用 |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 | `CandidateDecision` | 候補者選択の構造化レスポンスモデル（Pydantic BaseModel）。`target`（選択した候補者名）と `reason`（選択理由）を保持する。`with_structured_output()` で LLM に型安全なレスポンスを強制し、パースエラーを削減する |
-| `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は従来のテキスト応答、候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。API エラー時は指数バックオフで最大3回リトライし、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
+| `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は従来のテキスト応答、候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。同一日内の議論ラウンド間で LangChain 会話履歴を保持し、前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる（日が変わると履歴はリセット）。API エラー時は指数バックオフで最大3回リトライし、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
 | `GameMasterProvider` | GM-AI プロバイダー。Day 2 以降にゲームログを構造化 JSON に整理し、プレイヤー AI の情報抽出負荷を削減する。確定情報（生存/死亡/投票）はプログラムで生成、分析情報（CO抽出/矛盾/要約/役職別アドバイス）は LLM 構造化出力で抽出するハイブリッドアプローチ。`GameBoardState` を JSON 文字列として返す |
 | `extract_board_info` | `GameState` のログから確定的な盤面情報（生存者/死亡者/投票履歴）をプログラムで抽出する関数 |
 | `AdviceOption` | おすすめ行動の1選択肢を表す Pydantic モデル。action（行動）・merit（メリット）・demerit（デメリット）を保持する |
