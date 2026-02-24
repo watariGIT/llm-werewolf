@@ -420,6 +420,36 @@
 
         <!-- NIGHT_ACTION: 夜行動選択 -->
         {% if step == "night_action" %}
+        {{ past_day_details(past_days, past_discussions, past_events) }}
+        <div class="past-discussion">
+            <details>
+                <summary>Day {{ game.day }}（今日）</summary>
+                <div class="detail-content">
+                    {% if session.current_discussion %}
+                    <ul class="message-list">
+                        {% for msg in session.current_discussion %}
+                        <li>
+                            <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                            {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    {% if session.current_votes %}
+                    <div class="past-events-section">
+                        {% for voter, target in session.current_votes.items() %}
+                        <div class="past-vote-entry">
+                            <span class="vote-arrow">&rarr;</span> {{ voter }} → {{ target }}
+                        </div>
+                        {% endfor %}
+                        {% for log_line in current_execution_logs %}
+                        <div class="event-msg execution">{{ log_line }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </details>
+        </div>
         <div class="panel">
             {% if night_action_type == "divine" %}
             <h2>占い - Night {{ game.day }}</h2>
