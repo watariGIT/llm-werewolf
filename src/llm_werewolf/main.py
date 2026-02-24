@@ -73,8 +73,11 @@ MAX_PLAYER_NAME_LENGTH = 50
 MAX_MESSAGE_LENGTH = 500
 
 _DAY_HEADER_PREFIX = "--- Day "
+_NIGHT_HEADER_PREFIX = "--- Night "
 _SPEECH_PREFIX = "[発言] "
 _EXECUTION_PREFIX = "[処刑] "
+_VOTE_PREFIX = "[投票] "
+_ATTACK_PREFIX = "[襲撃] "
 
 
 def _extract_discussions_by_day(game: GameState) -> dict[int, list[str]]:
@@ -119,6 +122,34 @@ def _extract_current_execution_logs(game: GameState) -> list[str]:
         elif entry.startswith(_EXECUTION_PREFIX) and current_day == game.day:
             execution_logs.append(entry[len(_EXECUTION_PREFIX) :])
     return execution_logs
+
+
+def _extract_events_by_day(game: GameState) -> dict[int, list[tuple[str, str]]]:
+    """ゲームログから日ごとの公開イベント（投票・処刑・襲撃）を抽出する。
+
+    Returns:
+        {day: [(event_type, text), ...]} の辞書。
+        event_type は "vote", "execution", "attack" のいずれか。
+    """
+    events: dict[int, list[tuple[str, str]]] = {}
+    current_day = 0
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+        elif entry.startswith(_NIGHT_HEADER_PREFIX):
+            # Night N は Day N の続き（同じ day に紐づける）
+            pass
+        elif entry.startswith(_VOTE_PREFIX) and current_day > 0:
+            events.setdefault(current_day, []).append(("vote", entry[len(_VOTE_PREFIX) :]))
+        elif entry.startswith(_EXECUTION_PREFIX) and current_day > 0:
+            events.setdefault(current_day, []).append(("execution", entry[len(_EXECUTION_PREFIX) :]))
+        elif entry.startswith(_ATTACK_PREFIX) and current_day > 0:
+            events.setdefault(current_day, []).append(("attack", entry[len(_ATTACK_PREFIX) :]))
+    return events
 
 
 class CreateGameRequest(BaseModel):
@@ -258,6 +289,13 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     all_discussions = _extract_discussions_by_day(session.game)
     past_discussions = {day: msgs for day, msgs in sorted(all_discussions.items()) if day < session.game.day}
 
+    # 過去日の公開イベント（投票・処刑・襲撃）
+    all_events = _extract_events_by_day(session.game)
+    past_events = {day: evts for day, evts in sorted(all_events.items()) if day < session.game.day}
+
+    # 過去日の一覧（議論とイベントの両方をカバー）
+    past_days = sorted(set(past_discussions.keys()) | set(past_events.keys()))
+
     # 当日の処刑ログ
     current_execution_logs = _extract_current_execution_logs(session.game)
 
@@ -282,6 +320,8 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
             "ordered_players": ordered_players,
             "current_execution_logs": current_execution_logs,
             "past_discussions": past_discussions,
+            "past_events": past_events,
+            "past_days": past_days,
             "werewolf_allies": werewolf_allies,
         },
     )
