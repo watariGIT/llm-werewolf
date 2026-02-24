@@ -713,7 +713,7 @@ class TestBuildDiscussContinuationPrompt:
         player = game.players[1]  # Bob
         result = build_discuss_continuation_prompt(game, player, offset)
         assert "次のラウンド" in result
-        assert "発言のルール" in result
+        assert "発言ルール" in result
 
     def test_filters_private_entries(self) -> None:
         """プライベートログはプレイヤー視点でフィルタリングされること。"""
@@ -728,13 +728,13 @@ class TestBuildDiscussContinuationPrompt:
         assert "Alice が Bob を占った結果" not in result
         assert "公開発言です" in result
 
-    def test_contains_no_name_prefix_rule(self) -> None:
-        """名前を付けないルールが含まれること。"""
+    def test_contains_concise_rule_reminder(self) -> None:
+        """簡潔なルールリマインダーが含まれること。"""
         game = _create_game()
         offset = len(game.log)
         player = game.players[1]  # Bob
         result = build_discuss_continuation_prompt(game, player, offset)
-        assert "名前を付けない" in result
+        assert "名前の接頭辞なし" in result
 
     def test_no_new_entries_still_has_instruction(self) -> None:
         """新しいエントリがなくても指示は含まれること。"""
