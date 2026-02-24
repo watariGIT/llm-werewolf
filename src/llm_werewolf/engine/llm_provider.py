@@ -13,7 +13,7 @@ import time
 from typing import NamedTuple
 
 import openai
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
 
@@ -82,6 +82,8 @@ class LLMActionProvider:
         self.last_input_tokens: int = 0
         self.last_output_tokens: int = 0
         self.last_cache_read_input_tokens: int = 0
+        self._discuss_day: int = 0
+        self._discuss_messages: list[SystemMessage | HumanMessage | AIMessage] = []
 
     def _sleep(self, seconds: float) -> None:
         """スリープ処理。テスト時にモック可能。"""
@@ -173,17 +175,13 @@ class LLMActionProvider:
         logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
         return None
 
-    def _call_llm(self, system_prompt: str, user_prompt: str) -> _LLMResult | None:
-        """LLM を呼び出してレスポンステキストとメタデータを返す。
+    def _call_llm_with_messages(self, messages: list[SystemMessage | HumanMessage | AIMessage]) -> _LLMResult | None:
+        """メッセージリストを直接指定して LLM を呼び出す。
 
         API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
         リトライ上限到達時は None を返す。
         """
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt),
-        ]
-        logger.debug("LLM プロンプト:\n  system: %s\n  user: %s", system_prompt, user_prompt)
+        logger.debug("LLM プロンプト (messages=%d):\n  %s", len(messages), messages)
         for attempt in range(MAX_RETRIES):
             try:
                 start = time.monotonic()
@@ -239,6 +237,17 @@ class LLMActionProvider:
         logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
         return None
 
+    def _call_llm(self, system_prompt: str, user_prompt: str) -> _LLMResult | None:
+        """LLM を呼び出してレスポンステキストとメタデータを返す。
+
+        _call_llm_with_messages への委譲ラッパー。
+        """
+        messages: list[SystemMessage | HumanMessage | AIMessage] = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+        return self._call_llm_with_messages(messages)
+
     def _prepend_personality(self, user_prompt: str) -> str:
         """ユーザープロンプトの先頭に人格タグを付加する。"""
         if self._personality:
@@ -246,16 +255,53 @@ class LLMActionProvider:
         return user_prompt
 
     def discuss(self, game: GameState, player: Player) -> str:
-        """議論フェーズでの発言を LLM で生成する。"""
+        """議論フェーズでの発言を LLM で生成する。
+
+        同一日内の複数ラウンドでは会話履歴を保持し、
+        前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる。
+        日が変わると履歴はリセットされる。
+        """
         system_prompt = build_system_prompt(player.role)
         user_prompt = self._prepend_personality(build_discuss_prompt(game, player))
-        result = self._call_llm(system_prompt, user_prompt)
+
+        # 日が変わったら履歴をリセット
+        if game.day != self._discuss_day:
+            self._discuss_day = game.day
+            self._discuss_messages = []
+
+        if not self._discuss_messages:
+            # ラウンド1: 新規メッセージリスト
+            messages: list[SystemMessage | HumanMessage | AIMessage] = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
+        else:
+            # ラウンド2+: 既存履歴に新しいコンテキストを追加
+            messages = list(self._discuss_messages)
+            messages.append(HumanMessage(content=user_prompt))
+
+        result = self._call_llm_with_messages(messages)
         self._update_token_usage(result)
+
         if result is None:
             logger.warning("discuss フォールバック: プレイヤー %s の発言を定型文で代替します。", player.name)
             return FALLBACK_DISCUSS_MESSAGE
+
         logger.info("LLM アクション完了: player=%s, action=discuss, elapsed=%.2fs", player.name, result.elapsed)
-        return parse_discuss_response(result.content)
+        response_text = parse_discuss_response(result.content)
+
+        # 履歴を更新（成功時のみ）
+        if not self._discuss_messages:
+            self._discuss_messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+                AIMessage(content=response_text),
+            ]
+        else:
+            self._discuss_messages.append(HumanMessage(content=user_prompt))
+            self._discuss_messages.append(AIMessage(content=response_text))
+
+        return response_text
 
     def _select_candidate(
         self,

@@ -314,11 +314,14 @@ def _build_private_info(game: GameState, player: Player) -> str:
     return "\n".join(lines)
 
 
+_MAX_RECENT_STATEMENTS = 30
+
+
 def _build_context(game: GameState, player: Player) -> str:
     """ゲームコンテキスト（状況 + ログ）を生成する。
 
     GM 要約がある場合はそれを活用し、新しいログのみを追加する。
-    GM 要約がない場合は従来通りフルログを返す。
+    GM 要約がない場合は従来通りフルログを返す（発言ログは直近 N 件に制限）。
     """
     alive_names = "、".join(p.name for p in game.alive_players)
 
@@ -340,7 +343,7 @@ def _build_context(game: GameState, player: Player) -> str:
             if new_log:
                 parts.append(f"\n## 本日の出来事\n{new_log}")
     else:
-        game_log = format_log_for_context(game, player.name)
+        game_log = format_log_for_context(game, player.name, max_recent_statements=_MAX_RECENT_STATEMENTS)
         if game_log:
             parts.append(f"\n## これまでのログ\n{game_log}")
 
