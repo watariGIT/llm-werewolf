@@ -10,6 +10,7 @@ from llm_werewolf.domain.services import create_game
 from llm_werewolf.main import (
     _extract_current_execution_logs,
     _extract_discussions_by_day,
+    _extract_events_by_day,
     app,
     game_store,
     interactive_store,
@@ -140,6 +141,98 @@ class TestExtractCurrentExecutionLogs:
         )
         result = _extract_current_execution_logs(game)
         assert result == []
+
+
+class TestExtractEventsByDay:
+    """_extract_events_by_day のユニットテスト。"""
+
+    def test_empty_log(self) -> None:
+        game = GameState(players=create_game(PLAYER_NAMES, rng=random.Random(42)).players)
+        result = _extract_events_by_day(game)
+        assert result == {}
+
+    def test_extracts_vote_execution_attack(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[発言] Alice: こんにちは",
+                "[投票] Alice → Bob",
+                "[投票] Charlie → Bob",
+                "[処刑] Bob が処刑された（得票数: 2）",
+                "--- Night 1 （夜フェーズ） ---",
+                "[襲撃] Diana が人狼に襲撃された",
+            ),
+        )
+        result = _extract_events_by_day(game)
+        assert result == {
+            1: [
+                ("vote", "Alice → Bob"),
+                ("vote", "Charlie → Bob"),
+                ("execution", "Bob が処刑された（得票数: 2）"),
+                ("attack", "Diana が人狼に襲撃された"),
+            ]
+        }
+
+    def test_multiple_days(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[投票] Alice → Bob",
+                "[処刑] Bob が処刑された（得票数: 3）",
+                "--- Night 1 （夜フェーズ） ---",
+                "[襲撃] Charlie が人狼に襲撃された",
+                "--- Day 2 （昼フェーズ） ---",
+                "[投票] Diana → Eve",
+                "[処刑] Eve が処刑された（得票数: 2）",
+            ),
+        )
+        result = _extract_events_by_day(game)
+        assert 1 in result
+        assert 2 in result
+        assert result[1] == [
+            ("vote", "Alice → Bob"),
+            ("execution", "Bob が処刑された（得票数: 3）"),
+            ("attack", "Charlie が人狼に襲撃された"),
+        ]
+        assert result[2] == [
+            ("vote", "Diana → Eve"),
+            ("execution", "Eve が処刑された（得票数: 2）"),
+        ]
+
+    def test_night_events_belong_to_same_day(self) -> None:
+        """夜フェーズのイベントは同じ Day に紐づく。"""
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[投票] Alice → Bob",
+                "--- Night 1 （夜フェーズ） ---",
+                "[襲撃] 今夜は誰も襲撃されなかった",
+            ),
+        )
+        result = _extract_events_by_day(game)
+        assert result == {
+            1: [
+                ("vote", "Alice → Bob"),
+                ("attack", "今夜は誰も襲撃されなかった"),
+            ]
+        }
+
+    def test_ignores_non_event_entries(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[発言] Alice: こんにちは",
+                "[議論] ラウンド 1",
+                "[占い結果] Alice: Bob は人狼ではない",
+                "[投票] Alice → Bob",
+            ),
+        )
+        result = _extract_events_by_day(game)
+        assert result == {1: [("vote", "Alice → Bob")]}
 
 
 class TestExportGameLog:
