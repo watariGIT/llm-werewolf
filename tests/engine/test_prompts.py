@@ -13,6 +13,7 @@ from llm_werewolf.engine.prompts import (
     _extract_role_advice,
     assign_personalities,
     build_attack_prompt,
+    build_discuss_continuation_prompt,
     build_discuss_prompt,
     build_divine_prompt,
     build_guard_prompt,
@@ -667,3 +668,78 @@ class TestExtractRoleAdvice:
         assert "Alice を護衛する" in result
         assert "Frank を護衛する" in result
         assert "Dave を護衛する" in result
+
+
+class TestBuildDiscussContinuationPrompt:
+    """build_discuss_continuation_prompt のテスト。"""
+
+    def test_includes_new_entries_only(self) -> None:
+        """log_offset 以降の新しいエントリのみが含まれること。"""
+        game = _create_game()
+        game = game.add_log("[発言] Alice: ラウンド1の発言です")
+        offset = len(game.log)
+        game = game.add_log("[発言] Bob: ラウンド1の後半の発言です")
+        game = game.add_log("[発言] Charlie: 怪しい人がいます")
+
+        player = game.players[1]  # Bob
+        result = build_discuss_continuation_prompt(game, player, offset)
+        assert "ラウンド1の後半の発言です" in result
+        assert "怪しい人がいます" in result
+        assert "ラウンド1の発言です" not in result
+
+    def test_does_not_include_static_context(self) -> None:
+        """静的コンテキスト（日/フェーズ、生存者、GM要約）が含まれないこと。"""
+        game = _create_game()
+        gm_json = (
+            '{"alive":["Alice"],"dead":[],"vote_history":[],'
+            '"claims":[],"contradictions":[],"player_summaries":[],"role_advice":[]}'
+        )
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        game = game.add_log("[発言] Alice: テスト発言")
+        offset = len(game.log)
+        game = game.add_log("[発言] Bob: 新しい発言")
+
+        player = game.players[1]  # Bob
+        result = build_discuss_continuation_prompt(game, player, offset)
+        assert "1日目" not in result
+        assert "生存者" not in result
+        assert "盤面情報" not in result
+        assert gm_json not in result
+
+    def test_contains_discussion_instruction(self) -> None:
+        """議論の指示が含まれること。"""
+        game = _create_game()
+        offset = len(game.log)
+        player = game.players[1]  # Bob
+        result = build_discuss_continuation_prompt(game, player, offset)
+        assert "次のラウンド" in result
+        assert "発言のルール" in result
+
+    def test_filters_private_entries(self) -> None:
+        """プライベートログはプレイヤー視点でフィルタリングされること。"""
+        game = _create_game()
+        offset = len(game.log)
+        game = game.add_log("[占い結果] Alice が Bob を占った結果: 人狼ではない")
+        game = game.add_log("[発言] Alice: 公開発言です")
+
+        # Bob（村人）には占い結果は見えない
+        player = game.players[1]  # Bob (villager)
+        result = build_discuss_continuation_prompt(game, player, offset)
+        assert "Alice が Bob を占った結果" not in result
+        assert "公開発言です" in result
+
+    def test_contains_no_name_prefix_rule(self) -> None:
+        """名前を付けないルールが含まれること。"""
+        game = _create_game()
+        offset = len(game.log)
+        player = game.players[1]  # Bob
+        result = build_discuss_continuation_prompt(game, player, offset)
+        assert "名前を付けない" in result
+
+    def test_no_new_entries_still_has_instruction(self) -> None:
+        """新しいエントリがなくても指示は含まれること。"""
+        game = _create_game()
+        offset = len(game.log)
+        player = game.players[1]  # Bob
+        result = build_discuss_continuation_prompt(game, player, offset)
+        assert "次のラウンド" in result

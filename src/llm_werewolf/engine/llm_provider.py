@@ -22,6 +22,7 @@ from llm_werewolf.domain.player import Player
 from llm_werewolf.engine.llm_config import LLMConfig
 from llm_werewolf.engine.prompts import (
     build_attack_prompt,
+    build_discuss_continuation_prompt,
     build_discuss_prompt,
     build_divine_prompt,
     build_guard_prompt,
@@ -84,6 +85,7 @@ class LLMActionProvider:
         self.last_cache_read_input_tokens: int = 0
         self._discuss_day: int = 0
         self._discuss_messages: list[SystemMessage | HumanMessage | AIMessage] = []
+        self._discuss_log_offset: int = 0
 
     def _sleep(self, seconds: float) -> None:
         """スリープ処理。テスト時にモック可能。"""
@@ -259,24 +261,29 @@ class LLMActionProvider:
 
         同一日内の複数ラウンドでは会話履歴を保持し、
         前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる。
+        ラウンド2以降は差分プロンプト（新しいログのみ）を使用してトークン効率を改善する。
         日が変わると履歴はリセットされる。
         """
         system_prompt = build_system_prompt(player.role)
-        user_prompt = self._prepend_personality(build_discuss_prompt(game, player))
 
         # 日が変わったら履歴をリセット
         if game.day != self._discuss_day:
             self._discuss_day = game.day
             self._discuss_messages = []
+            self._discuss_log_offset = 0
 
         if not self._discuss_messages:
-            # ラウンド1: 新規メッセージリスト
+            # ラウンド1: フルコンテキスト
+            user_prompt = self._prepend_personality(build_discuss_prompt(game, player))
             messages: list[SystemMessage | HumanMessage | AIMessage] = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),
             ]
         else:
-            # ラウンド2+: 既存履歴に新しいコンテキストを追加
+            # ラウンド2+: 差分コンテキストのみ
+            user_prompt = self._prepend_personality(
+                build_discuss_continuation_prompt(game, player, self._discuss_log_offset)
+            )
             messages = list(self._discuss_messages)
             messages.append(HumanMessage(content=user_prompt))
 
@@ -300,6 +307,9 @@ class LLMActionProvider:
         else:
             self._discuss_messages.append(HumanMessage(content=user_prompt))
             self._discuss_messages.append(AIMessage(content=response_text))
+
+        # ログオフセットを更新（次ラウンドの差分計算用）
+        self._discuss_log_offset = len(game.log)
 
         return response_text
 
