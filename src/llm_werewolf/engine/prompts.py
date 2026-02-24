@@ -359,7 +359,7 @@ def _build_private_info(game: GameState, player: Player) -> str:
     return "\n".join(lines)
 
 
-_MAX_RECENT_STATEMENTS = 30
+_MAX_RECENT_STATEMENTS = 20
 
 
 def _build_context(game: GameState, player: Player) -> str:
@@ -418,6 +418,35 @@ def build_discuss_prompt(game: GameState, player: Player) -> str:
 - 盤面の整理（誰が生きている、何が起きた等）は皆が知っているので不要です
 - 占い結果や霊媒結果などの重要な情報を持っている場合は、必ず議論で公表してください
 - 他のプレイヤーが公表した占い結果や霊媒結果があれば、それに基づいて推理を展開してください"""
+
+
+def build_discuss_continuation_prompt(game: GameState, player: Player, log_offset: int) -> str:
+    """ラウンド2以降の議論プロンプトを生成する。
+
+    会話履歴にラウンド1のフルコンテキストが含まれているため、
+    ここでは ``log_offset`` 以降の新しいログエントリのみを差分として渡す。
+    静的コンテキスト（日/フェーズ、生存者、GM要約、秘密情報）は含めない。
+
+    Args:
+        game: ゲーム状態
+        player: 発言するプレイヤー
+        log_offset: 前回のプロンプト生成時のログ長（``len(game.log)``）
+
+    Returns:
+        差分コンテキスト + 議論指示のプロンプト文字列
+    """
+    new_entries = game.log[log_offset:]
+    parts: list[str] = []
+
+    if new_entries:
+        new_log = filter_log_entries(new_entries, player)
+        if new_log:
+            parts.append(f"## 前ラウンドの発言\n{new_log}")
+
+    parts.append("""議論の次のラウンドです。前ラウンドの議論を踏まえて、1〜3文で発言してください。
+前ラウンドの発言ルールに従い、名前の接頭辞なし・具体的な主張・新しい視点を心がけてください。""")
+
+    return "\n\n".join(parts)
 
 
 def build_vote_prompt(game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:

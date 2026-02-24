@@ -778,6 +778,63 @@ class TestDiscussConversationHistory:
         assert isinstance(call_args[3], HM)
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_round2_uses_continuation_prompt(self, mock_chat_openai: MagicMock) -> None:
+        """ラウンド2は差分プロンプト（フルコンテキストなし）を使用する。"""
+        from langchain_core.messages import HumanMessage as HM
+
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_mock_response("ラウンド1の発言です。"),
+            _create_mock_response("ラウンド2の発言です。"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        player = game.players[1]  # Bob
+
+        # ラウンド1
+        provider.discuss(game, player)
+
+        # ラウンド2
+        game2 = game.add_log("[発言] Alice: 新しい発言")
+        provider.discuss(game2, player)
+
+        # ラウンド2の HumanMessage にフルコンテキストが含まれないことを検証
+        call_args = mock_instance.invoke.call_args_list[1][0][0]
+        round2_prompt = call_args[3]
+        assert isinstance(round2_prompt, HM)
+        # 差分プロンプトにはフルコンテキストの要素が含まれない
+        assert "生存者" not in round2_prompt.content
+        assert "次のラウンド" in round2_prompt.content
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_round2_continuation_includes_new_statements(self, mock_chat_openai: MagicMock) -> None:
+        """ラウンド2の差分プロンプトに新しい発言が含まれること。"""
+        from langchain_core.messages import HumanMessage as HM
+
+        mock_instance = mock_chat_openai.return_value
+        mock_instance.invoke.side_effect = [
+            _create_mock_response("ラウンド1の発言です。"),
+            _create_mock_response("ラウンド2の発言です。"),
+        ]
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        player = game.players[1]  # Bob
+
+        # ラウンド1
+        provider.discuss(game, player)
+
+        # ラウンド2（新しい発言が追加された）
+        game2 = game.add_log("[発言] Charlie: ラウンド1後の発言")
+        provider.discuss(game2, player)
+
+        call_args = mock_instance.invoke.call_args_list[1][0][0]
+        round2_prompt = call_args[3]
+        assert isinstance(round2_prompt, HM)
+        assert "ラウンド1後の発言" in round2_prompt.content
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_day_change_resets_history(self, mock_chat_openai: MagicMock) -> None:
         """day が変わると履歴がリセットされ、新規メッセージリストに戻る。"""
         from dataclasses import replace
