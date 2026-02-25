@@ -1,12 +1,15 @@
+import asyncio
+import json
 import logging
 import os
 import sys
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_validator
 
@@ -18,6 +21,7 @@ from llm_werewolf.engine.llm_config import load_llm_config
 from llm_werewolf.session import (
     GameSessionStore,
     GameStep,
+    InteractiveSession,
     InteractiveSessionStore,
     SessionLimitExceeded,
     advance_from_execution_result,
@@ -433,3 +437,163 @@ async def submit_vote(game_id: str, target: str = Form(...)) -> RedirectResponse
     handle_user_vote(session, target)
     interactive_store.save(session)
     return RedirectResponse(url=f"/play/{game_id}", status_code=303)
+
+
+# --- SSE (Server-Sent Events) エンドポイント ---
+
+
+def _sse_event(event: str, data: dict[str, Any]) -> str:
+    """SSE イベント文字列を生成する。"""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _get_session_or_raise(game_id: str) -> InteractiveSession:
+    """セッションを取得する。存在しない場合は HTTPException を送出する。"""
+    session = interactive_store.get(game_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return session
+
+
+def _make_sse_callbacks(
+    loop: asyncio.AbstractEventLoop, queue: asyncio.Queue[dict[str, Any] | None]
+) -> tuple[Any, Any]:
+    """SSE 用の on_progress / on_message コールバックを生成する。
+
+    コールバックはワーカースレッドから呼ばれるため loop.call_soon_threadsafe を使用する。
+    """
+
+    def on_progress(player_name: str, action_type: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, {"event": "progress", "player": player_name, "action": action_type})
+
+    def on_message(player_name: str, text: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, {"event": "message", "player": player_name, "text": text})
+
+    return on_progress, on_message
+
+
+async def _sse_stream(queue: asyncio.Queue[dict[str, Any] | None]) -> AsyncGenerator[str, None]:
+    """SSE イベントキューからストリームを生成する。None で終了。"""
+    while True:
+        item = await queue.get()
+        if item is None:
+            yield _sse_event("done", {})
+            break
+        event_type = item.pop("event")
+        yield _sse_event(event_type, item)
+
+
+@app.post("/play/{game_id}/sse/next")
+async def sse_advance_game(game_id: str) -> StreamingResponse:
+    """次のステップへ進む（SSE ストリーム版）。"""
+    session = _get_session_or_raise(game_id)
+
+    human_player = session.game.find_player(session.human_player_name)
+    human_is_alive = human_player is not None and human_player.is_alive
+
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    on_progress, on_message = _make_sse_callbacks(loop, queue)
+
+    def process() -> None:
+        try:
+            if session.step == GameStep.ROLE_REVEAL:
+                advance_to_discussion(session, on_progress=on_progress, on_message=on_message)
+            elif session.step == GameStep.DISCUSSION and not human_is_alive:
+                skip_to_vote(session, on_progress=on_progress, on_message=on_message)
+            elif session.step == GameStep.VOTE and not human_is_alive:
+                handle_auto_vote(session, on_progress=on_progress)
+            elif session.step == GameStep.EXECUTION_RESULT:
+                advance_from_execution_result(session, on_progress=on_progress)
+            elif session.step == GameStep.NIGHT_RESULT:
+                advance_to_discussion(session, on_progress=on_progress, on_message=on_message)
+            interactive_store.save(session)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    loop.run_in_executor(None, process)
+    return StreamingResponse(_sse_stream(queue), media_type="text/event-stream")
+
+
+@app.post("/play/{game_id}/sse/discuss")
+async def sse_submit_discussion(game_id: str, message: str = Form("")) -> StreamingResponse:
+    """ユーザー発言を送信する（SSE ストリーム版）。"""
+    session = _get_session_or_raise(game_id)
+
+    if session.step != GameStep.DISCUSSION:
+        raise HTTPException(status_code=400, detail="Invalid step")
+
+    text = message.strip() or "..."
+    if len(text) > MAX_MESSAGE_LENGTH:
+        text = text[:MAX_MESSAGE_LENGTH]
+
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    on_progress, on_message = _make_sse_callbacks(loop, queue)
+
+    def process() -> None:
+        try:
+            handle_user_discuss(session, text, on_progress=on_progress, on_message=on_message)
+            interactive_store.save(session)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    loop.run_in_executor(None, process)
+    return StreamingResponse(_sse_stream(queue), media_type="text/event-stream")
+
+
+@app.post("/play/{game_id}/sse/vote")
+async def sse_submit_vote(game_id: str, target: str = Form(...)) -> StreamingResponse:
+    """ユーザー投票を送信する（SSE ストリーム版）。"""
+    session = _get_session_or_raise(game_id)
+
+    if session.step != GameStep.VOTE:
+        raise HTTPException(status_code=400, detail="Invalid step")
+
+    alive_names = {p.name for p in session.game.alive_players}
+    if target == session.human_player_name:
+        raise HTTPException(status_code=400, detail="自分には投票できません")
+    if target not in alive_names:
+        raise HTTPException(status_code=400, detail="無効な投票先です")
+
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    on_progress, _ = _make_sse_callbacks(loop, queue)
+
+    def process() -> None:
+        try:
+            handle_user_vote(session, target, on_progress=on_progress)
+            interactive_store.save(session)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    loop.run_in_executor(None, process)
+    return StreamingResponse(_sse_stream(queue), media_type="text/event-stream")
+
+
+@app.post("/play/{game_id}/sse/night-action")
+async def sse_submit_night_action(game_id: str, target: str = Form(...)) -> StreamingResponse:
+    """ユーザーの夜行動を送信する（SSE ストリーム版）。"""
+    session = _get_session_or_raise(game_id)
+
+    if session.step != GameStep.NIGHT_ACTION:
+        raise HTTPException(status_code=400, detail="Invalid step")
+
+    candidates = get_night_action_candidates(session)
+    candidate_names = {p.name for p in candidates}
+    if target not in candidate_names:
+        raise HTTPException(status_code=400, detail="無効な対象です")
+
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    on_progress, _ = _make_sse_callbacks(loop, queue)
+
+    def process() -> None:
+        try:
+            handle_night_action(session, target, on_progress=on_progress)
+            interactive_store.save(session)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    loop.run_in_executor(None, process)
+    return StreamingResponse(_sse_stream(queue), media_type="text/event-stream")

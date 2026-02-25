@@ -96,7 +96,9 @@ src/llm_werewolf/
 | `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃・護衛の行動を定義 |
 | `game_logic` | 両エンジン共通のゲームロジック関数群。占い結果通知・占い/襲撃/護衛実行・霊媒結果通知・投票集計・発言順管理・議論ラウンド数判定を提供。`find_night_actor` / `get_night_action_candidates` で役職メタデータに基づく汎用的な夜行動解決を提供 |
 | `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑（霊媒結果記録）→夜行動（占い→護衛→襲撃、護衛成功判定）→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用。オプションの `on_phase_end` コールバックにより、昼/夜フェーズ完了時に外部へ `GameState` を通知可能（ベンチマークの進捗表示等に使用） |
-| `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動（占い・襲撃・護衛）の各メソッドを提供し、護衛成功判定・霊媒結果通知を含む。`game_logic` の共通関数を利用 |
+| `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動（占い・襲撃・護衛）の各メソッドを提供し、護衛成功判定・霊媒結果通知を含む。`game_logic` の共通関数を利用。オプションの `on_progress` / `on_message` コールバックにより、各 AI の処理開始・発言完了をリアルタイムに外部へ通知可能（SSE ストリーミング用） |
+| `ProgressCallback` | 進捗コールバック型エイリアス `Callable[[str, str], None]`。`(player_name, action_type)` を受け取り、AI の処理開始を通知する |
+| `MessageCallback` | 発言完了コールバック型エイリアス `Callable[[str, str], None]`。`(player_name, message_text)` を受け取り、議論での発言結果を通知する |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 | `CandidateDecision` | 候補者選択の構造化レスポンスモデル（Pydantic BaseModel）。`target`（選択した候補者名）と `reason`（選択理由）を保持する。`with_structured_output()` で LLM に型安全なレスポンスを強制し、パースエラーを削減する |
 | `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は従来のテキスト応答、候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。同一日内の議論ラウンド間で LangChain 会話履歴を保持し、前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる（日が変わると履歴はリセット）。ラウンド2以降は `_discuss_log_offset` で差分を追跡し、`build_discuss_continuation_prompt` で新しいログのみを渡すことでトークン効率を改善する。API エラー時は指数バックオフで最大3回リトライし、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
@@ -181,6 +183,10 @@ src/llm_werewolf/
 | `/play/{id}/discuss` | POST | ユーザー発言送信 |
 | `/play/{id}/vote` | POST | ユーザー投票送信 |
 | `/play/{id}/night-action` | POST | ユーザー夜行動送信（占い/襲撃対象） |
+| `/play/{id}/sse/next` | POST | 次ステップへ進む（SSE ストリーム版）。AI の処理進捗をリアルタイムに `progress` / `message` / `done` イベントで返す |
+| `/play/{id}/sse/discuss` | POST | ユーザー発言送信（SSE ストリーム版） |
+| `/play/{id}/sse/vote` | POST | ユーザー投票送信（SSE ストリーム版） |
+| `/play/{id}/sse/night-action` | POST | ユーザー夜行動送信（SSE ストリーム版） |
 | `/play/{id}/export` | GET | ゲームログを JSON 形式でエクスポート |
 | `/games` | POST | 一括実行ゲーム作成（API） |
 | `/games` | GET | 一括実行ゲーム一覧（API） |

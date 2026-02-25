@@ -616,3 +616,77 @@ class TestResolveNightWithGuard:
         # 護衛ログがない（Aliceの護衛ログ）
         guard_logs = [log for log in engine.game.log if "[護衛] Alice" in log]
         assert len(guard_logs) == 0
+
+
+class TestProgressCallback:
+    """on_progress / on_message コールバックのテスト。"""
+
+    def test_discussion_calls_progress_and_message(self) -> None:
+        """議論中に on_progress と on_message が各 AI プレイヤーに対して呼ばれる。"""
+        progress_calls: list[tuple[str, str]] = []
+        message_calls: list[tuple[str, str]] = []
+
+        rng = random.Random(42)
+        all_names = ["Alice"] + AI_NAMES
+        game = create_game_with_role(all_names, "Alice", Role.VILLAGER, rng=rng)
+        game = game.add_log("=== ゲーム開始 ===")
+        for p in game.players:
+            game = game.add_log(f"[配役] {p.name}: {p.role.value}")
+
+        providers = {name: RandomActionProvider(rng=random.Random(rng.randint(0, 2**32))) for name in AI_NAMES}
+        speaking_order = tuple(rng.sample(all_names, len(all_names)))
+
+        engine = InteractiveGameEngine(
+            game=game,
+            providers=providers,
+            human_player_name="Alice",
+            rng=rng,
+            speaking_order=speaking_order,
+            on_progress=lambda p, a: progress_calls.append((p, a)),
+            on_message=lambda p, m: message_calls.append((p, m)),
+        )
+
+        msgs = engine.advance_discussion()
+        # AI の発言数と progress/message コール数が一致
+        ai_msg_count = len(msgs)
+        assert len(progress_calls) >= ai_msg_count
+        assert len(message_calls) == ai_msg_count
+        # すべて "discuss" アクション
+        for _, action in progress_calls:
+            if action != "summarize":
+                assert action == "discuss"
+
+    def test_vote_calls_progress(self) -> None:
+        """投票中に on_progress が各 AI プレイヤーに対して呼ばれる。"""
+        progress_calls: list[tuple[str, str]] = []
+
+        engine = _create_engine(seed=42, role=Role.VILLAGER)
+        engine.advance_discussion()
+        engine.handle_user_discuss("テスト")
+
+        # on_progress を投票用エンジンに設定
+        rng = engine._rng
+        engine2 = InteractiveGameEngine(
+            game=engine.game,
+            providers=engine._providers,
+            human_player_name="Alice",
+            rng=rng,
+            speaking_order=engine.speaking_order,
+            discussion_round=engine.discussion_round,
+            on_progress=lambda p, a: progress_calls.append((p, a)),
+        )
+
+        candidates = [p for p in engine2.game.alive_players if p.name != "Alice"]
+        engine2.handle_user_vote(candidates[0].name)
+
+        # AI プレイヤー分の投票コールバック
+        assert len(progress_calls) > 0
+        for _, action in progress_calls:
+            assert action == "vote"
+
+    def test_none_callbacks_no_error(self) -> None:
+        """on_progress/on_message が None の場合にエラーなく動作する。"""
+        engine = _create_engine(seed=42)
+        # デフォルト（None）で問題なく動作することを確認
+        msgs = engine.advance_discussion()
+        assert len(msgs) >= 0

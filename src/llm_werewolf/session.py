@@ -19,7 +19,7 @@ from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.game_logic import get_discussion_rounds
 from llm_werewolf.engine.game_master import GameMasterProvider
-from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
+from llm_werewolf.engine.interactive_engine import InteractiveGameEngine, MessageCallback, ProgressCallback
 from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config
 from llm_werewolf.engine.llm_provider import LLMActionProvider
 from llm_werewolf.engine.prompts import assign_personalities, build_personality
@@ -242,7 +242,11 @@ class InteractiveSessionStore:
 # エンジン層の InteractiveGameEngine に委譲する薄いラッパー。
 
 
-def _create_engine(session: InteractiveSession) -> InteractiveGameEngine:
+def _create_engine(
+    session: InteractiveSession,
+    on_progress: ProgressCallback | None = None,
+    on_message: MessageCallback | None = None,
+) -> InteractiveGameEngine:
     """セッションから InteractiveGameEngine を生成する。"""
     return InteractiveGameEngine(
         game=session.game,
@@ -252,6 +256,8 @@ def _create_engine(session: InteractiveSession) -> InteractiveGameEngine:
         speaking_order=session.speaking_order,
         discussion_round=session.discussion_round,
         gm_provider=session.gm_provider,
+        on_progress=on_progress,
+        on_message=on_message,
     )
 
 
@@ -262,21 +268,30 @@ def _sync_engine_to_session(session: InteractiveSession, engine: InteractiveGame
     session.discussion_round = engine.discussion_round
 
 
-def advance_to_discussion(session: InteractiveSession) -> None:
+def advance_to_discussion(
+    session: InteractiveSession,
+    on_progress: ProgressCallback | None = None,
+    on_message: MessageCallback | None = None,
+) -> None:
     """1ラウンド分の AI 議論（ユーザーの手番まで）を実行し、DISCUSSION ステップへ遷移する。"""
     if session.discussion_round == 0:
         session.current_discussion = []
 
-    engine = _create_engine(session)
+    engine = _create_engine(session, on_progress=on_progress, on_message=on_message)
     msgs = engine.advance_discussion()
     _sync_engine_to_session(session, engine)
     session.current_discussion.extend(msgs)
     session.step = GameStep.DISCUSSION
 
 
-def handle_user_discuss(session: InteractiveSession, message: str) -> None:
+def handle_user_discuss(
+    session: InteractiveSession,
+    message: str,
+    on_progress: ProgressCallback | None = None,
+    on_message: MessageCallback | None = None,
+) -> None:
     """ユーザー発言を記録し、後半 AI 発言を実行。ラウンドが残っていれば次ラウンドへ、なければ VOTE へ。"""
-    engine = _create_engine(session)
+    engine = _create_engine(session, on_progress=on_progress, on_message=on_message)
     msgs, vote_ready = engine.handle_user_discuss(message)
     _sync_engine_to_session(session, engine)
     session.current_discussion.extend(msgs)
@@ -287,17 +302,25 @@ def handle_user_discuss(session: InteractiveSession, message: str) -> None:
         session.step = GameStep.DISCUSSION
 
 
-def skip_to_vote(session: InteractiveSession) -> None:
+def skip_to_vote(
+    session: InteractiveSession,
+    on_progress: ProgressCallback | None = None,
+    on_message: MessageCallback | None = None,
+) -> None:
     """ユーザー死亡時に残りの議論ラウンドを AI のみで実行し、VOTE ステップへスキップする。"""
     max_rounds = get_discussion_rounds(session.game.day)
     while session.discussion_round < max_rounds:
-        advance_to_discussion(session)
+        advance_to_discussion(session, on_progress=on_progress, on_message=on_message)
     session.step = GameStep.VOTE
 
 
-def handle_user_vote(session: InteractiveSession, target_name: str) -> None:
+def handle_user_vote(
+    session: InteractiveSession,
+    target_name: str,
+    on_progress: ProgressCallback | None = None,
+) -> None:
     """ユーザー投票を処理し、AI投票→集計→処刑→勝利判定を行う。セッションを直接変更する。"""
-    engine = _create_engine(session)
+    engine = _create_engine(session, on_progress=on_progress)
     votes, winner = engine.handle_user_vote(target_name)
     _sync_engine_to_session(session, engine)
     session.current_votes = votes
@@ -305,9 +328,12 @@ def handle_user_vote(session: InteractiveSession, target_name: str) -> None:
     session.step = GameStep.EXECUTION_RESULT
 
 
-def handle_auto_vote(session: InteractiveSession) -> None:
+def handle_auto_vote(
+    session: InteractiveSession,
+    on_progress: ProgressCallback | None = None,
+) -> None:
     """ユーザー死亡時に AI のみで投票を行う。セッションを直接変更する。"""
-    engine = _create_engine(session)
+    engine = _create_engine(session, on_progress=on_progress)
     votes, winner = engine.handle_auto_vote()
     _sync_engine_to_session(session, engine)
     session.current_votes = votes
@@ -327,49 +353,59 @@ def get_night_action_candidates(session: InteractiveSession) -> list[Player]:
     return engine.get_night_action_candidates()
 
 
-def advance_from_execution_result(session: InteractiveSession) -> None:
+def advance_from_execution_result(
+    session: InteractiveSession,
+    on_progress: ProgressCallback | None = None,
+) -> None:
     """EXECUTION_RESULT から次ステップへ遷移する。勝者が確定済みなら GAME_OVER、それ以外は夜フェーズへ。"""
     if session.winner is not None:
         _set_game_over(session, session.winner)
     else:
-        start_night_phase(session)
+        start_night_phase(session, on_progress=on_progress)
 
 
-def start_night_phase(session: InteractiveSession) -> None:
+def start_night_phase(
+    session: InteractiveSession,
+    on_progress: ProgressCallback | None = None,
+) -> None:
     """夜フェーズを開始する。ユーザーに夜行動があれば NIGHT_ACTION へ遷移、なければ即解決。"""
-    engine = _create_engine(session)
+    engine = _create_engine(session, on_progress=on_progress)
     has_action = engine.start_night()
     _sync_engine_to_session(session, engine)
 
     if has_action:
         session.step = GameStep.NIGHT_ACTION
     else:
-        resolve_night_phase(session)
+        resolve_night_phase(session, on_progress=on_progress)
 
 
-def handle_night_action(session: InteractiveSession, target_name: str) -> None:
+def handle_night_action(
+    session: InteractiveSession,
+    target_name: str,
+    on_progress: ProgressCallback | None = None,
+) -> None:
     """ユーザーの夜行動（占い or 襲撃対象選択）を処理し、夜フェーズを解決する。"""
-    engine = _create_engine(session)
+    engine = _create_engine(session, on_progress=on_progress)
     action_type = engine.get_night_action_type()
 
     if action_type is None:
-        resolve_night_phase(session)
+        resolve_night_phase(session, on_progress=on_progress)
         return
 
     candidates = engine.get_night_action_candidates()
     candidate_names = {p.name for p in candidates}
     if target_name not in candidate_names:
-        resolve_night_phase(session)
+        resolve_night_phase(session, on_progress=on_progress)
         return
 
     if action_type == NightActionType.DIVINE:
-        resolve_night_phase(session, human_divine_target=target_name)
+        resolve_night_phase(session, human_divine_target=target_name, on_progress=on_progress)
     elif action_type == NightActionType.ATTACK:
-        resolve_night_phase(session, human_attack_target=target_name)
+        resolve_night_phase(session, human_attack_target=target_name, on_progress=on_progress)
     elif action_type == NightActionType.GUARD:
-        resolve_night_phase(session, human_guard_target=target_name)
+        resolve_night_phase(session, human_guard_target=target_name, on_progress=on_progress)
     else:
-        resolve_night_phase(session)
+        resolve_night_phase(session, on_progress=on_progress)
 
 
 def resolve_night_phase(
@@ -377,9 +413,10 @@ def resolve_night_phase(
     human_divine_target: str | None = None,
     human_attack_target: str | None = None,
     human_guard_target: str | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> None:
     """夜フェーズを解決する（占い + 護衛 + 襲撃 + 勝利判定）。"""
-    engine = _create_engine(session)
+    engine = _create_engine(session, on_progress=on_progress)
     night_messages, winner = engine.resolve_night(human_divine_target, human_attack_target, human_guard_target)
     _sync_engine_to_session(session, engine)
     session.night_messages = night_messages
