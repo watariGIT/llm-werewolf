@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import random
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -16,9 +17,6 @@ from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import check_victory
 from llm_werewolf.domain.value_objects import NightActionType, Phase, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
-
-if TYPE_CHECKING:
-    from llm_werewolf.engine.game_master import GameMasterProvider
 from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
@@ -32,6 +30,14 @@ from llm_werewolf.engine.game_logic import (
     rotate_speaking_order,
     tally_votes,
 )
+
+if TYPE_CHECKING:
+    from llm_werewolf.engine.game_master import GameMasterProvider
+
+# 進捗コールバック: (player_name, action_type) を受け取る
+ProgressCallback = Callable[[str, str], None]
+# 発言完了コールバック: (player_name, message_text) を受け取る
+MessageCallback = Callable[[str, str], None]
 
 
 class InteractiveGameEngine:
@@ -51,6 +57,8 @@ class InteractiveGameEngine:
         speaking_order: tuple[str, ...],
         discussion_round: int = 0,
         gm_provider: GameMasterProvider | None = None,
+        on_progress: ProgressCallback | None = None,
+        on_message: MessageCallback | None = None,
     ) -> None:
         self._game = game
         self._providers = providers
@@ -59,6 +67,8 @@ class InteractiveGameEngine:
         self._speaking_order = speaking_order
         self._discussion_round = discussion_round
         self._gm_provider = gm_provider
+        self._on_progress = on_progress
+        self._on_message = on_message
 
     @property
     def game(self) -> GameState:
@@ -90,6 +100,7 @@ class InteractiveGameEngine:
 
             # GM-AI 要約 (Day 2以降)
             if self._game.day >= 2 and self._gm_provider is not None:
+                self._notify_progress("GM", "summarize")
                 summary_json = self._gm_provider.summarize(self._game)
                 self._game = replace(self._game, gm_summary=summary_json, gm_summary_log_offset=len(self._game.log))
 
@@ -254,14 +265,26 @@ class InteractiveGameEngine:
 
     # --- private methods ---
 
+    def _notify_progress(self, player_name: str, action_type: str) -> None:
+        """進捗コールバックを呼び出す。"""
+        if self._on_progress is not None:
+            self._on_progress(player_name, action_type)
+
+    def _notify_message(self, player_name: str, text: str) -> None:
+        """発言完了コールバックを呼び出す。"""
+        if self._on_message is not None:
+            self._on_message(player_name, text)
+
     def _run_ai_discussion(self, players: list[Player]) -> list[str]:
         """指定 AI プレイヤーの発言を実行し、発言メッセージリストを返す。"""
         messages: list[str] = []
         for player in players:
+            self._notify_progress(player.name, "discuss")
             provider = self._providers[player.name]
             message = provider.discuss(self._game, player)
             self._game = self._game.add_log(f"[発言] {player.name}: {message}")
             messages.append(f"{player.name}: {message}")
+            self._notify_message(player.name, message)
         return messages
 
     def _collect_ai_votes(self, votes: dict[str, str]) -> None:
@@ -271,6 +294,7 @@ class InteractiveGameEngine:
                 continue
             if player.name not in self._providers:
                 continue
+            self._notify_progress(player.name, "vote")
             candidates = tuple(p for p in self._game.alive_players if p.name != player.name)
             provider = self._providers[player.name]
             ai_target = provider.vote(self._game, player, candidates)
@@ -320,6 +344,7 @@ class InteractiveGameEngine:
                 return None
             target_name = human_target
         else:
+            self._notify_progress(seer.name, "divine")
             provider = self._providers[seer.name]
             target_name = provider.divine(self._game, seer, candidates)
 
@@ -341,6 +366,7 @@ class InteractiveGameEngine:
                 return None
             target_name = human_target
         else:
+            self._notify_progress(knight.name, "guard")
             provider = self._providers[knight.name]
             target_name = provider.guard(self._game, knight, candidates)
 
@@ -362,6 +388,7 @@ class InteractiveGameEngine:
                 return None
             target_name = human_target
         else:
+            self._notify_progress(werewolf.name, "attack")
             provider = self._providers[werewolf.name]
             target_name = provider.attack(self._game, werewolf, candidates)
 
