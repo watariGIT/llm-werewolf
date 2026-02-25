@@ -316,10 +316,9 @@
         <!-- DISCUSSION: 議論フェーズ -->
         {% if step == "discussion" %}
         {{ past_day_details(past_days, past_discussions, past_events) }}
-        <div class="panel">
+        <div class="panel" id="current-discussion-panel">
             <h2>議論 - Day {{ game.day }}</h2>
-            {% if session.current_discussion %}
-            <ul class="message-list">
+            <ul class="message-list" id="current-discussion-list">
                 {% for msg in session.current_discussion %}
                 <li>
                     <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
@@ -327,7 +326,6 @@
                 </li>
                 {% endfor %}
             </ul>
-            {% endif %}
         </div>
 
         {% if human_is_alive %}
@@ -586,6 +584,8 @@
         <span id="sse-loading-text" style="margin-left:0.5rem;">準備中...</span>
     </div>
     <script>
+        var HUMAN_PLAYER_NAME = "{{ session.human_player_name }}";
+
         // SSE エンドポイントのマッピング
         var SSE_ENDPOINTS = {
             '/next': '/sse/next',
@@ -621,18 +621,8 @@
 
         // 議論リストに発言を追加
         function appendMessage(player, text) {
-            var list = document.querySelector('.message-list');
-            if (!list) {
-                // message-list がなければ作成
-                var panel = document.querySelector('.panel h2');
-                if (panel && panel.parentNode) {
-                    list = document.createElement('ul');
-                    list.className = 'message-list';
-                    panel.parentNode.appendChild(list);
-                } else {
-                    return;
-                }
-            }
+            var list = document.getElementById('current-discussion-list');
+            if (!list) return;
             var li = document.createElement('li');
             var speaker = document.createElement('span');
             speaker.className = 'speaker';
@@ -653,6 +643,9 @@
         };
 
         function getLoadingText(player, action) {
+            if (action === 'divine') return '占い先を選択中...';
+            if (action === 'guard') return '護衛先を選択中...';
+            if (action === 'attack') return '襲撃先を決定中...';
             var label = ACTION_LABELS[action] || 'が処理中...';
             return player + label;
         }
@@ -680,11 +673,31 @@
             var textarea = form.querySelector('textarea');
             if (textarea) textarea.readOnly = true;
             form.querySelectorAll('input[type="radio"]').forEach(function(r) { r.disabled = true; });
+
+            // discuss フォームの場合、ユーザーの発言を即座に表示
+            if (textarea && action.endsWith('/discuss')) {
+                var userMsg = textarea.value.trim() || '...';
+                appendMessage(HUMAN_PLAYER_NAME, userMsg);
+            }
+
+            // /next フォームの場合、議論パネルを動的に作成（message イベントの表示先）
+            if (action.endsWith('/next') && !document.getElementById('current-discussion-list')) {
+                var dynPanel = document.createElement('div');
+                dynPanel.className = 'panel';
+                dynPanel.id = 'current-discussion-panel';
+                dynPanel.innerHTML = '<h2>議論中...</h2><ul class="message-list" id="current-discussion-list"></ul>';
+                var parentPanel = form.closest('.panel');
+                if (parentPanel) {
+                    parentPanel.after(dynPanel);
+                }
+            }
+
             loadingEl.style.display = 'block';
             loadingText.textContent = '準備中...';
 
             // form の後ろにローディング表示を移動
-            form.parentNode.insertBefore(loadingEl, form.nextSibling);
+            var loadingAnchor = document.getElementById('current-discussion-panel') || form;
+            loadingAnchor.parentNode.insertBefore(loadingEl, loadingAnchor.nextSibling);
 
             fetch(sseAction, {
                 method: 'POST',
@@ -718,7 +731,7 @@
                             } else if (ev.type === 'message') {
                                 appendMessage(ev.data.player, ev.data.text);
                             } else if (ev.type === 'done') {
-                                location.reload();
+                                setTimeout(function() { location.reload(); }, 500);
                                 return;
                             }
                         }
