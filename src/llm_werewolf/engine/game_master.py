@@ -98,6 +98,15 @@ class DayVotes(BaseModel):
     executed: str = Field(description="処刑されたプレイヤー名")
 
 
+class ExecutionBudget(BaseModel):
+    """処刑予算（吊り余裕）情報。"""
+
+    alive_count: int = Field(description="生存者数")
+    total_executions: int = Field(description="これまでの処刑回数")
+    margin_if_two_wolves: int = Field(description="人狼2人残の場合の吊り余裕")
+    margin_if_one_wolf: int = Field(description="人狼1人残の場合の吊り余裕")
+
+
 class GameBoardState(BaseModel):
     """統合された盤面情報（確定情報 + 分析情報）。"""
 
@@ -108,6 +117,7 @@ class GameBoardState(BaseModel):
     contradictions: list[str]
     player_summaries: list[PlayerSummary]
     role_advice: list[RoleAdvice] = Field(default_factory=list)
+    execution_budget: ExecutionBudget | None = None
 
 
 # --- 確定情報の抽出 ---
@@ -162,6 +172,36 @@ def extract_board_info(game: GameState) -> tuple[list[str], list[DeadPlayerInfo]
             dead.append(DeadPlayerInfo(name=attacked_name, cause="attack", day=current_day))
 
     return alive, dead, vote_history
+
+
+def calculate_execution_budget(alive_count: int, dead: list[DeadPlayerInfo]) -> ExecutionBudget:
+    """処刑予算（吊り余裕）を計算する。
+
+    吊り余裕の公式（毎日「処刑+襲撃」で2人ずつ減ることを考慮）:
+    - 残り処刑回数 = (生存者数 - 人狼数×2 + 1) // 2
+    - 吊り余裕 = 残り処刑回数 - 人狼数
+
+    公開情報から人狼の正確な残数は不明なため、2パターンで計算する。
+
+    Args:
+        alive_count: 生存者数
+        dead: 死亡プレイヤー情報のリスト
+
+    Returns:
+        ExecutionBudget
+    """
+    total_executions = sum(1 for d in dead if d.cause == "execution")
+
+    def _margin(wolf_count: int) -> int:
+        remaining = (alive_count - wolf_count * 2 + 1) // 2
+        return remaining - wolf_count
+
+    return ExecutionBudget(
+        alive_count=alive_count,
+        total_executions=total_executions,
+        margin_if_two_wolves=_margin(2),
+        margin_if_one_wolf=_margin(1),
+    )
 
 
 # --- GM プロンプト ---
@@ -243,11 +283,20 @@ _GM_SYSTEM_PROMPT = """\
 - role_advice は6役職すべてを含めてください"""
 
 
-def _build_gm_user_prompt(game: GameState) -> str:
+def _build_gm_user_prompt(game: GameState, budget: ExecutionBudget) -> str:
     """GM-AI 用のユーザープロンプトを生成する。"""
     public_log = format_public_log(game)
     alive_names = "、".join(p.name for p in game.alive_players)
-    return f"## 生存者\n{alive_names}\n\n## ゲームログ\n{public_log}"
+    budget_section = (
+        f"\n\n## 処刑予算（吊り余裕）\n"
+        f"- 生存者数: {budget.alive_count}人\n"
+        f"- これまでの処刑: {budget.total_executions}回\n"
+        f"- 人狼2人残の場合: 吊り余裕{budget.margin_if_two_wolves}回\n"
+        f"- 人狼1人残の場合: 吊り余裕{budget.margin_if_one_wolf}回\n"
+        f"※ 狂人が生存している場合、投票で人狼陣営が多数派を形成しやすく実質的な余裕はさらに厳しい\n"
+        f"※ role_advice で各役職に吊り余裕を考慮したアドバイスを出してください"
+    )
+    return f"## 生存者\n{alive_names}\n\n## ゲームログ\n{public_log}{budget_section}"
 
 
 # --- GameMasterProvider ---
@@ -284,8 +333,9 @@ class GameMasterProvider:
             GameBoardState の JSON 文字列
         """
         alive, dead, vote_history = extract_board_info(game)
+        budget = calculate_execution_budget(len(alive), dead)
 
-        analysis = self._call_llm_analysis(game)
+        analysis = self._call_llm_analysis(game, budget)
 
         board = GameBoardState(
             alive=alive,
@@ -295,18 +345,19 @@ class GameMasterProvider:
             contradictions=analysis.contradictions[:3] if analysis else [],
             player_summaries=analysis.player_summaries if analysis else [],
             role_advice=analysis.role_advice if analysis else [],
+            execution_budget=budget,
         )
 
         return board.model_dump_json(ensure_ascii=False)
 
-    def _call_llm_analysis(self, game: GameState) -> GameAnalysis | None:
+    def _call_llm_analysis(self, game: GameState, budget: ExecutionBudget) -> GameAnalysis | None:
         """LLM を呼び出して GameAnalysis を構造化出力で取得する。
 
         API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
         リトライ上限到達時は None を返す。
         """
         structured_llm = self._llm.with_structured_output(GameAnalysis, include_raw=True)
-        user_prompt = _build_gm_user_prompt(game)
+        user_prompt = _build_gm_user_prompt(game, budget)
         messages = [
             SystemMessage(content=_GM_SYSTEM_PROMPT),
             HumanMessage(content=user_prompt),

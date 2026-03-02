@@ -501,6 +501,33 @@ class TestBuildContextWithGmSummary:
         assert "これまでのログ" in result
         assert "盤面情報" not in result
 
+    def test_includes_execution_budget_when_present(self) -> None:
+        game = _create_game()
+        gm_json = (
+            '{"alive":["Alice","Bob"],"dead":[],"vote_history":[],'
+            '"claims":[],"contradictions":[],"player_summaries":[],"role_advice":[],'
+            '"execution_budget":{"alive_count":7,"total_executions":1,'
+            '"margin_if_two_wolves":0,"margin_if_one_wolf":2}}'
+        )
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        player = game.players[1]  # Bob
+        result = _build_context(game, player)
+        assert "処刑予算" in result
+        assert "吊り余裕0回" in result
+        assert "吊り余裕2回" in result
+        assert "狂人" in result
+
+    def test_no_execution_budget_without_field(self) -> None:
+        game = _create_game()
+        gm_json = (
+            '{"alive":["Alice"],"dead":[],"vote_history":[],'
+            '"claims":[],"contradictions":[],"player_summaries":[],"role_advice":[]}'
+        )
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        player = game.players[1]
+        result = _build_context(game, player)
+        assert "処刑予算" not in result
+
     def test_includes_new_entries_after_offset(self) -> None:
         game = _create_game()
         gm_json = (

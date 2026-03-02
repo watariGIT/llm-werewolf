@@ -106,10 +106,12 @@ src/llm_werewolf/
 | `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は `with_structured_output()` + `DiscussionResponse` で内部思考と発言を分離、候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。`last_thinking` 属性で直近のアクションの思考/理由を保持する。同一日内の議論ラウンド間で LangChain 会話履歴を保持し、前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる（日が変わると履歴はリセット）。ラウンド2以降は `_discuss_log_offset` で差分を追跡し、`build_discuss_continuation_prompt` で新しいログのみを渡すことでトークン効率を改善する。API エラー時は指数バックオフで最大3回リトライし、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+思考/理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
 | `GameMasterProvider` | GM-AI プロバイダー。Day 2 以降にゲームログを構造化 JSON に整理し、プレイヤー AI の情報抽出負荷を削減する。確定情報（生存/死亡/投票）はプログラムで生成、分析情報（CO抽出/矛盾/要約/役職別アドバイス）は LLM 構造化出力で抽出するハイブリッドアプローチ。`GameBoardState` を JSON 文字列として返す |
 | `extract_board_info` | `GameState` のログから確定的な盤面情報（生存者/死亡者/投票履歴）をプログラムで抽出する関数 |
+| `calculate_execution_budget` | 生存者数と死亡者リストから処刑予算（吊り余裕）を計算する関数。人狼2人残/1人残の2シナリオで吊り余裕を算出する |
+| `ExecutionBudget` | 処刑予算（吊り余裕）情報の Pydantic モデル。alive_count・total_executions・margin_if_two_wolves・margin_if_one_wolf を保持する |
 | `AdviceOption` | おすすめ行動の1選択肢を表す Pydantic モデル。action（行動）・merit（メリット）・demerit（デメリット）・risk（リスクスコア1-10）・reward（リターンスコア1-10）を保持する |
 | `RoleAdvice` | 1役職分のおすすめ行動を表す Pydantic モデル。role（役職名）と options（`AdviceOption` のリスト、2〜3件）を保持する |
 | `GameAnalysis` | LLM が抽出する分析情報の Pydantic モデル（claims/contradictions/player_summaries/role_advice） |
-| `GameBoardState` | 確定情報と分析情報を統合した盤面情報の Pydantic モデル |
+| `GameBoardState` | 確定情報と分析情報を統合した盤面情報の Pydantic モデル。処刑予算（`execution_budget`）を含む |
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `load_gm_config` | GM-AI 用の `LLMConfig` を環境変数から生成するファクトリ関数。`GM_MODEL_NAME` / `GM_TEMPERATURE` でプレイヤー AI とは独立に指定可能。API キーは `OPENAI_API_KEY` を共有 |

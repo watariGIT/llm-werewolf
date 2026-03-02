@@ -403,6 +403,38 @@ def _build_private_info(game: GameState, player: Player, *, personality_tag: str
 _MAX_RECENT_STATEMENTS = DEFAULT_MAX_RECENT_STATEMENTS
 
 
+def _extract_execution_budget(gm_summary: str) -> str:
+    """GM 要約 JSON から処刑予算（吊り余裕）情報を抽出して整形する。
+
+    Args:
+        gm_summary: GM 要約の JSON 文字列
+
+    Returns:
+        整形された処刑予算文字列。情報がない場合は空文字列。
+    """
+    try:
+        data = json.loads(gm_summary)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+
+    budget = data.get("execution_budget")
+    if not budget:
+        return ""
+
+    alive = budget.get("alive_count", 0)
+    m2 = budget.get("margin_if_two_wolves")
+    m1 = budget.get("margin_if_one_wolf")
+    if m2 is None or m1 is None:
+        return ""
+
+    lines = [
+        "## 処刑予算（吊り余裕）",
+        f"生存者{alive}人。人狼が2人残りなら吊り余裕{m2}回、1人残りなら吊り余裕{m1}回。",
+        "※ 狂人が生存していれば投票で不利になり、実質的な余裕はさらに厳しくなります。",
+    ]
+    return "\n".join(lines)
+
+
 def _build_context(
     game: GameState, player: Player, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS, personality_tag: str = ""
 ) -> str:
@@ -420,6 +452,10 @@ def _build_context(
 
     if game.gm_summary:
         parts.append(f"\n## 盤面情報\n{game.gm_summary}")
+
+        budget_info = _extract_execution_budget(game.gm_summary)
+        if budget_info:
+            parts.append(f"\n{budget_info}")
 
         private_info = _build_private_info(game, player, personality_tag=personality_tag)
         if private_info:
