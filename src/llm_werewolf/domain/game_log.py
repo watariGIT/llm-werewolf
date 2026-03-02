@@ -47,18 +47,38 @@ def _is_visible(log_entry: str, player: Player) -> bool:
     return True
 
 
-def filter_log_entries(entries: Sequence[str], player: Player) -> str:
+def filter_log_entries(entries: Sequence[str], player: Player, *, max_recent_statements: int = -1) -> str:
     """任意のログエントリ列をプレイヤー視点でフィルタリングして文字列を返す。
+
+    ``max_recent_statements`` が 0 以上の場合、発言ログ（``[発言]`` プレフィックス）を
+    直近 N 件に制限し、イベントログは常に全件保持する。元の順序は維持される。
 
     Args:
         entries: ログエントリのシーケンス
         player: 視点プレイヤー
+        max_recent_statements: 保持する直近の発言ログ件数。負の値で全件保持（デフォルト）。
 
     Returns:
         フィルタリング済みのログ文字列（改行区切り）
     """
-    visible = [entry for entry in entries if _is_visible(entry, player)]
-    return "\n".join(visible)
+    visible = [(i, entry) for i, entry in enumerate(entries) if _is_visible(entry, player)]
+
+    if max_recent_statements < 0:
+        return "\n".join(entry for _, entry in visible)
+
+    events: list[tuple[int, str]] = []
+    statements: list[tuple[int, str]] = []
+    for idx, entry in visible:
+        if entry.startswith(_STATEMENT_PREFIX):
+            statements.append((idx, entry))
+        else:
+            events.append((idx, entry))
+
+    if len(statements) > max_recent_statements:
+        statements = statements[-max_recent_statements:] if max_recent_statements > 0 else []
+
+    merged = sorted(events + statements, key=lambda x: x[0])
+    return "\n".join(entry for _, entry in merged)
 
 
 _STATEMENT_PREFIX = "[発言]"

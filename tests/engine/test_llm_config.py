@@ -1,12 +1,15 @@
 import pytest
 
 from llm_werewolf.engine.llm_config import (
+    DEFAULT_MAX_RECENT_STATEMENTS,
     DEFAULT_MODEL_NAME,
     DEFAULT_TEMPERATURE,
     GM_DEFAULT_MODEL,
     GM_DEFAULT_TEMPERATURE,
+    PromptConfig,
     load_gm_config,
     load_llm_config,
+    load_prompt_config,
 )
 
 
@@ -146,3 +149,41 @@ class TestGMConfig:
         assert gm_config.temperature == 0.2
         # API キーは共有
         assert player_config.api_key == gm_config.api_key
+
+
+class TestPromptConfig:
+    """PromptConfig / load_prompt_config のテスト。"""
+
+    def test_default_values(self) -> None:
+        config = PromptConfig()
+        assert config.max_recent_statements == DEFAULT_MAX_RECENT_STATEMENTS
+
+    def test_load_with_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("MAX_RECENT_STATEMENTS", raising=False)
+        config = load_prompt_config()
+        assert config.max_recent_statements == DEFAULT_MAX_RECENT_STATEMENTS
+
+    def test_load_with_custom_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MAX_RECENT_STATEMENTS", "10")
+        config = load_prompt_config()
+        assert config.max_recent_statements == 10
+
+    def test_load_with_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MAX_RECENT_STATEMENTS", "0")
+        config = load_prompt_config()
+        assert config.max_recent_statements == 0
+
+    def test_load_with_invalid_value_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MAX_RECENT_STATEMENTS", "abc")
+        with pytest.raises(ValueError, match="MAX_RECENT_STATEMENTS の値が不正です"):
+            load_prompt_config()
+
+    def test_load_with_negative_value_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MAX_RECENT_STATEMENTS", "-1")
+        with pytest.raises(ValueError, match="0 以上"):
+            load_prompt_config()
+
+    def test_config_is_frozen(self) -> None:
+        config = PromptConfig()
+        with pytest.raises(AttributeError):
+            config.max_recent_statements = 10  # type: ignore[misc]
