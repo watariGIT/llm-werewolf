@@ -17,6 +17,8 @@ class ActionProvider(Protocol):
     将来的に LLM やユーザー入力に差し替え可能。
     """
 
+    last_thinking: str
+
     def discuss(self, game: GameState, player: Player) -> DiscussResult:
         """議論フェーズでの発言と思考を返す。"""
         ...

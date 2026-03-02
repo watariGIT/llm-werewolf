@@ -500,6 +500,7 @@ class TestFallback:
 
         assert result.message == FALLBACK_DISCUSS_MESSAGE
         assert result.thinking == ""
+        assert provider.last_thinking == ""
         assert mock_structured.invoke.call_count == MAX_RETRIES
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
@@ -518,6 +519,7 @@ class TestFallback:
         result = provider.vote(game, game.players[0], candidates)
 
         assert result in ("Charlie", "Dave")
+        assert provider.last_thinking == ""
         assert mock_structured.invoke.call_count == MAX_RETRIES
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
@@ -536,6 +538,7 @@ class TestFallback:
         result = provider.divine(game, game.players[0], candidates)
 
         assert result in ("Bob", "Charlie")
+        assert provider.last_thinking == ""
         assert mock_structured.invoke.call_count == MAX_RETRIES
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
@@ -554,6 +557,7 @@ class TestFallback:
         result = provider.attack(game, game.players[2], candidates)
 
         assert result in ("Alice", "Bob")
+        assert provider.last_thinking == ""
         assert mock_structured.invoke.call_count == MAX_RETRIES
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
@@ -572,6 +576,7 @@ class TestFallback:
         result = provider.guard(game, game.players[4], candidates)
 
         assert result in ("Alice", "Bob")
+        assert provider.last_thinking == ""
         assert mock_structured.invoke.call_count == MAX_RETRIES
 
 

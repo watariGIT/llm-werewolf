@@ -21,6 +21,7 @@ class RandomActionProvider:
 
     def __init__(self, rng: random.Random | None = None) -> None:
         self._rng = rng if rng is not None else random.Random()
+        self.last_thinking: str = ""
 
     def discuss(self, game: GameState, player: Player) -> DiscussResult:
         return DiscussResult(message=self._rng.choice(DUMMY_MESSAGES))
