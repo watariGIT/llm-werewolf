@@ -161,6 +161,19 @@ class TestHandleUserVote:
         vote_logs = [log for log in engine.game.log if "[投票]" in log]
         assert len(vote_logs) > 0
 
+    def test_vote_logs_are_grouped(self) -> None:
+        """投票ログが全投票収集後にまとめて記録されること。"""
+        engine = _create_engine()
+        engine.advance_discussion()
+        engine.handle_user_discuss("test")
+        candidates = [p for p in engine.game.alive_players if p.name != "Alice"]
+        engine.handle_user_vote(candidates[0].name)
+        vote_indices = [i for i, log in enumerate(engine.game.log) if "[投票]" in log]
+        assert len(vote_indices) >= 2
+        # 投票ログが連続していることを確認
+        for i in range(len(vote_indices) - 1):
+            assert vote_indices[i + 1] == vote_indices[i] + 1
+
 
 class TestHandleAutoVote:
     def test_returns_votes(self) -> None:

@@ -96,6 +96,17 @@ class TestDayPhase:
         vote_logs = [log for log in result.log if "[投票]" in log]
         assert len(vote_logs) == 5
 
+    def test_vote_logs_are_grouped_after_all_votes(self) -> None:
+        """投票ログが全投票収集後にまとめて記録されること（途中の投票が見えない）。"""
+        engine, _ = self._setup_game()
+        result = engine._day_phase()  # noqa: SLF001
+
+        vote_indices = [i for i, log in enumerate(result.log) if "[投票]" in log]
+        assert len(vote_indices) >= 2
+        # 投票ログが連続していることを確認（間に他のログが挟まらない）
+        for i in range(len(vote_indices) - 1):
+            assert vote_indices[i + 1] == vote_indices[i] + 1
+
     def test_execution_happens(self) -> None:
         engine, _ = self._setup_game()
         result = engine._day_phase()  # noqa: SLF001

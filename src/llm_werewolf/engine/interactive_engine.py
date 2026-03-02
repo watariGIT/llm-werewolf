@@ -164,9 +164,9 @@ class InteractiveGameEngine:
         human = self._game.find_player(self._human_player_name, alive_only=True)
         if human is not None:
             votes[human.name] = target_name
-            self._game = self._game.add_log(f"[投票] {human.name} → {target_name}")
 
         self._collect_ai_votes(votes)
+        self._log_votes(votes)
         winner = self._execute_votes(votes)
         return votes, winner
 
@@ -178,6 +178,7 @@ class InteractiveGameEngine:
         """
         votes: dict[str, str] = {}
         self._collect_ai_votes(votes)
+        self._log_votes(votes)
         winner = self._execute_votes(votes)
         return votes, winner
 
@@ -288,7 +289,7 @@ class InteractiveGameEngine:
         return messages
 
     def _collect_ai_votes(self, votes: dict[str, str]) -> None:
-        """AI プレイヤーの投票を収集する。"""
+        """AI プレイヤーの投票を収集する（ログ記録は行わない）。"""
         for player in self._game.alive_players:
             if player.name == self._human_player_name:
                 continue
@@ -299,7 +300,11 @@ class InteractiveGameEngine:
             provider = self._providers[player.name]
             ai_target = provider.vote(self._game, player, candidates)
             votes[player.name] = ai_target
-            self._game = self._game.add_log(f"[投票] {player.name} → {ai_target}")
+
+    def _log_votes(self, votes: dict[str, str]) -> None:
+        """全投票をまとめてログに記録する。"""
+        for voter, target in votes.items():
+            self._game = self._game.add_log(f"[投票] {voter} → {target}")
 
     def _execute_votes(self, votes: dict[str, str]) -> Team | None:
         """投票を集計・処刑し、勝利判定を行う。"""
