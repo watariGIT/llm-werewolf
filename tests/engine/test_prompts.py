@@ -576,11 +576,15 @@ class TestBuildPrivateInfo:
                             "action": "Dave を占う",
                             "merit": "情報が少ないプレイヤーの白黒が判明する",
                             "demerit": "Grace を放置するリスクがある",
+                            "risk": 3,
+                            "reward": 7,
                         },
                         {
                             "action": "Grace を占う",
                             "merit": "怪しいプレイヤーを確認できる",
                             "demerit": "他の候補を見逃す可能性がある",
+                            "risk": 4,
+                            "reward": 8,
                         },
                     ],
                 },
@@ -638,13 +642,21 @@ class TestExtractRoleAdvice:
                             "action": "投票で怪しい人を処刑する",
                             "merit": "人狼を排除できる",
                             "demerit": "間違えるリスク",
+                            "risk": 4,
+                            "reward": 7,
                         },
                     ],
                 },
                 {
                     "role": "人狼",
                     "options": [
-                        {"action": "占い師を襲撃する", "merit": "情報源を断てる", "demerit": "護衛されるリスク"},
+                        {
+                            "action": "占い師を襲撃する",
+                            "merit": "情報源を断てる",
+                            "demerit": "護衛されるリスク",
+                            "risk": 5,
+                            "reward": 9,
+                        },
                     ],
                 },
             ],
@@ -660,7 +672,7 @@ class TestExtractRoleAdvice:
             "role_advice": [
                 {
                     "role": "村人",
-                    "options": [{"action": "行動", "merit": "利点", "demerit": "欠点"}],
+                    "options": [{"action": "行動", "merit": "利点", "demerit": "欠点", "risk": 3, "reward": 5}],
                 },
             ],
         }
@@ -678,7 +690,7 @@ class TestExtractRoleAdvice:
         result = _extract_role_advice(json.dumps(gm_data), Role.VILLAGER)
         assert result == ""
 
-    def test_formats_multiple_options(self) -> None:
+    def test_formats_multiple_options_with_risk_reward(self) -> None:
         import json
 
         gm_data = {
@@ -686,9 +698,27 @@ class TestExtractRoleAdvice:
                 {
                     "role": "狩人",
                     "options": [
-                        {"action": "Alice を護衛する", "merit": "占い師COしている", "demerit": "ブラフの可能性"},
-                        {"action": "Frank を護衛する", "merit": "霊媒師COしている", "demerit": "狙われにくい"},
-                        {"action": "Dave を護衛する", "merit": "重要な発言をしている", "demerit": "根拠が弱い"},
+                        {
+                            "action": "Alice を護衛する",
+                            "merit": "占い師COしている",
+                            "demerit": "ブラフの可能性",
+                            "risk": 5,
+                            "reward": 8,
+                        },
+                        {
+                            "action": "Frank を護衛する",
+                            "merit": "霊媒師COしている",
+                            "demerit": "狙われにくい",
+                            "risk": 2,
+                            "reward": 7,
+                        },
+                        {
+                            "action": "Dave を護衛する",
+                            "merit": "重要な発言をしている",
+                            "demerit": "根拠が弱い",
+                            "risk": 6,
+                            "reward": 4,
+                        },
                     ],
                 },
             ],
@@ -700,6 +730,89 @@ class TestExtractRoleAdvice:
         assert "Alice を護衛する" in result
         assert "Frank を護衛する" in result
         assert "Dave を護衛する" in result
+        assert "リスク:5/10" in result
+        assert "リターン:8/10" in result
+        assert "リスク:2/10" in result
+        assert "リターン:7/10" in result
+
+    def test_includes_stance_guidance_for_aggressive(self) -> None:
+        import json
+
+        gm_data = {
+            "role_advice": [
+                {
+                    "role": "村人",
+                    "options": [
+                        {"action": "行動A", "merit": "利点", "demerit": "欠点", "risk": 3, "reward": 5},
+                    ],
+                },
+            ],
+        }
+        result = _extract_role_advice(
+            json.dumps(gm_data, ensure_ascii=False),
+            Role.VILLAGER,
+            personality_tag="personality: tone=polite, stance=aggressive, style=strategic",
+        )
+        assert "攻撃的な性格" in result
+        assert "リスクが高くてもリターンが大きい" in result
+
+    def test_includes_stance_guidance_for_evidence_based(self) -> None:
+        import json
+
+        gm_data = {
+            "role_advice": [
+                {
+                    "role": "村人",
+                    "options": [
+                        {"action": "行動A", "merit": "利点", "demerit": "欠点", "risk": 3, "reward": 5},
+                    ],
+                },
+            ],
+        }
+        result = _extract_role_advice(
+            json.dumps(gm_data, ensure_ascii=False),
+            Role.VILLAGER,
+            personality_tag="personality: tone=casual, stance=evidence-based, style=strategic",
+        )
+        assert "証拠重視" in result
+        assert "リスクが低く確実な戦略" in result
+
+    def test_no_stance_guidance_without_personality_tag(self) -> None:
+        import json
+
+        gm_data = {
+            "role_advice": [
+                {
+                    "role": "村人",
+                    "options": [
+                        {"action": "行動A", "merit": "利点", "demerit": "欠点", "risk": 3, "reward": 5},
+                    ],
+                },
+            ],
+        }
+        result = _extract_role_advice(json.dumps(gm_data, ensure_ascii=False), Role.VILLAGER)
+        assert "攻撃的な性格" not in result
+        assert "証拠重視" not in result
+        assert "独自の判断" not in result
+        assert "直感を重視" not in result
+
+    def test_formats_without_risk_reward(self) -> None:
+        """risk/reward がない場合でもスコアラベルなしで正常に動作する。"""
+        import json
+
+        gm_data = {
+            "role_advice": [
+                {
+                    "role": "村人",
+                    "options": [
+                        {"action": "行動A", "merit": "利点", "demerit": "欠点"},
+                    ],
+                },
+            ],
+        }
+        result = _extract_role_advice(json.dumps(gm_data, ensure_ascii=False), Role.VILLAGER)
+        assert "行動A" in result
+        assert "リスク:" not in result
 
 
 class TestBuildDiscussContinuationPrompt:

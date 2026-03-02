@@ -383,7 +383,9 @@ class LLMActionProvider:
             # ラウンド1: フルコンテキスト
             max_statements = self._prompt_config.max_recent_statements
             user_prompt = self._prepend_personality(
-                build_discuss_prompt(game, player, max_recent_statements=max_statements)
+                build_discuss_prompt(
+                    game, player, max_recent_statements=max_statements, personality_tag=self._personality
+                )
             )
             messages: list[SystemMessage | HumanMessage | AIMessage] = [
                 SystemMessage(content=system_prompt),
@@ -479,27 +481,35 @@ class LLMActionProvider:
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         """投票先を LLM で選択する。"""
         system_prompt = build_system_prompt(player.role)
-        user_prompt = self._prepend_personality(build_vote_prompt(game, player, candidates))
+        user_prompt = self._prepend_personality(
+            build_vote_prompt(game, player, candidates, personality_tag=self._personality)
+        )
         candidate_names = tuple(c.name for c in candidates)
         return self._select_candidate(system_prompt, user_prompt, candidate_names, player.name, "vote")
 
     def divine(self, game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
         """占い対象を LLM で選択する。"""
         system_prompt = build_system_prompt(seer.role)
-        user_prompt = self._prepend_personality(build_divine_prompt(game, seer, candidates))
+        user_prompt = self._prepend_personality(
+            build_divine_prompt(game, seer, candidates, personality_tag=self._personality)
+        )
         candidate_names = tuple(c.name for c in candidates)
         return self._select_candidate(system_prompt, user_prompt, candidate_names, seer.name, "divine")
 
     def attack(self, game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
         """襲撃対象を LLM で選択する。"""
         system_prompt = build_system_prompt(werewolf.role)
-        user_prompt = self._prepend_personality(build_attack_prompt(game, werewolf, candidates))
+        user_prompt = self._prepend_personality(
+            build_attack_prompt(game, werewolf, candidates, personality_tag=self._personality)
+        )
         candidate_names = tuple(c.name for c in candidates)
         return self._select_candidate(system_prompt, user_prompt, candidate_names, werewolf.name, "attack")
 
     def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
         """護衛対象を LLM で選択する。"""
         system_prompt = build_system_prompt(knight.role)
-        user_prompt = self._prepend_personality(build_guard_prompt(game, knight, candidates))
+        user_prompt = self._prepend_personality(
+            build_guard_prompt(game, knight, candidates, personality_tag=self._personality)
+        )
         candidate_names = tuple(c.name for c in candidates)
         return self._select_candidate(system_prompt, user_prompt, candidate_names, knight.name, "guard")
