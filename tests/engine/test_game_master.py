@@ -9,11 +9,13 @@ from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
 from llm_werewolf.engine.game_master import (
     AdviceOption,
+    DeadPlayerInfo,
     GameAnalysis,
     GameMasterProvider,
     PlayerSummary,
     RoleAdvice,
     RoleClaim,
+    calculate_execution_budget,
     extract_board_info,
 )
 from llm_werewolf.engine.llm_config import LLMConfig
@@ -130,6 +132,53 @@ class TestExtractBoardInfo:
         assert dead == []
 
 
+class TestCalculateExecutionBudget:
+    """calculate_execution_budget のテスト。"""
+
+    def test_nine_alive_two_wolves(self) -> None:
+        """9人生存・人狼2: 残り処刑3回、吊り余裕1。"""
+        budget = calculate_execution_budget(9, [])
+        assert budget.alive_count == 9
+        assert budget.total_executions == 0
+        assert budget.margin_if_two_wolves == 1
+        assert budget.margin_if_one_wolf == 3
+
+    def test_seven_alive_after_one_execution(self) -> None:
+        """7人生存（処刑1回+襲撃1回後）・人狼2: 吊り余裕0。"""
+        dead = [
+            DeadPlayerInfo(name="A", cause="execution", day=1),
+            DeadPlayerInfo(name="B", cause="attack", day=1),
+        ]
+        budget = calculate_execution_budget(7, dead)
+        assert budget.alive_count == 7
+        assert budget.total_executions == 1
+        assert budget.margin_if_two_wolves == 0
+        assert budget.margin_if_one_wolf == 2
+
+    def test_five_alive_two_wolves_is_critical(self) -> None:
+        """5人生存・人狼2: 吊り余裕-1（既に詰み）。"""
+        dead = [
+            DeadPlayerInfo(name="A", cause="execution", day=1),
+            DeadPlayerInfo(name="B", cause="attack", day=1),
+            DeadPlayerInfo(name="C", cause="execution", day=2),
+            DeadPlayerInfo(name="D", cause="attack", day=2),
+        ]
+        budget = calculate_execution_budget(5, dead)
+        assert budget.margin_if_two_wolves == -1
+        assert budget.margin_if_one_wolf == 1
+
+    def test_five_alive_one_wolf(self) -> None:
+        """5人生存・人狼1: 吊り余裕1。"""
+        dead = [
+            DeadPlayerInfo(name="A", cause="execution", day=1),
+            DeadPlayerInfo(name="B", cause="attack", day=1),
+            DeadPlayerInfo(name="C", cause="execution", day=2),
+            DeadPlayerInfo(name="D", cause="attack", day=2),
+        ]
+        budget = calculate_execution_budget(5, dead)
+        assert budget.margin_if_one_wolf == 1
+
+
 class TestGameMasterProviderSummarize:
     """GameMasterProvider.summarize のテスト（LLM をモック）。"""
 
@@ -172,11 +221,15 @@ class TestGameMasterProviderSummarize:
                             action="Dave を占う",
                             merit="情報が少ないプレイヤーの白黒が判明する",
                             demerit="Grace を放置するリスクがある",
+                            risk=3,
+                            reward=7,
                         ),
                         AdviceOption(
                             action="Grace を占う",
                             merit="怪しいプレイヤーを確認できる",
                             demerit="他の候補を見逃す可能性がある",
+                            risk=4,
+                            reward=8,
                         ),
                     ],
                 ),
@@ -216,6 +269,29 @@ class TestGameMasterProviderSummarize:
         assert data["contradictions"] == []
         assert data["player_summaries"] == []
         assert data["role_advice"] == []
+        assert data["execution_budget"] is not None
+        assert data["execution_budget"]["alive_count"] == 7
+
+    def test_summarize_includes_execution_budget(self) -> None:
+        """execution_budget が正しく計算されて JSON に含まれることを確認する。"""
+        game = _create_game_with_log()
+        config = LLMConfig(model_name="test-model", temperature=0.3, api_key="sk-test")
+
+        provider = GameMasterProvider(config)
+
+        with patch.object(provider, "_call_llm_analysis", return_value=None):
+            result = provider.summarize(game)
+
+        import json
+
+        data = json.loads(result)
+        budget = data["execution_budget"]
+        assert budget["alive_count"] == 7
+        assert budget["total_executions"] == 1
+        # 7人生存・人狼2: (7-4+1)//2 - 2 = 0
+        assert budget["margin_if_two_wolves"] == 0
+        # 7人生存・人狼1: (7-2+1)//2 - 1 = 2
+        assert budget["margin_if_one_wolf"] == 2
 
     def test_token_usage_tracked(self) -> None:
         game = _create_game_with_log()
@@ -224,7 +300,7 @@ class TestGameMasterProviderSummarize:
         mock_analysis = GameAnalysis()
         provider = GameMasterProvider(config)
 
-        def fake_call_llm_analysis(g: GameState) -> GameAnalysis:
+        def fake_call_llm_analysis(g: GameState, b: object) -> GameAnalysis:
             provider.last_input_tokens = 200
             provider.last_output_tokens = 100
             provider.last_cache_read_input_tokens = 50

@@ -229,9 +229,9 @@ _ROLE_INSTRUCTIONS: dict[Role, str] = {
 ## あなたの役職: 狂人
 - 人狼陣営ですが、占いでは村人と判定されます
 - 人狼が誰かは分かりませんが、人狼陣営の勝利を目指してください
-- 偽の占い師を名乗り、嘘の占い結果を発表して村を混乱させましょう。これが最も効果的な戦略です
+- 偽の占い師を名乗り、嘘の占い結果を発表して村を混乱させる戦略があります
 - ただし1日目はまだ夜が来ていないため「昨夜占った」とは言えません。1日目は占いCOだけして結果は2日目から発表しましょう
-- 例（2日目以降）: 「私は占い師です。○○さんを占った結果、黒（人狼）でした」と村人に偽の黒出しをする""",
+- 占いCO以外にも、潜伏や霊媒COなど状況に応じた立ち回りがあります。GMからのアドバイスを参考にしてください""",
 }
 
 
@@ -266,12 +266,23 @@ _ROLE_NAME_MAP: dict[Role, str] = {
 }
 
 
-def _extract_role_advice(gm_summary: str, role: Role) -> str:
+_STANCE_STRATEGY_GUIDANCE: dict[str, str] = {
+    "aggressive": ("あなたは攻撃的な性格です。リスクが高くてもリターンが大きい戦略を積極的に検討してください。"),
+    "evidence-based": "あなたは証拠重視の性格です。リスクが低く確実な戦略を優先してください。",
+    "independent": (
+        "あなたは独自の判断を大切にします。他のプレイヤーの意見に流されず、自分の分析に基づいて戦略を選んでください。"
+    ),
+    "intuitive": ("あなたは直感を重視します。数値だけでなく場の空気や違和感も判断材料にしてください。"),
+}
+
+
+def _extract_role_advice(gm_summary: str, role: Role, *, personality_tag: str = "") -> str:
     """GM 要約 JSON から指定役職のアドバイスを抽出して整形する。
 
     Args:
         gm_summary: GM 要約の JSON 文字列
         role: プレイヤーの役職
+        personality_tag: 人格タグ文字列（例: "personality: tone=polite, stance=aggressive, style=strategic"）
 
     Returns:
         整形されたアドバイス文字列。該当なしの場合は空文字列。
@@ -300,15 +311,42 @@ def _extract_role_advice(gm_summary: str, role: Role) -> str:
                 action = option.get("action", "")
                 merit = option.get("merit", "")
                 demerit = option.get("demerit", "")
-                lines.append(f"### 選択肢{i}: {action}")
+                risk = option.get("risk", "")
+                reward = option.get("reward", "")
+                score_label = ""
+                if risk and reward:
+                    score_label = f" [リスク:{risk}/10, リターン:{reward}/10]"
+                lines.append(f"### 選択肢{i}: {action}{score_label}")
                 lines.append(f"- メリット: {merit}")
                 lines.append(f"- デメリット: {demerit}")
+
+            stance_guidance = _extract_stance_guidance(personality_tag)
+            if stance_guidance:
+                lines.append(f"\n{stance_guidance}")
+
             return "\n".join(lines)
 
     return ""
 
 
-def _build_private_info(game: GameState, player: Player) -> str:
+def _extract_stance_guidance(personality_tag: str) -> str:
+    """人格タグから stance に応じた戦略指向テキストを抽出する。
+
+    Args:
+        personality_tag: 人格タグ文字列
+
+    Returns:
+        stance に応じた指示文字列。該当なしの場合は空文字列。
+    """
+    if not personality_tag:
+        return ""
+    for stance, guidance in _STANCE_STRATEGY_GUIDANCE.items():
+        if f"stance={stance}" in personality_tag:
+            return guidance
+    return ""
+
+
+def _build_private_info(game: GameState, player: Player, *, personality_tag: str = "") -> str:
     """プレイヤーの秘密情報を生成する。
 
     GM 要約には含まれないプレイヤー固有の秘密情報を返す。
@@ -317,6 +355,7 @@ def _build_private_info(game: GameState, player: Player) -> str:
     Args:
         game: ゲーム状態
         player: 対象プレイヤー
+        personality_tag: 人格タグ文字列（stance に応じた戦略指向の注入用）
 
     Returns:
         秘密情報文字列。情報がない場合は空文字列。
@@ -354,7 +393,7 @@ def _build_private_info(game: GameState, player: Player) -> str:
             lines.append(f"## あなたの護衛履歴\n{', '.join(guard_targets)}")
 
     if game.gm_summary:
-        advice = _extract_role_advice(game.gm_summary, player.role)
+        advice = _extract_role_advice(game.gm_summary, player.role, personality_tag=personality_tag)
         if advice:
             lines.append(advice)
 
@@ -364,7 +403,41 @@ def _build_private_info(game: GameState, player: Player) -> str:
 _MAX_RECENT_STATEMENTS = DEFAULT_MAX_RECENT_STATEMENTS
 
 
-def _build_context(game: GameState, player: Player, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS) -> str:
+def _extract_execution_budget(gm_summary: str) -> str:
+    """GM 要約 JSON から処刑予算（吊り余裕）情報を抽出して整形する。
+
+    Args:
+        gm_summary: GM 要約の JSON 文字列
+
+    Returns:
+        整形された処刑予算文字列。情報がない場合は空文字列。
+    """
+    try:
+        data = json.loads(gm_summary)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+
+    budget = data.get("execution_budget")
+    if not budget:
+        return ""
+
+    alive = budget.get("alive_count", 0)
+    m2 = budget.get("margin_if_two_wolves")
+    m1 = budget.get("margin_if_one_wolf")
+    if m2 is None or m1 is None:
+        return ""
+
+    lines = [
+        "## 処刑予算（吊り余裕）",
+        f"生存者{alive}人。人狼が2人残りなら吊り余裕{m2}回、1人残りなら吊り余裕{m1}回。",
+        "※ 狂人が生存していれば投票で不利になり、実質的な余裕はさらに厳しくなります。",
+    ]
+    return "\n".join(lines)
+
+
+def _build_context(
+    game: GameState, player: Player, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS, personality_tag: str = ""
+) -> str:
     """ゲームコンテキスト（状況 + ログ）を生成する。
 
     GM 要約がある場合はそれを活用し、新しいログのみを追加する。
@@ -380,7 +453,11 @@ def _build_context(game: GameState, player: Player, *, max_recent_statements: in
     if game.gm_summary:
         parts.append(f"\n## 盤面情報\n{game.gm_summary}")
 
-        private_info = _build_private_info(game, player)
+        budget_info = _extract_execution_budget(game.gm_summary)
+        if budget_info:
+            parts.append(f"\n{budget_info}")
+
+        private_info = _build_private_info(game, player, personality_tag=personality_tag)
         if private_info:
             parts.append(f"\n{private_info}")
 
@@ -398,7 +475,11 @@ def _build_context(game: GameState, player: Player, *, max_recent_statements: in
 
 
 def build_discuss_prompt(
-    game: GameState, player: Player, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS
+    game: GameState,
+    player: Player,
+    *,
+    max_recent_statements: int = _MAX_RECENT_STATEMENTS,
+    personality_tag: str = "",
 ) -> str:
     """議論フェーズ用のユーザープロンプトを生成する。
 
@@ -406,11 +487,12 @@ def build_discuss_prompt(
         game: ゲーム状態
         player: 発言するプレイヤー
         max_recent_statements: 保持する直近の発言ログ件数。負の値で全件保持。
+        personality_tag: 人格タグ文字列（stance に応じた戦略指向の注入用）
 
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, player, max_recent_statements=max_recent_statements)
+    context = _build_context(game, player, max_recent_statements=max_recent_statements, personality_tag=personality_tag)
     return f"""{context}
 
 あなたは{player.name}です。議論での発言内容を返してください。
@@ -457,18 +539,21 @@ def build_discuss_continuation_prompt(
     return "\n\n".join(parts)
 
 
-def build_vote_prompt(game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
+def build_vote_prompt(
+    game: GameState, player: Player, candidates: tuple[Player, ...], *, personality_tag: str = ""
+) -> str:
     """投票フェーズ用のユーザープロンプトを生成する。
 
     Args:
         game: ゲーム状態
         player: 投票するプレイヤー
         candidates: 投票候補者（自分を除く生存者）
+        personality_tag: 人格タグ文字列（stance に応じた戦略指向の注入用）
 
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, player)
+    context = _build_context(game, player, personality_tag=personality_tag)
     candidate_list = _format_candidates(candidates)
     return f"""{context}
 
@@ -487,18 +572,21 @@ def build_vote_prompt(game: GameState, player: Player, candidates: tuple[Player,
 候補者リストから正確に1人選び、名前と理由を返してください。"""
 
 
-def build_divine_prompt(game: GameState, seer: Player, candidates: tuple[Player, ...]) -> str:
+def build_divine_prompt(
+    game: GameState, seer: Player, candidates: tuple[Player, ...], *, personality_tag: str = ""
+) -> str:
     """占いフェーズ用のユーザープロンプトを生成する。
 
     Args:
         game: ゲーム状態
         seer: 占い師プレイヤー
         candidates: 占い候補者（自分と占い済みを除く生存者）
+        personality_tag: 人格タグ文字列（stance に応じた戦略指向の注入用）
 
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, seer)
+    context = _build_context(game, seer, personality_tag=personality_tag)
     candidate_list = _format_candidates(candidates)
     return f"""{context}
 
@@ -514,18 +602,21 @@ def build_divine_prompt(game: GameState, seer: Player, candidates: tuple[Player,
 候補者リストから正確に1人選び、名前と理由を返してください。"""
 
 
-def build_attack_prompt(game: GameState, werewolf: Player, candidates: tuple[Player, ...]) -> str:
+def build_attack_prompt(
+    game: GameState, werewolf: Player, candidates: tuple[Player, ...], *, personality_tag: str = ""
+) -> str:
     """襲撃フェーズ用のユーザープロンプトを生成する。
 
     Args:
         game: ゲーム状態
         werewolf: 人狼プレイヤー
         candidates: 襲撃候補者（自分を除く生存者）
+        personality_tag: 人格タグ文字列（stance に応じた戦略指向の注入用）
 
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, werewolf)
+    context = _build_context(game, werewolf, personality_tag=personality_tag)
     candidate_list = _format_candidates(candidates)
     allies = [p.name for p in game.alive_werewolves if p.name != werewolf.name]
     ally_section = ""
@@ -540,24 +631,27 @@ def build_attack_prompt(game: GameState, werewolf: Player, candidates: tuple[Pla
 {candidate_list}
 
 ## 襲撃対象の選び方
-- 占い師を名乗ったプレイヤーがいれば最優先で襲撃を検討しましょう
-- 自分を疑っているプレイヤーも優先的に排除を検討しましょう
+- GMからのアドバイスがあれば参考にしつつ、盤面に応じて最善の襲撃先を選んでください
+- 護衛されそうな相手を避ける、情報源を断つ、数の優位を作るなど複数の観点を考慮しましょう
 
 候補者リストから正確に1人選び、名前と理由を返してください。"""
 
 
-def build_guard_prompt(game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
+def build_guard_prompt(
+    game: GameState, knight: Player, candidates: tuple[Player, ...], *, personality_tag: str = ""
+) -> str:
     """護衛フェーズ用のユーザープロンプトを生成する。
 
     Args:
         game: ゲーム状態
         knight: 狩人プレイヤー
         candidates: 護衛候補者（自分と前回護衛対象を除く生存者）
+        personality_tag: 人格タグ文字列（stance に応じた戦略指向の注入用）
 
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, knight)
+    context = _build_context(game, knight, personality_tag=personality_tag)
     candidate_list = _format_candidates(candidates)
     return f"""{context}
 
