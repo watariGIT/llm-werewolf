@@ -3,6 +3,7 @@ import random
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Role
+from llm_werewolf.engine.action_provider import DiscussResult
 from llm_werewolf.engine.random_provider import DUMMY_MESSAGES, RandomActionProvider
 
 
@@ -18,12 +19,14 @@ class TestRandomActionProvider:
             )
         )
 
-    def test_discuss_returns_dummy_message(self) -> None:
+    def test_discuss_returns_discuss_result(self) -> None:
         rng = random.Random(42)
         provider = RandomActionProvider(rng=rng)
         game = self._create_game()
-        message = provider.discuss(game, game.players[0])
-        assert message in DUMMY_MESSAGES
+        result = provider.discuss(game, game.players[0])
+        assert isinstance(result, DiscussResult)
+        assert result.message in DUMMY_MESSAGES
+        assert result.thinking == ""
 
     def test_vote_returns_candidate_name(self) -> None:
         rng = random.Random(42)

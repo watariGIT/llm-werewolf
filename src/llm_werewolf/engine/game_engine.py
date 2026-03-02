@@ -163,20 +163,28 @@ class GameEngine:
             game = game.add_log(f"[議論] ラウンド {round_num}")
             for player in ordered:
                 provider = self._providers[player.name]
-                message = provider.discuss(game, player)
-                game = game.add_log(f"[発言] {player.name}: {message}")
+                result = provider.discuss(game, player)
+                if result.thinking:
+                    game = game.add_log(f"[思考] {player.name}: {result.thinking}")
+                game = game.add_log(f"[発言] {player.name}: {result.message}")
         return game
 
     def _vote_and_execution_phase(self, game: GameState) -> GameState:
         votes: dict[str, str] = {}
+        vote_thinking: dict[str, str] = {}
         for player in game.alive_players:
             candidates = tuple(p for p in game.alive_players if p.name != player.name)
             provider = self._providers[player.name]
             target_name = provider.vote(game, player, candidates)
+            thinking = getattr(provider, "last_thinking", "")
             votes[player.name] = target_name
+            if thinking:
+                vote_thinking[player.name] = thinking
 
         # 全投票収集後にまとめてログ記録（投票中に他者の投票が見えないようにする）
         for voter_name, vote_target in votes.items():
+            if voter_name in vote_thinking:
+                game = game.add_log(f"[思考] {voter_name}: {vote_thinking[voter_name]}")
             game = game.add_log(f"[投票] {voter_name} → {vote_target}")
 
         # 集計
@@ -208,6 +216,9 @@ class GameEngine:
 
         provider = self._providers[seer.name]
         target_name = provider.divine(game, seer, candidates)
+        thinking = getattr(provider, "last_thinking", "")
+        if thinking:
+            game = game.add_log(f"[思考] {seer.name}: {thinking}")
         return execute_divine(game, seer, target_name)
 
     def _resolve_guard(self, game: GameState) -> tuple[GameState, str | None]:
@@ -222,6 +233,9 @@ class GameEngine:
 
         provider = self._providers[knight.name]
         target_name = provider.guard(game, knight, candidates)
+        thinking = getattr(provider, "last_thinking", "")
+        if thinking:
+            game = game.add_log(f"[思考] {knight.name}: {thinking}")
         return execute_guard(game, knight, target_name)
 
     def _resolve_attack(self, game: GameState) -> tuple[GameState, str | None]:
@@ -236,4 +250,7 @@ class GameEngine:
 
         provider = self._providers[werewolf.name]
         target_name = provider.attack(game, werewolf, candidates)
+        thinking = getattr(provider, "last_thinking", "")
+        if thinking:
+            game = game.add_log(f"[思考] {werewolf.name}: {thinking}")
         return execute_attack(game, werewolf, target_name)
