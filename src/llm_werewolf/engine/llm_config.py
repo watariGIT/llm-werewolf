@@ -1,6 +1,6 @@
 """LLM 設定の管理。
 
-環境変数から OpenAI API の設定を読み込み、バリデーションを行う。
+環境変数から OpenAI API の設定およびプロンプト設定を読み込み、バリデーションを行う。
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ DEFAULT_TEMPERATURE = 0.7
 
 GM_DEFAULT_MODEL = "gpt-4o-mini"
 GM_DEFAULT_TEMPERATURE = 0.3
+
+DEFAULT_MAX_RECENT_STATEMENTS = 20
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,32 @@ def load_llm_config() -> LLMConfig:
         temperature = DEFAULT_TEMPERATURE
 
     return LLMConfig(model_name=model_name, temperature=temperature, api_key=api_key)
+
+
+@dataclass(frozen=True)
+class PromptConfig:
+    """プロンプト生成に関する設定を保持する値オブジェクト。"""
+
+    max_recent_statements: int = DEFAULT_MAX_RECENT_STATEMENTS
+
+
+def load_prompt_config() -> PromptConfig:
+    """環境変数から PromptConfig を生成する。
+
+    環境変数:
+        MAX_RECENT_STATEMENTS: 保持する直近の発言ログ件数（デフォルト: 20）
+    """
+    max_recent_str = os.environ.get("MAX_RECENT_STATEMENTS", "").strip()
+    if max_recent_str:
+        try:
+            max_recent = int(max_recent_str)
+        except ValueError:
+            raise ValueError(f"MAX_RECENT_STATEMENTS の値が不正です: {max_recent_str!r}")
+        if max_recent < 0:
+            raise ValueError(f"MAX_RECENT_STATEMENTS は 0 以上で指定してください: {max_recent}")
+        return PromptConfig(max_recent_statements=max_recent)
+
+    return PromptConfig()
 
 
 def load_gm_config() -> LLMConfig:

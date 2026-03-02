@@ -16,6 +16,7 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.game_log import filter_log_entries, format_log_for_context
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Role
+from llm_werewolf.engine.llm_config import DEFAULT_MAX_RECENT_STATEMENTS
 
 logger = logging.getLogger(__name__)
 
@@ -359,10 +360,10 @@ def _build_private_info(game: GameState, player: Player) -> str:
     return "\n".join(lines)
 
 
-_MAX_RECENT_STATEMENTS = 20
+_MAX_RECENT_STATEMENTS = DEFAULT_MAX_RECENT_STATEMENTS
 
 
-def _build_context(game: GameState, player: Player) -> str:
+def _build_context(game: GameState, player: Player, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS) -> str:
     """ゲームコンテキスト（状況 + ログ）を生成する。
 
     GM 要約がある場合はそれを活用し、新しいログのみを追加する。
@@ -384,28 +385,31 @@ def _build_context(game: GameState, player: Player) -> str:
 
         new_entries = game.log[game.gm_summary_log_offset :]
         if new_entries:
-            new_log = filter_log_entries(new_entries, player)
+            new_log = filter_log_entries(new_entries, player, max_recent_statements=max_recent_statements)
             if new_log:
                 parts.append(f"\n## 本日の出来事\n{new_log}")
     else:
-        game_log = format_log_for_context(game, player.name, max_recent_statements=_MAX_RECENT_STATEMENTS)
+        game_log = format_log_for_context(game, player.name, max_recent_statements=max_recent_statements)
         if game_log:
             parts.append(f"\n## これまでのログ\n{game_log}")
 
     return "\n".join(parts)
 
 
-def build_discuss_prompt(game: GameState, player: Player) -> str:
+def build_discuss_prompt(
+    game: GameState, player: Player, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS
+) -> str:
     """議論フェーズ用のユーザープロンプトを生成する。
 
     Args:
         game: ゲーム状態
         player: 発言するプレイヤー
+        max_recent_statements: 保持する直近の発言ログ件数。負の値で全件保持。
 
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, player)
+    context = _build_context(game, player, max_recent_statements=max_recent_statements)
     return f"""{context}
 
 あなたは{player.name}です。議論での発言内容を返してください。
@@ -420,7 +424,9 @@ def build_discuss_prompt(game: GameState, player: Player) -> str:
 - 他のプレイヤーが公表した占い結果や霊媒結果があれば、それに基づいて推理を展開してください"""
 
 
-def build_discuss_continuation_prompt(game: GameState, player: Player, log_offset: int) -> str:
+def build_discuss_continuation_prompt(
+    game: GameState, player: Player, log_offset: int, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS
+) -> str:
     """ラウンド2以降の議論プロンプトを生成する。
 
     会話履歴にラウンド1のフルコンテキストが含まれているため、
@@ -431,6 +437,7 @@ def build_discuss_continuation_prompt(game: GameState, player: Player, log_offse
         game: ゲーム状態
         player: 発言するプレイヤー
         log_offset: 前回のプロンプト生成時のログ長（``len(game.log)``）
+        max_recent_statements: 保持する直近の発言ログ件数。負の値で全件保持。
 
     Returns:
         差分コンテキスト + 議論指示のプロンプト文字列
@@ -439,7 +446,7 @@ def build_discuss_continuation_prompt(game: GameState, player: Player, log_offse
     parts: list[str] = []
 
     if new_entries:
-        new_log = filter_log_entries(new_entries, player)
+        new_log = filter_log_entries(new_entries, player, max_recent_statements=max_recent_statements)
         if new_log:
             parts.append(f"## 前ラウンドの発言\n{new_log}")
 

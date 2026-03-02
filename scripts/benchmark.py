@@ -250,7 +250,7 @@ def main() -> None:
 
     # LLM ベンチマーク
     if not args.random_only:
-        from llm_werewolf.engine.llm_config import load_gm_config, load_llm_config
+        from llm_werewolf.engine.llm_config import load_gm_config, load_llm_config, load_prompt_config
         from llm_werewolf.engine.llm_provider import LLMActionProvider
         from llm_werewolf.engine.prompts import assign_personalities, build_personality
 
@@ -272,6 +272,8 @@ def main() -> None:
         except ValueError:
             pass
 
+        prompt_config = load_prompt_config()
+
         print(f"\n--- LLM ベンチマーク (model: {config.model_name}) ---")
         if gm_prov:
             print(f"  GM-AI: 有効 (model: {gm_config.model_name})")
@@ -279,7 +281,7 @@ def main() -> None:
         def llm_factory(rng: random.Random) -> dict[str, ActionProvider]:
             personalities = assign_personalities(len(PLAYER_NAMES), rng)
             return {
-                name: LLMActionProvider(config, personality=build_personality(traits))
+                name: LLMActionProvider(config, personality=build_personality(traits), prompt_config=prompt_config)
                 for name, traits in zip(PLAYER_NAMES, personalities)
             }
 

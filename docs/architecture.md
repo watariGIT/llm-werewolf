@@ -83,7 +83,7 @@ src/llm_werewolf/
 
 | 関数 | 説明 |
 |------|------|
-| `filter_log_entries` | 任意のログエントリ列をプレイヤー視点でフィルタリングして文字列を返す |
+| `filter_log_entries` | 任意のログエントリ列をプレイヤー視点でフィルタリングして文字列を返す。`max_recent_statements` パラメータで発言ログの件数を制御可能（デフォルト: 制限なし） |
 | `format_log_for_context` | プレイヤー視点でフィルタリングしたゲームログを生成（Step 2 の LLM コンテキスト用）。`max_recent_statements` パラメータで発言ログの件数を制御可能。イベントログ（投票・処刑・襲撃等）は常に保持され、発言ログのみが直近 N 件に制限される |
 | `format_public_log` | 全プレイヤーに見える公開ログのみを返す。GM-AI の入力用 |
 
@@ -111,8 +111,10 @@ src/llm_werewolf/
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `load_gm_config` | GM-AI 用の `LLMConfig` を環境変数から生成するファクトリ関数。`GM_MODEL_NAME` / `GM_TEMPERATURE` でプレイヤー AI とは独立に指定可能。API キーは `OPENAI_API_KEY` を共有 |
+| `PromptConfig` | プロンプト生成に関する設定を保持する値オブジェクト。`max_recent_statements`（発言ログ件数上限）を管理 |
+| `load_prompt_config` | 環境変数から `PromptConfig` を生成するファクトリ関数。`MAX_RECENT_STATEMENTS` で発言ログ件数上限を設定可能（デフォルト: 20） |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供。構造化出力の `target` が候補者リストに含まれない場合のフォールバックとしても使用される |
-| `prompts` | LLM 用プロンプトテンプレート生成。Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみ（共通ルール `_BASE_RULES` + 役職別指示 `_ROLE_INSTRUCTIONS` + 人格タグ解釈ルール `_PERSONALITY_TAG_RULES`）で構成し、同一役職のプレイヤーは常に同一のシステムプロンプトを受け取る。`_ROLE_INSTRUCTIONS` は役職の仕組み・制約に集中し、具体的な戦略アドバイスは GM-AI の動的提案に委譲する。人格特性はタグ形式（例: `personality: tone=polite, stance=aggressive, style=strategic`）でユーザーメッセージ側に含める。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。GM 要約に含まれる `role_advice` からプレイヤーの真の役職に対応するアドバイスを抽出し、秘密情報として注入する。襲撃プロンプトには仲間の人狼情報を含める。議論ラウンド2以降は `build_discuss_continuation_prompt` で差分コンテキストのみを渡し、会話履歴との重複を排除してトークン効率を改善する |
+| `prompts` | LLM 用プロンプトテンプレート生成。Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみ（共通ルール `_BASE_RULES` + 役職別指示 `_ROLE_INSTRUCTIONS` + 人格タグ解釈ルール `_PERSONALITY_TAG_RULES`）で構成し、同一役職のプレイヤーは常に同一のシステムプロンプトを受け取る。`_ROLE_INSTRUCTIONS` は役職の仕組み・制約に集中し、具体的な戦略アドバイスは GM-AI の動的提案に委譲する。人格特性はタグ形式（例: `personality: tone=polite, stance=aggressive, style=strategic`）でユーザーメッセージ側に含める。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。GM 要約に含まれる `role_advice` からプレイヤーの真の役職に対応するアドバイスを抽出し、秘密情報として注入する。襲撃プロンプトには仲間の人狼情報を含める。議論ラウンド2以降は `build_discuss_continuation_prompt` で差分コンテキストのみを渡し、会話履歴との重複を排除してトークン効率を改善する。差分プロンプトにも `max_recent_statements` による発言件数制限を適用可能 |
 | `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（タグキー: tone/stance/style）・タグ値・説明文を保持する |
 | `assign_personalities` | AI人数分の特性組み合わせを生成する関数。各特性軸からランダムに1つ選択し、人格のバリエーションを作る |
 | `build_personality` | 特性リストから人格タグ文字列（例: `personality: tone=polite, stance=aggressive, style=strategic`）を組み立てる関数 |

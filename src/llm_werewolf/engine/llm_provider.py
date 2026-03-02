@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
-from llm_werewolf.engine.llm_config import LLMConfig
+from llm_werewolf.engine.llm_config import LLMConfig, PromptConfig
 from llm_werewolf.engine.prompts import (
     build_attack_prompt,
     build_discuss_continuation_prompt,
@@ -72,7 +72,13 @@ class LLMActionProvider:
     API エラー時は最大3回リトライし、失敗時はフォールバック動作で代替する。
     """
 
-    def __init__(self, config: LLMConfig, rng: random.Random | None = None, personality: str = "") -> None:
+    def __init__(
+        self,
+        config: LLMConfig,
+        rng: random.Random | None = None,
+        personality: str = "",
+        prompt_config: PromptConfig | None = None,
+    ) -> None:
         self._llm = ChatOpenAI(
             model=config.model_name,
             temperature=config.temperature,
@@ -80,6 +86,7 @@ class LLMActionProvider:
         )
         self._rng = rng if rng is not None else random.Random()
         self._personality = personality
+        self._prompt_config = prompt_config or PromptConfig()
         self.last_input_tokens: int = 0
         self.last_output_tokens: int = 0
         self.last_cache_read_input_tokens: int = 0
@@ -274,15 +281,21 @@ class LLMActionProvider:
 
         if not self._discuss_messages:
             # ラウンド1: フルコンテキスト
-            user_prompt = self._prepend_personality(build_discuss_prompt(game, player))
+            max_statements = self._prompt_config.max_recent_statements
+            user_prompt = self._prepend_personality(
+                build_discuss_prompt(game, player, max_recent_statements=max_statements)
+            )
             messages: list[SystemMessage | HumanMessage | AIMessage] = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),
             ]
         else:
             # ラウンド2+: 差分コンテキストのみ
+            max_statements = self._prompt_config.max_recent_statements
             user_prompt = self._prepend_personality(
-                build_discuss_continuation_prompt(game, player, self._discuss_log_offset)
+                build_discuss_continuation_prompt(
+                    game, player, self._discuss_log_offset, max_recent_statements=max_statements
+                )
             )
             messages = list(self._discuss_messages)
             messages.append(HumanMessage(content=user_prompt))

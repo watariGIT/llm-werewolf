@@ -2,7 +2,7 @@ from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.game_master import GameMasterProvider
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine
-from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config, load_llm_config
+from llm_werewolf.engine.llm_config import LLMConfig, PromptConfig, load_gm_config, load_llm_config, load_prompt_config
 from llm_werewolf.engine.llm_provider import CandidateDecision, LLMActionProvider
 from llm_werewolf.engine.metrics import (
     MODEL_PRICING,
@@ -39,6 +39,7 @@ __all__ = [
     "LLMConfig",
     "MetricsCollectingProvider",
     "PersonalityTrait",
+    "PromptConfig",
     "RandomActionProvider",
     "assign_personalities",
     "estimate_cost",
@@ -52,6 +53,7 @@ __all__ = [
     "build_vote_prompt",
     "load_gm_config",
     "load_llm_config",
+    "load_prompt_config",
     "parse_candidate_response",
     "parse_discuss_response",
 ]

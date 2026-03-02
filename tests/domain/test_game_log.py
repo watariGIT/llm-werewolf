@@ -248,6 +248,88 @@ class TestFilterLogEntries:
         assert "[発言] Alice: test" in result
 
 
+class TestFilterLogEntriesWithLimit:
+    """filter_log_entries の max_recent_statements パラメータのテスト。"""
+
+    def test_default_no_limit(self) -> None:
+        """デフォルト（max_recent_statements=-1）では全件保持する。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        player = Player(name="Alice", role=Role.VILLAGER)
+        entries = [f"[発言] Alice: 発言{i}" for i in range(10)]
+        result = filter_log_entries(entries, player)
+        for i in range(10):
+            assert f"発言{i}" in result
+
+    def test_limits_statements(self) -> None:
+        """max_recent_statements で発言ログが制限されること。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        player = Player(name="Alice", role=Role.VILLAGER)
+        entries = [f"[発言] Alice: 発言{i}" for i in range(10)]
+        result = filter_log_entries(entries, player, max_recent_statements=3)
+        for i in range(7):
+            assert f"発言{i}" not in result
+        for i in range(7, 10):
+            assert f"発言{i}" in result
+
+    def test_events_always_kept(self) -> None:
+        """イベントログは制限の対象外で常に保持される。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        player = Player(name="Alice", role=Role.VILLAGER)
+        entries = [
+            "[投票] Alice → Bob",
+            "[発言] Alice: 発言0",
+            "[発言] Alice: 発言1",
+            "[発言] Alice: 発言2",
+            "[処刑] Bob が処刑された",
+        ]
+        result = filter_log_entries(entries, player, max_recent_statements=1)
+        assert "[投票] Alice → Bob" in result
+        assert "[処刑] Bob が処刑された" in result
+        assert "発言0" not in result
+        assert "発言1" not in result
+        assert "発言2" in result
+
+    def test_maintains_original_order(self) -> None:
+        """トリム後も元の順序が維持されること。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        player = Player(name="Alice", role=Role.VILLAGER)
+        entries = [
+            "[投票] Alice → Bob",
+            "[発言] Alice: 発言0",
+            "[発言] Alice: 発言1",
+            "[処刑] Bob が処刑された",
+        ]
+        result = filter_log_entries(entries, player, max_recent_statements=1)
+        lines = result.split("\n")
+        vote_idx = next(i for i, line in enumerate(lines) if line.startswith("[投票]"))
+        statement_idx = next(i for i, line in enumerate(lines) if line.startswith("[発言]"))
+        exec_idx = next(i for i, line in enumerate(lines) if line.startswith("[処刑]"))
+        assert vote_idx < statement_idx < exec_idx
+
+    def test_zero_removes_all_statements(self) -> None:
+        """0 を指定した場合は全発言が除外される。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        player = Player(name="Alice", role=Role.VILLAGER)
+        entries = [
+            "[投票] Alice → Bob",
+            "[発言] Alice: 発言0",
+            "[発言] Alice: 発言1",
+        ]
+        result = filter_log_entries(entries, player, max_recent_statements=0)
+        assert "[発言]" not in result
+        assert "[投票]" in result
+
+
 class TestLogVolumeControl:
     """format_log_for_context のログ量制御テスト。"""
 

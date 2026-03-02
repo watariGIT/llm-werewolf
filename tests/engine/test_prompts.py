@@ -743,3 +743,32 @@ class TestBuildDiscussContinuationPrompt:
         player = game.players[1]  # Bob
         result = build_discuss_continuation_prompt(game, player, offset)
         assert "次のラウンド" in result
+
+    def test_limits_statements_with_max_recent_statements(self) -> None:
+        """max_recent_statements で発言ログが制限されること。"""
+        game = _create_game()
+        offset = len(game.log)
+        for i in range(10):
+            game = game.add_log(f"[発言] Alice: 発言{i}")
+
+        player = game.players[1]  # Bob
+        result = build_discuss_continuation_prompt(game, player, offset, max_recent_statements=3)
+        for i in range(7):
+            assert f"発言{i}" not in result
+        for i in range(7, 10):
+            assert f"発言{i}" in result
+
+    def test_events_kept_with_max_recent_statements(self) -> None:
+        """max_recent_statements を指定してもイベントログは保持されること。"""
+        game = _create_game()
+        offset = len(game.log)
+        game = game.add_log("[投票] Alice → Bob")
+        for i in range(5):
+            game = game.add_log(f"[発言] Alice: 発言{i}")
+
+        player = game.players[1]  # Bob
+        result = build_discuss_continuation_prompt(game, player, offset, max_recent_statements=2)
+        assert "[投票] Alice → Bob" in result
+        assert "発言3" in result
+        assert "発言4" in result
+        assert "発言0" not in result

@@ -20,7 +20,7 @@ from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.game_logic import get_discussion_rounds
 from llm_werewolf.engine.game_master import GameMasterProvider
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine, MessageCallback, ProgressCallback
-from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config
+from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config, load_prompt_config
 from llm_werewolf.engine.llm_provider import LLMActionProvider
 from llm_werewolf.engine.prompts import assign_personalities, build_personality
 from llm_werewolf.engine.random_provider import RandomActionProvider
@@ -103,9 +103,12 @@ class GameSessionStore:
 
         gm_provider: GameMasterProvider | None = None
         if config is not None:
+            prompt_config = load_prompt_config()
             personalities = assign_personalities(len(player_names), rng or random.Random())
             providers: dict[str, ActionProvider] = {
-                p.name: LLMActionProvider(config, rng=rng, personality=build_personality(traits))
+                p.name: LLMActionProvider(
+                    config, rng=rng, personality=build_personality(traits), prompt_config=prompt_config
+                )
                 for p, traits in zip(initial_state.players, personalities)
             }
             try:
@@ -188,10 +191,14 @@ class InteractiveSessionStore:
         providers: dict[str, ActionProvider]
         gm_provider: GameMasterProvider | None = None
         if config is not None:
+            prompt_config = load_prompt_config()
             personalities = assign_personalities(len(AI_NAMES), rng)
             providers = {
                 name: LLMActionProvider(
-                    config, rng=random.Random(rng.randint(0, 2**32)), personality=build_personality(traits)
+                    config,
+                    rng=random.Random(rng.randint(0, 2**32)),
+                    personality=build_personality(traits),
+                    prompt_config=prompt_config,
                 )
                 for name, traits in zip(AI_NAMES, personalities)
             }
