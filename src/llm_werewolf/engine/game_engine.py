@@ -174,7 +174,10 @@ class GameEngine:
             provider = self._providers[player.name]
             target_name = provider.vote(game, player, candidates)
             votes[player.name] = target_name
-            game = game.add_log(f"[投票] {player.name} → {target_name}")
+
+        # 全投票収集後にまとめてログ記録（投票中に他者の投票が見えないようにする）
+        for voter_name, vote_target in votes.items():
+            game = game.add_log(f"[投票] {voter_name} → {vote_target}")
 
         # 集計
         executed_name = tally_votes(votes, self._rng)

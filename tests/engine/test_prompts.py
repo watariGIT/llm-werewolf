@@ -217,6 +217,38 @@ class TestBuildVotePrompt:
         result = build_vote_prompt(game, player, candidates)
         assert "Alice" in result
 
+    def test_contains_discussion_based_instruction(self) -> None:
+        """議論内容を踏まえて投票する指示が含まれること。"""
+        game = _create_game()
+        player = game.players[0]
+        candidates = (game.players[1],)
+        result = build_vote_prompt(game, player, candidates)
+        assert "議論で出た発言内容をよく振り返り" in result
+
+    def test_contains_divine_result_priority(self) -> None:
+        """占い結果を最優先にする指示が含まれること。"""
+        game = _create_game()
+        player = game.players[0]
+        candidates = (game.players[1],)
+        result = build_vote_prompt(game, player, candidates)
+        assert "最優先の判断材料" in result
+
+    def test_contains_anti_bias_instruction(self) -> None:
+        """発言順バイアスを避ける指示が含まれること。"""
+        game = _create_game()
+        player = game.players[0]
+        candidates = (game.players[1],)
+        result = build_vote_prompt(game, player, candidates)
+        assert "発言順が最後だった" in result
+
+    def test_contains_reasoning_first_instruction(self) -> None:
+        """理由を先に考える指示が含まれること。"""
+        game = _create_game()
+        player = game.players[0]
+        candidates = (game.players[1],)
+        result = build_vote_prompt(game, player, candidates)
+        assert "理由を考え" in result
+
 
 class TestBuildDivinePrompt:
     """build_divine_prompt のテスト。"""
