@@ -83,9 +83,9 @@ src/llm_werewolf/
 
 | 関数 | 説明 |
 |------|------|
-| `filter_log_entries` | 任意のログエントリ列をプレイヤー視点でフィルタリングして文字列を返す。`max_recent_statements` パラメータで発言ログの件数を制御可能（デフォルト: 制限なし） |
+| `filter_log_entries` | 任意のログエントリ列をプレイヤー視点でフィルタリングして文字列を返す。`max_recent_statements` パラメータで発言ログの件数を制御可能（デフォルト: 制限なし）。`[思考]` ログは本人（`[思考] {name}:` の名前一致）のみ可視 |
 | `format_log_for_context` | プレイヤー視点でフィルタリングしたゲームログを生成（Step 2 の LLM コンテキスト用）。`max_recent_statements` パラメータで発言ログの件数を制御可能。イベントログ（投票・処刑・襲撃等）は常に保持され、発言ログのみが直近 N 件に制限される |
-| `format_public_log` | 全プレイヤーに見える公開ログのみを返す。GM-AI の入力用 |
+| `format_public_log` | 全プレイヤーに見える公開ログのみを返す。GM-AI の入力用。`[思考]` ログは `_PRIVATE_PREFIXES` に含まれるため自動的に除外される |
 
 ## アプリケーション層 (`engine/`)
 
@@ -93,7 +93,8 @@ src/llm_werewolf/
 
 | クラス/Protocol/モジュール | 説明 |
 |---------------------------|------|
-| `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃・護衛の行動を定義 |
+| `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃・護衛の行動を定義。`discuss()` は `DiscussResult` を返す |
+| `DiscussResult` | 議論の返り値（NamedTuple）。`message`（発言テキスト）と `thinking`（内部思考、デフォルト空文字）を保持 |
 | `game_logic` | 両エンジン共通のゲームロジック関数群。占い結果通知・占い/襲撃/護衛実行・霊媒結果通知・投票集計・発言順管理・議論ラウンド数判定を提供。`find_night_actor` / `get_night_action_candidates` で役職メタデータに基づく汎用的な夜行動解決を提供 |
 | `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑（霊媒結果記録）→夜行動（占い→護衛→襲撃、護衛成功判定）→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用。オプションの `on_phase_end` コールバックにより、昼/夜フェーズ完了時に外部へ `GameState` を通知可能（ベンチマークの進捗表示等に使用） |
 | `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動（占い・襲撃・護衛）の各メソッドを提供し、護衛成功判定・霊媒結果通知を含む。`game_logic` の共通関数を利用。オプションの `on_progress` / `on_message` コールバックにより、各 AI の処理開始・発言完了をリアルタイムに外部へ通知可能（SSE ストリーミング用） |
@@ -101,7 +102,8 @@ src/llm_werewolf/
 | `MessageCallback` | 発言完了コールバック型エイリアス `Callable[[str, str], None]`。`(player_name, message_text)` を受け取り、議論での発言結果を通知する |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 | `CandidateDecision` | 候補者選択の構造化レスポンスモデル（Pydantic BaseModel）。`target`（選択した候補者名）と `reason`（選択理由）を保持する。`with_structured_output()` で LLM に型安全なレスポンスを強制し、パースエラーを削減する |
-| `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は従来のテキスト応答、候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。同一日内の議論ラウンド間で LangChain 会話履歴を保持し、前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる（日が変わると履歴はリセット）。ラウンド2以降は `_discuss_log_offset` で差分を追跡し、`build_discuss_continuation_prompt` で新しいログのみを渡すことでトークン効率を改善する。API エラー時は指数バックオフで最大3回リトライし、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
+| `DiscussionResponse` | 議論の構造化レスポンスモデル（Pydantic BaseModel）。`thinking`（内部思考）と `message`（発言テキスト）を保持する。`with_structured_output()` で LLM に思考と発言の分離を強制する |
+| `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は `with_structured_output()` + `DiscussionResponse` で内部思考と発言を分離、候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。`last_thinking` 属性で直近のアクションの思考/理由を保持する。同一日内の議論ラウンド間で LangChain 会話履歴を保持し、前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる（日が変わると履歴はリセット）。ラウンド2以降は `_discuss_log_offset` で差分を追跡し、`build_discuss_continuation_prompt` で新しいログのみを渡すことでトークン効率を改善する。API エラー時は指数バックオフで最大3回リトライし、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+思考/理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
 | `GameMasterProvider` | GM-AI プロバイダー。Day 2 以降にゲームログを構造化 JSON に整理し、プレイヤー AI の情報抽出負荷を削減する。確定情報（生存/死亡/投票）はプログラムで生成、分析情報（CO抽出/矛盾/要約/役職別アドバイス）は LLM 構造化出力で抽出するハイブリッドアプローチ。`GameBoardState` を JSON 文字列として返す |
 | `extract_board_info` | `GameState` のログから確定的な盤面情報（生存者/死亡者/投票履歴）をプログラムで抽出する関数 |
 | `AdviceOption` | おすすめ行動の1選択肢を表す Pydantic モデル。action（行動）・merit（メリット）・demerit（デメリット）を保持する |
@@ -120,7 +122,7 @@ src/llm_werewolf/
 | `build_personality` | 特性リストから人格タグ文字列（例: `personality: tone=polite, stance=aggressive, style=strategic`）を組み立てる関数 |
 | `ActionMetrics` | 1回のアクション呼び出しのメトリクス（アクション種別・プレイヤー名・レイテンシ・入力トークン数・出力トークン数・キャッシュ済み入力トークン数）を保持するデータクラス |
 | `GameMetrics` | 1ゲーム分のメトリクスを集約するデータクラス。`total_api_calls` / `average_latency` / `total_input_tokens` / `total_output_tokens` / `total_tokens` / `total_cache_read_input_tokens` プロパティで統計を提供。`estimated_cost_usd(model_name)` メソッドでモデル別の推定コストを算出（キャッシュ割引を反映） |
-| `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシ・トークン使用量・キャッシュトークン数を計測して `GameMetrics` に記録する。内部 Provider の `last_input_tokens` / `last_output_tokens` / `last_cache_read_input_tokens` 属性からトークン情報を取得 |
+| `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシ・トークン使用量・キャッシュトークン数を計測して `GameMetrics` に記録する。内部 Provider の `last_input_tokens` / `last_output_tokens` / `last_cache_read_input_tokens` 属性からトークン情報を取得。`last_thinking` プロパティで内部 Provider の思考を透過的に公開 |
 | `MODEL_PRICING` | モデル別の料金テーブル（USD per 1M tokens）。input / cached_input / output の3種類の料金を定義。コスト推定に使用。該当しないモデルは推定不可（None） |
 | `estimate_cost` | モデル名とトークン数から推定コスト（USD）を計算するユーティリティ関数。キャッシュ済みトークンには割引料金を適用 |
 

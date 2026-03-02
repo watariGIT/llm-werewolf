@@ -100,5 +100,6 @@
 | 盤面要約 | Board Summary | `gm_summary` | GM-AI が生成する構造化 JSON。生存者/死亡者/投票履歴/CO情報/矛盾点/各プレイヤー要約/役職別おすすめ行動を含む |
 | 会話履歴 | Conversation History | `discuss_messages` | 同一日内の議論ラウンド間で LLM に渡す会話コンテキスト。AIMessage として前回発言を保持し、ラウンド2以降で参照可能にする |
 | ログ量制御 | Log Volume Control | `max_recent_statements` | `format_log_for_context` で発言ログの件数を制限する仕組み。イベントログは常に保持される |
+| 思考 | Thinking | `thinking` | AIプレイヤーの内部思考（戦略・推理・意図等）。`DiscussResult.thinking` や `last_thinking` で保持され、`[思考]` プレフィックスでゲームログに記録される。本人のみ閲覧可能 |
 | 進捗コールバック | Progress Callback | `ProgressCallback` | AI の処理開始を通知するコールバック型。`(player_name, action_type)` を受け取る。SSE ストリーミングに使用 |
 | 発言完了コールバック | Message Callback | `MessageCallback` | AI の発言完了を通知するコールバック型。`(player_name, message_text)` を受け取る。議論フェーズの SSE に使用 |

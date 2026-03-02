@@ -1,7 +1,14 @@
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
+
+
+class DiscussResult(NamedTuple):
+    """議論の結果。thinking は AI の内部思考（空文字列の場合もある）。"""
+
+    message: str
+    thinking: str = ""
 
 
 class ActionProvider(Protocol):
@@ -10,8 +17,8 @@ class ActionProvider(Protocol):
     将来的に LLM やユーザー入力に差し替え可能。
     """
 
-    def discuss(self, game: GameState, player: Player) -> str:
-        """議論フェーズでの発言を返す。"""
+    def discuss(self, game: GameState, player: Player) -> DiscussResult:
+        """議論フェーズでの発言と思考を返す。"""
         ...
 
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:

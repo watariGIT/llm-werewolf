@@ -5,6 +5,7 @@ import random
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Role
+from llm_werewolf.engine.action_provider import DiscussResult
 from llm_werewolf.engine.metrics import (
     MODEL_PRICING,
     ActionMetrics,
@@ -192,11 +193,11 @@ class _TokenTrackingProvider:
         self.last_output_tokens: int = 0
         self.last_cache_read_input_tokens: int = 0
 
-    def discuss(self, game: GameState, player: Player) -> str:
+    def discuss(self, game: GameState, player: Player) -> DiscussResult:
         self.last_input_tokens = 150
         self.last_output_tokens = 50
         self.last_cache_read_input_tokens = 80
-        return "テスト発言"
+        return DiscussResult(message="テスト発言")
 
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         self.last_input_tokens = 200
@@ -234,8 +235,8 @@ class TestMetricsCollectingProvider:
         player = game.players[0]
         result = provider.discuss(game, player)
 
-        assert isinstance(result, str)
-        assert len(result) > 0
+        assert isinstance(result, DiscussResult)
+        assert len(result.message) > 0
         assert metrics.total_api_calls == 1
         assert metrics.actions[0].action_type == "discuss"
         assert metrics.actions[0].player_name == "Alice"

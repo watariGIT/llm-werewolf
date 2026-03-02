@@ -2,6 +2,7 @@ import random
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
+from llm_werewolf.engine.action_provider import DiscussResult
 
 DUMMY_MESSAGES: tuple[str, ...] = (
     "うーん、誰が人狼だろう…",
@@ -21,8 +22,8 @@ class RandomActionProvider:
     def __init__(self, rng: random.Random | None = None) -> None:
         self._rng = rng if rng is not None else random.Random()
 
-    def discuss(self, game: GameState, player: Player) -> str:
-        return self._rng.choice(DUMMY_MESSAGES)
+    def discuss(self, game: GameState, player: Player) -> DiscussResult:
+        return DiscussResult(message=self._rng.choice(DUMMY_MESSAGES))
 
     def vote(self, game: GameState, player: Player, candidates: tuple[Player, ...]) -> str:
         return self._rng.choice(candidates).name

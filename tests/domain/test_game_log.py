@@ -181,6 +181,69 @@ class TestWerewolfAllyLogVisibility:
             assert "[人狼仲間]" not in log_text
 
 
+class TestThinkingLogVisibility:
+    """[思考] ログの可視性テスト"""
+
+    def test_player_can_see_own_thinking_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.VILLAGER),
+            Player(name="Bob", role=Role.WEREWOLF),
+        )
+        game = GameState(players=players, log=("[思考] Alice: Bobが怪しいと思う",))
+        log_text = format_log_for_context(game, "Alice")
+        assert "[思考] Alice" in log_text
+
+    def test_other_player_cannot_see_thinking_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.VILLAGER),
+            Player(name="Bob", role=Role.WEREWOLF),
+        )
+        game = GameState(players=players, log=("[思考] Alice: Bobが怪しいと思う",))
+        log_text = format_log_for_context(game, "Bob")
+        assert "[思考]" not in log_text
+
+    def test_thinking_log_excluded_from_public_log(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (
+            Player(name="Alice", role=Role.VILLAGER),
+            Player(name="Bob", role=Role.WEREWOLF),
+        )
+        game = GameState(
+            players=players,
+            log=(
+                "[思考] Alice: Bobが怪しい",
+                "[発言] Alice: おはよう",
+                "[思考] Bob: 嘘をつこう",
+            ),
+        )
+        result = format_public_log(game)
+        assert "[思考]" not in result
+        assert "[発言] Alice: おはよう" in result
+
+    def test_filter_log_entries_thinking_visibility(self) -> None:
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        player = Player(name="Alice", role=Role.VILLAGER)
+        entries = [
+            "[思考] Alice: 自分の思考",
+            "[思考] Bob: 他人の思考",
+            "[発言] Alice: 発言",
+        ]
+        result = filter_log_entries(entries, player)
+        assert "[思考] Alice" in result
+        assert "[思考] Bob" not in result
+        assert "[発言] Alice: 発言" in result
+
+
 class TestFormatPublicLog:
     """format_public_log のテスト。"""
 
@@ -203,6 +266,7 @@ class TestFormatPublicLog:
                 "[霊媒結果] Frank の霊媒: Bob は人狼だった",
                 "[人狼仲間] 人狼はBobです",
                 "[護衛成功] Alice への襲撃は護衛により阻止された",
+                "[思考] Alice: Bobが怪しい",
                 "[投票] Alice → Bob",
                 "[処刑] Bob が処刑された",
             ),
@@ -218,6 +282,7 @@ class TestFormatPublicLog:
         assert "[霊媒結果]" not in result
         assert "[人狼仲間]" not in result
         assert "[護衛成功]" not in result
+        assert "[思考]" not in result
 
     def test_empty_log(self) -> None:
         from llm_werewolf.domain.player import Player

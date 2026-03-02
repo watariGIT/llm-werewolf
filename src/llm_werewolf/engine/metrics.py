@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
-from llm_werewolf.engine.action_provider import ActionProvider
+from llm_werewolf.engine.action_provider import ActionProvider, DiscussResult
 
 # 料金テーブル（USD per 1M tokens）
 # 料金は変動するため参考値。該当しないモデルの場合はコスト推定不可（None）。
@@ -111,7 +111,11 @@ class MetricsCollectingProvider:
             ActionMetrics(action_type, player_name, elapsed, input_tokens, output_tokens, cache_read)
         )
 
-    def discuss(self, game: GameState, player: Player) -> str:
+    @property
+    def last_thinking(self) -> str:
+        return getattr(self._inner, "last_thinking", "")
+
+    def discuss(self, game: GameState, player: Player) -> DiscussResult:
         start = time.monotonic()
         try:
             return self._inner.discuss(game, player)

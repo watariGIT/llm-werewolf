@@ -16,11 +16,13 @@ from pydantic import SecretStr
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
+from llm_werewolf.engine.action_provider import DiscussResult
 from llm_werewolf.engine.llm_config import LLMConfig
 from llm_werewolf.engine.llm_provider import (
     FALLBACK_DISCUSS_MESSAGE,
     MAX_RETRIES,
     CandidateDecision,
+    DiscussionResponse,
     LLMActionProvider,
 )
 
@@ -106,6 +108,42 @@ def _setup_structured_mock_side_effect(mock_chat_openai: MagicMock, side_effect:
     return mock_structured
 
 
+def _create_discussion_response(thinking: str = "テスト思考", message: str = "テスト発言") -> DiscussionResponse:
+    return DiscussionResponse(thinking=thinking, message=message)
+
+
+def _setup_discussion_mock(
+    mock_chat_openai: MagicMock,
+    return_value: DiscussionResponse,
+    usage_metadata: dict[str, int] | None = None,
+) -> MagicMock:
+    """with_structured_output(DiscussionResponse, include_raw=True).invoke が辞書を返すようにモックを設定する。"""
+    mock_instance = mock_chat_openai.return_value
+    mock_structured = MagicMock()
+    mock_instance.with_structured_output.return_value = mock_structured
+    mock_structured.invoke.return_value = {
+        "raw": _create_raw_message(usage_metadata),
+        "parsed": return_value,
+        "parsing_error": None,
+    }
+    return mock_structured
+
+
+def _wrap_as_raw_discussion(value: DiscussionResponse) -> dict:
+    """DiscussionResponse を include_raw=True 形式の辞書にラップする。"""
+    return {"raw": _create_raw_message(), "parsed": value, "parsing_error": None}
+
+
+def _setup_discussion_mock_side_effect(mock_chat_openai: MagicMock, side_effect: list) -> MagicMock:
+    """with_structured_output(DiscussionResponse, include_raw=True).invoke に side_effect を設定する。"""
+    mock_instance = mock_chat_openai.return_value
+    mock_structured = MagicMock()
+    mock_instance.with_structured_output.return_value = mock_structured
+    wrapped = [_wrap_as_raw_discussion(v) if isinstance(v, DiscussionResponse) else v for v in side_effect]
+    mock_structured.invoke.side_effect = wrapped
+    return mock_structured
+
+
 def _create_api_timeout_error() -> openai.APITimeoutError:
     return openai.APITimeoutError(request=MagicMock())
 
@@ -149,27 +187,36 @@ class TestDiscuss:
     """discuss メソッドのテスト。"""
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_returns_llm_response(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("怪しい人がいますね。")
+    def test_returns_discuss_result(self, mock_chat_openai: MagicMock) -> None:
+        _setup_discussion_mock(mock_chat_openai, _create_discussion_response("戦略的思考", "怪しい人がいますね。"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
         result = provider.discuss(game, game.players[1])  # Bob
 
-        assert result == "怪しい人がいますね。"
-        mock_instance.invoke.assert_called_once()
+        assert isinstance(result, DiscussResult)
+        assert result.message == "怪しい人がいますね。"
+        assert result.thinking == "戦略的思考"
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_empty_response_returns_default(self, mock_chat_openai: MagicMock) -> None:
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("")
+    def test_empty_message_returns_default(self, mock_chat_openai: MagicMock) -> None:
+        _setup_discussion_mock(mock_chat_openai, _create_discussion_response("思考", ""))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
         result = provider.discuss(game, game.players[1])
 
-        assert result == "..."
+        assert result.message == "..."
+
+    @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
+    def test_last_thinking_set_on_discuss(self, mock_chat_openai: MagicMock) -> None:
+        _setup_discussion_mock(mock_chat_openai, _create_discussion_response("内部思考テスト", "発言"))
+
+        provider = LLMActionProvider(_create_config())
+        game = _create_game()
+        provider.discuss(game, game.players[1])
+
+        assert provider.last_thinking == "内部思考テスト"
 
 
 class TestVote:
@@ -213,8 +260,8 @@ class TestVote:
         assert result in ("Charlie", "Dave")
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
-    def test_reason_in_decision(self, mock_chat_openai: MagicMock) -> None:
-        """CandidateDecision の reason フィールドが正しく取得される。"""
+    def test_reason_saved_to_last_thinking(self, mock_chat_openai: MagicMock) -> None:
+        """CandidateDecision の reason が last_thinking に保存される。"""
         decision = _create_candidate_decision("Charlie", reason="怪しい発言をしていたから")
         _setup_structured_mock(mock_chat_openai, decision)
 
@@ -224,6 +271,7 @@ class TestVote:
         result = provider.vote(game, game.players[0], candidates)
 
         assert result == "Charlie"
+        assert provider.last_thinking == "怪しい発言をしていたから"
 
 
 class TestDivine:
@@ -301,19 +349,21 @@ class TestRetry:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_retry_on_timeout_then_success_discuss(self, mock_chat_openai: MagicMock) -> None:
         """discuss: タイムアウト後にリトライで成功する。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_api_timeout_error(),
-            _create_mock_response("リトライ後の発言です。"),
-        ]
+        mock_structured = _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_api_timeout_error(),
+                _create_discussion_response("思考", "リトライ後の発言です。"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         provider._sleep = MagicMock()
         game = _create_game()
         result = provider.discuss(game, game.players[1])
 
-        assert result == "リトライ後の発言です。"
-        assert mock_instance.invoke.call_count == 2
+        assert result.message == "リトライ後の発言です。"
+        assert mock_structured.invoke.call_count == 2
         provider._sleep.assert_called_once_with(1)
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
@@ -359,19 +409,21 @@ class TestRetry:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_exponential_backoff(self, mock_chat_openai: MagicMock) -> None:
         """指数バックオフで待機時間が増加する。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_api_timeout_error(),
-            _create_api_timeout_error(),
-            _create_mock_response("成功"),
-        ]
+        _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_api_timeout_error(),
+                _create_api_timeout_error(),
+                _create_discussion_response("思考", "成功"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         provider._sleep = MagicMock()
         game = _create_game()
         result = provider.discuss(game, game.players[1])
 
-        assert result == "成功"
+        assert result.message == "成功"
         assert provider._sleep.call_count == 2
         provider._sleep.assert_any_call(1)  # 2^0
         provider._sleep.assert_any_call(2)  # 2^1
@@ -379,16 +431,18 @@ class TestRetry:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_no_retry_on_client_error(self, mock_chat_openai: MagicMock) -> None:
         """クライアントエラー (4xx、429以外) はリトライしない。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = _create_server_error(400)
+        mock_structured = _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [_create_server_error(400)],
+        )
 
         provider = LLMActionProvider(_create_config())
         provider._sleep = MagicMock()
         game = _create_game()
         result = provider.discuss(game, game.players[1])
 
-        assert result == FALLBACK_DISCUSS_MESSAGE
-        assert mock_instance.invoke.call_count == 1
+        assert result.message == FALLBACK_DISCUSS_MESSAGE
+        assert mock_structured.invoke.call_count == 1
         provider._sleep.assert_not_called()
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
@@ -434,16 +488,19 @@ class TestFallback:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_discuss_fallback(self, mock_chat_openai: MagicMock) -> None:
         """discuss のフォールバックは定型文を返す。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [_create_api_timeout_error()] * MAX_RETRIES
+        mock_structured = _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [_create_api_timeout_error()] * MAX_RETRIES,
+        )
 
         provider = LLMActionProvider(_create_config())
         provider._sleep = MagicMock()
         game = _create_game()
         result = provider.discuss(game, game.players[1])
 
-        assert result == FALLBACK_DISCUSS_MESSAGE
-        assert mock_instance.invoke.call_count == MAX_RETRIES
+        assert result.message == FALLBACK_DISCUSS_MESSAGE
+        assert result.thinking == ""
+        assert mock_structured.invoke.call_count == MAX_RETRIES
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_vote_fallback(self, mock_chat_openai: MagicMock) -> None:
@@ -523,9 +580,8 @@ class TestLogging:
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_info_log_on_discuss_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        """discuss 成功時に INFO ログが出力される。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("発言です。")
+        """discuss 成功時に INFO ログに thinking が含まれる。"""
+        _setup_discussion_mock(mock_chat_openai, _create_discussion_response("戦略的思考", "発言です。"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -533,7 +589,7 @@ class TestLogging:
             provider.discuss(game, game.players[1])  # Bob
 
         info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
-        assert any("player=Bob" in m and "action=discuss" in m and "elapsed=" in m for m in info_messages)
+        assert any("player=Bob" in m and "action=discuss" in m and "thinking=戦略的思考" in m for m in info_messages)
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_info_log_on_vote_success(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
@@ -598,8 +654,7 @@ class TestLogging:
         self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """DEBUG ログにプロンプトとレスポンスが含まれる。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("テスト発言")
+        _setup_discussion_mock(mock_chat_openai, _create_discussion_response("思考", "テスト発言"))
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -607,17 +662,16 @@ class TestLogging:
             provider.discuss(game, game.players[1])
 
         debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
-        assert any("LLM プロンプト" in m for m in debug_messages)
-        assert any("LLM レスポンス:" in m and "テスト発言" in m for m in debug_messages)
+        assert any("構造化議論プロンプト" in m for m in debug_messages)
+        assert any("構造化議論レスポンス" in m and "テスト発言" in m for m in debug_messages)
 
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_debug_log_contains_token_usage(
         self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """DEBUG ログにトークン使用量が含まれる。"""
-        mock_instance = mock_chat_openai.return_value
         usage = {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
-        mock_instance.invoke.return_value = _create_mock_response("発言", usage_metadata=usage)
+        _setup_discussion_mock(mock_chat_openai, _create_discussion_response("思考", "発言"), usage_metadata=usage)
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -632,8 +686,7 @@ class TestLogging:
         self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """usage_metadata が None の場合、トークンログは出力されない。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("発言", usage_metadata=None)
+        _setup_discussion_mock(mock_chat_openai, _create_discussion_response("思考", "発言"), usage_metadata=None)
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -646,8 +699,7 @@ class TestLogging:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_warning_log_on_fallback(self, mock_chat_openai: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         """フォールバック時に WARNING ログが出力される。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [_create_api_timeout_error()] * MAX_RETRIES
+        _setup_discussion_mock_side_effect(mock_chat_openai, [_create_api_timeout_error()] * MAX_RETRIES)
 
         provider = LLMActionProvider(_create_config())
         provider._sleep = MagicMock()
@@ -732,14 +784,15 @@ class TestDiscussConversationHistory:
         from langchain_core.messages import HumanMessage as HM
         from langchain_core.messages import SystemMessage as SM
 
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.return_value = _create_mock_response("ラウンド1の発言です。")
+        mock_structured = _setup_discussion_mock(
+            mock_chat_openai, _create_discussion_response("思考", "ラウンド1の発言です。")
+        )
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
         provider.discuss(game, game.players[1])  # Bob
 
-        call_args = mock_instance.invoke.call_args[0][0]
+        call_args = mock_structured.invoke.call_args[0][0]
         assert len(call_args) == 2
         assert isinstance(call_args[0], SM)
         assert isinstance(call_args[1], HM)
@@ -751,11 +804,13 @@ class TestDiscussConversationHistory:
         from langchain_core.messages import HumanMessage as HM
         from langchain_core.messages import SystemMessage as SM
 
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_mock_response("ラウンド1の発言です。"),
-            _create_mock_response("ラウンド2の発言です。"),
-        ]
+        mock_structured = _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_discussion_response("思考1", "ラウンド1の発言です。"),
+                _create_discussion_response("思考2", "ラウンド2の発言です。"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -769,11 +824,12 @@ class TestDiscussConversationHistory:
         provider.discuss(game2, player)
 
         # 2回目の invoke の引数を検証
-        call_args = mock_instance.invoke.call_args_list[1][0][0]
+        call_args = mock_structured.invoke.call_args_list[1][0][0]
         assert len(call_args) == 4  # System + Human(R1) + AI(R1) + Human(R2)
         assert isinstance(call_args[0], SM)
         assert isinstance(call_args[1], HM)
         assert isinstance(call_args[2], AM)
+        # 会話履歴には message のみ保持（thinking は含めない）
         assert call_args[2].content == "ラウンド1の発言です。"
         assert isinstance(call_args[3], HM)
 
@@ -782,11 +838,13 @@ class TestDiscussConversationHistory:
         """ラウンド2は差分プロンプト（フルコンテキストなし）を使用する。"""
         from langchain_core.messages import HumanMessage as HM
 
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_mock_response("ラウンド1の発言です。"),
-            _create_mock_response("ラウンド2の発言です。"),
-        ]
+        mock_structured = _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_discussion_response("思考1", "ラウンド1の発言です。"),
+                _create_discussion_response("思考2", "ラウンド2の発言です。"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -800,7 +858,7 @@ class TestDiscussConversationHistory:
         provider.discuss(game2, player)
 
         # ラウンド2の HumanMessage にフルコンテキストが含まれないことを検証
-        call_args = mock_instance.invoke.call_args_list[1][0][0]
+        call_args = mock_structured.invoke.call_args_list[1][0][0]
         round2_prompt = call_args[3]
         assert isinstance(round2_prompt, HM)
         # 差分プロンプトにはフルコンテキストの要素が含まれない
@@ -812,11 +870,13 @@ class TestDiscussConversationHistory:
         """ラウンド2の差分プロンプトに新しい発言が含まれること。"""
         from langchain_core.messages import HumanMessage as HM
 
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_mock_response("ラウンド1の発言です。"),
-            _create_mock_response("ラウンド2の発言です。"),
-        ]
+        mock_structured = _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_discussion_response("思考1", "ラウンド1の発言です。"),
+                _create_discussion_response("思考2", "ラウンド2の発言です。"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -829,7 +889,7 @@ class TestDiscussConversationHistory:
         game2 = game.add_log("[発言] Charlie: ラウンド1後の発言")
         provider.discuss(game2, player)
 
-        call_args = mock_instance.invoke.call_args_list[1][0][0]
+        call_args = mock_structured.invoke.call_args_list[1][0][0]
         round2_prompt = call_args[3]
         assert isinstance(round2_prompt, HM)
         assert "ラウンド1後の発言" in round2_prompt.content
@@ -842,11 +902,13 @@ class TestDiscussConversationHistory:
         from langchain_core.messages import HumanMessage as HM
         from langchain_core.messages import SystemMessage as SM
 
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_mock_response("Day1の発言"),
-            _create_mock_response("Day2の発言"),
-        ]
+        mock_structured = _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_discussion_response("思考1", "Day1の発言"),
+                _create_discussion_response("思考2", "Day2の発言"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         game = _create_game()
@@ -860,7 +922,7 @@ class TestDiscussConversationHistory:
         provider.discuss(game_day2, player)
 
         # 2回目は新規メッセージリスト（2メッセージ）で呼ばれる
-        call_args = mock_instance.invoke.call_args_list[1][0][0]
+        call_args = mock_structured.invoke.call_args_list[1][0][0]
         assert len(call_args) == 2
         assert isinstance(call_args[0], SM)
         assert isinstance(call_args[1], HM)
@@ -868,13 +930,15 @@ class TestDiscussConversationHistory:
     @patch("llm_werewolf.engine.llm_provider.ChatOpenAI")
     def test_fallback_does_not_update_history(self, mock_chat_openai: MagicMock) -> None:
         """API エラーでフォールバックした場合、履歴は更新されない。"""
-        mock_instance = mock_chat_openai.return_value
-        mock_instance.invoke.side_effect = [
-            _create_api_timeout_error(),
-            _create_api_timeout_error(),
-            _create_api_timeout_error(),
-            _create_mock_response("リトライ後の成功"),
-        ]
+        mock_structured = _setup_discussion_mock_side_effect(
+            mock_chat_openai,
+            [
+                _create_api_timeout_error(),
+                _create_api_timeout_error(),
+                _create_api_timeout_error(),
+                _create_discussion_response("リトライ後思考", "リトライ後の成功"),
+            ],
+        )
 
         provider = LLMActionProvider(_create_config())
         provider._sleep = MagicMock()
@@ -883,12 +947,12 @@ class TestDiscussConversationHistory:
 
         # 1回目: 全リトライ失敗 → フォールバック
         result1 = provider.discuss(game, player)
-        assert result1 == FALLBACK_DISCUSS_MESSAGE
+        assert result1.message == FALLBACK_DISCUSS_MESSAGE
 
         # 2回目: 履歴は更新されていないので新規メッセージリスト（2メッセージ）で呼ばれる
         result2 = provider.discuss(game, player)
-        assert result2 == "リトライ後の成功"
+        assert result2.message == "リトライ後の成功"
 
         # 4回目の invoke（2回目の discuss）は2メッセージで呼ばれる
-        call_args = mock_instance.invoke.call_args_list[3][0][0]
+        call_args = mock_structured.invoke.call_args_list[3][0][0]
         assert len(call_args) == 2

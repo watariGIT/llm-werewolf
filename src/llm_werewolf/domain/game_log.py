@@ -11,7 +11,7 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Role
 
-_PRIVATE_PREFIXES = ("[配役]", "[占い結果]", "[占い]", "[護衛]", "[霊媒結果]", "[人狼仲間]", "[護衛成功]")
+_PRIVATE_PREFIXES = ("[配役]", "[占い結果]", "[占い]", "[護衛]", "[霊媒結果]", "[人狼仲間]", "[護衛成功]", "[思考]")
 
 
 def _is_visible(log_entry: str, player: Player) -> bool:
@@ -24,6 +24,7 @@ def _is_visible(log_entry: str, player: Player) -> bool:
     - [護衛]: 狩人本人のみ見える
     - [霊媒結果]: 霊媒師本人のみ見える
     - [人狼仲間]: 人狼のみ見える
+    - [思考]: 思考した本人のみ見える
     - その他: 全員に見える
     """
     if log_entry.startswith("[配役]"):
@@ -43,6 +44,9 @@ def _is_visible(log_entry: str, player: Player) -> bool:
 
     if log_entry.startswith("[人狼仲間]"):
         return player.role == Role.WEREWOLF
+
+    if log_entry.startswith("[思考]"):
+        return log_entry.startswith(f"[思考] {player.name}:")
 
     return True
 

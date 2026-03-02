@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
+from llm_werewolf.engine.action_provider import DiscussResult
 from llm_werewolf.engine.llm_config import LLMConfig, PromptConfig
 from llm_werewolf.engine.prompts import (
     build_attack_prompt,
@@ -44,6 +45,13 @@ class CandidateDecision(BaseModel):
     reason: str = Field(description="選択理由（1文）")
 
 
+class DiscussionResponse(BaseModel):
+    """議論フェーズの構造化レスポンス。"""
+
+    thinking: str = Field(description="あなたの内部思考（戦略・推理・疑い等）。他のプレイヤーには見えません。")
+    message: str = Field(description="議論での発言内容（1〜3文）。他のプレイヤー全員に公開されます。")
+
+
 class _LLMResult(NamedTuple):
     """LLM 呼び出し結果を保持する内部データ型。"""
 
@@ -58,6 +66,16 @@ class _StructuredLLMResult(NamedTuple):
     """構造化 LLM 呼び出し結果を保持する内部データ型。"""
 
     decision: CandidateDecision
+    elapsed: float
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+
+class _StructuredDiscussionResult(NamedTuple):
+    """構造化議論 LLM 呼び出し結果を保持する内部データ型。"""
+
+    discussion: DiscussionResponse
     elapsed: float
     input_tokens: int = 0
     output_tokens: int = 0
@@ -90,6 +108,7 @@ class LLMActionProvider:
         self.last_input_tokens: int = 0
         self.last_output_tokens: int = 0
         self.last_cache_read_input_tokens: int = 0
+        self.last_thinking: str = ""
         self._discuss_day: int = 0
         self._discuss_messages: list[SystemMessage | HumanMessage | AIMessage] = []
         self._discuss_log_offset: int = 0
@@ -98,7 +117,9 @@ class LLMActionProvider:
         """スリープ処理。テスト時にモック可能。"""
         time.sleep(seconds)
 
-    def _update_token_usage(self, result: _LLMResult | _StructuredLLMResult | None) -> None:
+    def _update_token_usage(
+        self, result: _LLMResult | _StructuredLLMResult | _StructuredDiscussionResult | None
+    ) -> None:
         """最新のトークン使用量を更新する。"""
         if result is not None:
             self.last_input_tokens = result.input_tokens
@@ -184,6 +205,79 @@ class LLMActionProvider:
         logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
         return None
 
+    def _call_llm_structured_discussion(
+        self, messages: list[SystemMessage | HumanMessage | AIMessage]
+    ) -> _StructuredDiscussionResult | None:
+        """構造化出力で議論 LLM を呼び出し、DiscussionResponse を返す。
+
+        API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
+        リトライ上限到達時は None を返す。
+        """
+        structured_llm = self._llm.with_structured_output(DiscussionResponse, include_raw=True)
+        logger.debug("LLM 構造化議論プロンプト (messages=%d):\n  %s", len(messages), messages)
+        for attempt in range(MAX_RETRIES):
+            try:
+                start = time.monotonic()
+                response = structured_llm.invoke(messages)
+                elapsed = time.monotonic() - start
+                parsed = response.get("parsed") if isinstance(response, dict) else response
+                if not isinstance(parsed, DiscussionResponse):
+                    logger.warning("構造化議論出力のパースに失敗しました。フォールバックします。")
+                    return None
+                logger.debug("LLM 構造化議論レスポンス: thinking=%s, message=%s", parsed.thinking, parsed.message)
+                input_tokens = 0
+                output_tokens = 0
+                cache_read = 0
+                if isinstance(response, dict):
+                    raw = response.get("raw")
+                    usage = getattr(raw, "usage_metadata", None) if raw else None
+                    if usage:
+                        input_tokens = usage.get("input_tokens", 0)
+                        output_tokens = usage.get("output_tokens", 0)
+                        details = usage.get("input_token_details", {})
+                        if details:
+                            cache_read = details.get("cache_read", 0)
+                        logger.debug(
+                            "トークン使用量: input=%d, output=%d, total=%d, cache_read=%d",
+                            input_tokens,
+                            output_tokens,
+                            input_tokens + output_tokens,
+                            cache_read,
+                        )
+                return _StructuredDiscussionResult(
+                    discussion=parsed,
+                    elapsed=elapsed,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_read_input_tokens=cache_read,
+                )
+            except (openai.APITimeoutError, openai.RateLimitError) as e:
+                wait = 2**attempt
+                logger.warning(
+                    "LLM API エラー (試行 %d/%d): %s。%d秒後にリトライします。", attempt + 1, MAX_RETRIES, e, wait
+                )
+                self._sleep(wait)
+            except openai.APIStatusError as e:
+                if e.status_code >= 500:
+                    wait = 2**attempt
+                    logger.warning(
+                        "LLM API サーバーエラー %d (試行 %d/%d): %s。%d秒後にリトライします。",
+                        e.status_code,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        e,
+                        wait,
+                    )
+                    self._sleep(wait)
+                else:
+                    logger.warning("LLM API クライアントエラー %d: %s。リトライしません。", e.status_code, e)
+                    return None
+            except Exception as e:
+                logger.warning("構造化議論出力の処理中に予期しない例外が発生しました: %s。フォールバックします。", e)
+                return None
+        logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
+        return None
+
     def _call_llm_with_messages(self, messages: list[SystemMessage | HumanMessage | AIMessage]) -> _LLMResult | None:
         """メッセージリストを直接指定して LLM を呼び出す。
 
@@ -263,9 +357,10 @@ class LLMActionProvider:
             return f"{self._personality}\n\n{user_prompt}"
         return user_prompt
 
-    def discuss(self, game: GameState, player: Player) -> str:
+    def discuss(self, game: GameState, player: Player) -> DiscussResult:
         """議論フェーズでの発言を LLM で生成する。
 
+        構造化出力（DiscussionResponse）を使用して内部思考と発言を分離する。
         同一日内の複数ラウンドでは会話履歴を保持し、
         前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる。
         ラウンド2以降は差分プロンプト（新しいログのみ）を使用してトークン効率を改善する。
@@ -300,17 +395,27 @@ class LLMActionProvider:
             messages = list(self._discuss_messages)
             messages.append(HumanMessage(content=user_prompt))
 
-        result = self._call_llm_with_messages(messages)
+        result = self._call_llm_structured_discussion(messages)
         self._update_token_usage(result)
 
         if result is None:
             logger.warning("discuss フォールバック: プレイヤー %s の発言を定型文で代替します。", player.name)
-            return FALLBACK_DISCUSS_MESSAGE
+            self.last_thinking = ""
+            return DiscussResult(message=FALLBACK_DISCUSS_MESSAGE)
 
-        logger.info("LLM アクション完了: player=%s, action=discuss, elapsed=%.2fs", player.name, result.elapsed)
-        response_text = parse_discuss_response(result.content)
+        discussion = result.discussion
+        response_text = parse_discuss_response(discussion.message)
+        thinking = discussion.thinking
 
-        # 履歴を更新（成功時のみ）
+        logger.info(
+            "LLM アクション完了: player=%s, action=discuss, elapsed=%.2fs, thinking=%s",
+            player.name,
+            result.elapsed,
+            thinking,
+        )
+        self.last_thinking = thinking
+
+        # 履歴を更新（成功時のみ）— 会話履歴には発言のみ保持（thinking は含めない）
         if not self._discuss_messages:
             self._discuss_messages = [
                 SystemMessage(content=system_prompt),
@@ -324,7 +429,7 @@ class LLMActionProvider:
         # ログオフセットを更新（次ラウンドの差分計算用）
         self._discuss_log_offset = len(game.log)
 
-        return response_text
+        return DiscussResult(message=response_text, thinking=thinking)
 
     def _select_candidate(
         self,
@@ -351,6 +456,7 @@ class LLMActionProvider:
                 player_name,
                 selected,
             )
+            self.last_thinking = ""
             return selected
         decision = result.decision
         logger.info(
@@ -360,6 +466,7 @@ class LLMActionProvider:
             result.elapsed,
             decision.reason,
         )
+        self.last_thinking = decision.reason
         if decision.target in candidate_names:
             return decision.target
         return parse_candidate_response(decision.target, candidate_names, self._rng, action_type=action_type)

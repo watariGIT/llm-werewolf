@@ -282,10 +282,12 @@ class InteractiveGameEngine:
         for player in players:
             self._notify_progress(player.name, "discuss")
             provider = self._providers[player.name]
-            message = provider.discuss(self._game, player)
-            self._game = self._game.add_log(f"[発言] {player.name}: {message}")
-            messages.append(f"{player.name}: {message}")
-            self._notify_message(player.name, message)
+            result = provider.discuss(self._game, player)
+            if result.thinking:
+                self._game = self._game.add_log(f"[思考] {player.name}: {result.thinking}")
+            self._game = self._game.add_log(f"[発言] {player.name}: {result.message}")
+            messages.append(f"{player.name}: {result.message}")
+            self._notify_message(player.name, result.message)
         return messages
 
     def _collect_ai_votes(self, votes: dict[str, str]) -> None:
@@ -299,6 +301,9 @@ class InteractiveGameEngine:
             candidates = tuple(p for p in self._game.alive_players if p.name != player.name)
             provider = self._providers[player.name]
             ai_target = provider.vote(self._game, player, candidates)
+            thinking = getattr(provider, "last_thinking", "")
+            if thinking:
+                self._game = self._game.add_log(f"[思考] {player.name}: {thinking}")
             votes[player.name] = ai_target
 
     def _log_votes(self, votes: dict[str, str]) -> None:
@@ -352,6 +357,9 @@ class InteractiveGameEngine:
             self._notify_progress(seer.name, "divine")
             provider = self._providers[seer.name]
             target_name = provider.divine(self._game, seer, candidates)
+            thinking = getattr(provider, "last_thinking", "")
+            if thinking:
+                self._game = self._game.add_log(f"[思考] {seer.name}: {thinking}")
 
         self._game, result = execute_divine(self._game, seer, target_name)
         return result
@@ -374,6 +382,9 @@ class InteractiveGameEngine:
             self._notify_progress(knight.name, "guard")
             provider = self._providers[knight.name]
             target_name = provider.guard(self._game, knight, candidates)
+            thinking = getattr(provider, "last_thinking", "")
+            if thinking:
+                self._game = self._game.add_log(f"[思考] {knight.name}: {thinking}")
 
         self._game, guard_target = execute_guard(self._game, knight, target_name)
         return guard_target
@@ -396,6 +407,9 @@ class InteractiveGameEngine:
             self._notify_progress(werewolf.name, "attack")
             provider = self._providers[werewolf.name]
             target_name = provider.attack(self._game, werewolf, candidates)
+            thinking = getattr(provider, "last_thinking", "")
+            if thinking:
+                self._game = self._game.add_log(f"[思考] {werewolf.name}: {thinking}")
 
         self._game, attack_target = execute_attack(self._game, werewolf, target_name)
         return attack_target
