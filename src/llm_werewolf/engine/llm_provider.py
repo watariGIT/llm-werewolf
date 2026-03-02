@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+import warnings
 from typing import NamedTuple
 
 import openai
@@ -145,7 +146,9 @@ class LLMActionProvider:
         for attempt in range(MAX_RETRIES):
             try:
                 start = time.monotonic()
-                response = structured_llm.invoke(messages)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
+                    response = structured_llm.invoke(messages)
                 elapsed = time.monotonic() - start
                 parsed = response.get("parsed") if isinstance(response, dict) else response
                 if not isinstance(parsed, CandidateDecision):
@@ -218,7 +221,9 @@ class LLMActionProvider:
         for attempt in range(MAX_RETRIES):
             try:
                 start = time.monotonic()
-                response = structured_llm.invoke(messages)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
+                    response = structured_llm.invoke(messages)
                 elapsed = time.monotonic() - start
                 parsed = response.get("parsed") if isinstance(response, dict) else response
                 if not isinstance(parsed, DiscussionResponse):
