@@ -17,7 +17,7 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
 from llm_werewolf.domain.value_objects import Role
-from llm_werewolf.engine.llm_config import load_gm_config, load_llm_config, load_prompt_config
+from llm_werewolf.engine.llm_config import LLMConfig, PromptConfig, load_gm_config, load_llm_config, load_prompt_config
 from llm_werewolf.session import (
     GameSessionStore,
     GameStep,
@@ -54,21 +54,48 @@ logger = logging.getLogger(__name__)
 
 try:
     llm_config = load_llm_config()
-    gm_config = load_gm_config()
-    prompt_config = load_prompt_config()
 except ValueError as e:
-    logger.error(str(e))
+    logger.error("プレイヤーAI設定の読み込みに失敗しました: %s", e)
     sys.exit(1)
 
-logger.info("=== LLM人狼 設定情報 ===")
-logger.info("  プレイヤーAI: model=%s, temperature=%s", llm_config.model_name, llm_config.temperature)
-logger.info("  GM-AI:       model=%s, temperature=%s", gm_config.model_name, gm_config.temperature)
-logger.info(
-    "  発言ログ上限: player=%d, gm=%d", prompt_config.max_recent_statements, prompt_config.gm_max_recent_statements
+try:
+    gm_config = load_gm_config()
+except ValueError as e:
+    logger.error("GM-AI設定の読み込みに失敗しました: %s", e)
+    sys.exit(1)
+
+try:
+    prompt_config = load_prompt_config()
+except ValueError as e:
+    logger.error("プロンプト設定の読み込みに失敗しました: %s", e)
+    sys.exit(1)
+
+
+def _log_startup_config(
+    llm_cfg: LLMConfig,
+    gm_cfg: LLMConfig,
+    prompt_cfg: PromptConfig,
+    llm_debug: bool,
+    log_level: str,
+) -> None:
+    logger.info("=== LLM人狼 設定情報 ===")
+    logger.info("  プレイヤーAI: model=%s, temperature=%s", llm_cfg.model_name, llm_cfg.temperature)
+    logger.info("  GM-AI:       model=%s, temperature=%s", gm_cfg.model_name, gm_cfg.temperature)
+    logger.info(
+        "  発言ログ上限: player=%d, gm=%d", prompt_cfg.max_recent_statements, prompt_cfg.gm_max_recent_statements
+    )
+    logger.info("  LLM_DEBUG=%s, LOG_LEVEL=%s", llm_debug, log_level)
+    logger.info("  OPENAI_API_KEY: 設定済み")
+    logger.info("========================")
+
+
+_log_startup_config(
+    llm_config,
+    gm_config,
+    prompt_config,
+    llm_debug=bool(os.environ.get("LLM_DEBUG", "").strip()),
+    log_level=_log_level_name,
 )
-logger.info("  LLM_DEBUG=%s, LOG_LEVEL=%s", bool(os.environ.get("LLM_DEBUG", "").strip()), _log_level_name)
-logger.info("  OPENAI_API_KEY: 設定済み")
-logger.info("========================")
 
 app = FastAPI(title="LLM人狼")
 
