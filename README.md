@@ -79,6 +79,9 @@ uv run python -m llm_werewolf --reload
 
 # LLM デバッグモード（プロンプト・レスポンス・トークン数を表示）
 uv run python -m llm_werewolf --llm-debug --reload
+
+# env ファイルを指定して起動（複数環境の切り替え）
+uv run python -m llm_werewolf --env-file .env.prod
 ```
 
 サーバー起動後、ブラウザで http://127.0.0.1:8000 にアクセスしてゲームをプレイできます。
@@ -136,6 +139,9 @@ uv run python scripts/benchmark.py --games 10 --compare-random
 
 # 出力先を指定
 uv run python scripts/benchmark.py --games 10 --output results.json
+
+# env ファイルを指定（複数環境の切り替え）
+uv run python scripts/benchmark.py --games 10 --env-file .env.prod
 ```
 
 結果は `benchmark_results/` に JSON 形式で出力されます。集計される統計:
