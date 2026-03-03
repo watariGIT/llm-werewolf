@@ -276,7 +276,7 @@ def build_system_prompt(role: Role) -> str:
     Returns:
         システムプロンプト文字列（固定）
     """
-    return "\n\n".join([_BASE_RULES, _ROLE_INSTRUCTIONS[role], _PERSONALITY_TAG_RULES, _GAME_SUMMARY_SCHEMA])
+    return "\n\n".join([_BASE_RULES, _PERSONALITY_TAG_RULES, _GAME_SUMMARY_SCHEMA, _ROLE_INSTRUCTIONS[role]])
 
 
 def _format_candidates(candidates: tuple[Player, ...]) -> str:

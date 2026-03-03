@@ -300,7 +300,7 @@ class TestGameMasterProviderSummarize:
         mock_analysis = GameAnalysis()
         provider = GameMasterProvider(config)
 
-        def fake_call_llm_analysis(g: GameState, b: object) -> GameAnalysis:
+        def fake_call_llm_analysis(g: GameState, b: object, *, max_recent_statements: int = -1) -> GameAnalysis:
             provider.last_input_tokens = 200
             provider.last_output_tokens = 100
             provider.last_cache_read_input_tokens = 50
