@@ -149,3 +149,6 @@ class MetricsCollectingProvider:
             return self._inner.guard(game, knight, candidates)
         finally:
             self._record("guard", knight.name, start)
+
+    def set_speaking_context(self, speaking_order: tuple[str, ...], current_speaker_index: int) -> None:
+        self._inner.set_speaking_context(speaking_order, current_speaker_index)

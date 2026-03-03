@@ -37,3 +37,6 @@ class RandomActionProvider:
 
     def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
         return self._rng.choice(candidates).name
+
+    def set_speaking_context(self, speaking_order: tuple[str, ...], current_speaker_index: int) -> None:
+        pass
