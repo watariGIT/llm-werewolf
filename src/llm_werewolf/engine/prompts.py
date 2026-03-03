@@ -474,12 +474,44 @@ def _build_context(
     return "\n".join(parts)
 
 
+def _build_speaking_status(speaking_order: tuple[str, ...], current_speaker_index: int) -> str:
+    """発言状況（発言済み/未発言プレイヤー）を整形する。
+
+    Args:
+        speaking_order: 発言順のプレイヤー名タプル
+        current_speaker_index: 現在の発言者のインデックス
+
+    Returns:
+        発言状況の説明文字列。情報がない場合は空文字列。
+    """
+    if not speaking_order or current_speaker_index < 0:
+        return ""
+
+    spoken = [name for name in speaking_order[:current_speaker_index]]
+    unspoken = [name for name in speaking_order[current_speaker_index + 1 :]]
+
+    lines = ["## 発言状況（このラウンド）"]
+    lines.append(f"発言順: {'→'.join(speaking_order)}")
+    if spoken:
+        lines.append(f"発言済み: {'、'.join(spoken)}")
+    if unspoken:
+        lines.append(f"未発言: {'、'.join(unspoken)}")
+    lines.append(
+        "※ まだ発言していないプレイヤーの発言内容や態度には言及しないでください。"
+        "言及できるのは既に発言したプレイヤーの発言のみです。"
+    )
+
+    return "\n".join(lines)
+
+
 def build_discuss_prompt(
     game: GameState,
     player: Player,
     *,
     max_recent_statements: int = _MAX_RECENT_STATEMENTS,
     personality_tag: str = "",
+    speaking_order: tuple[str, ...] = (),
+    current_speaker_index: int = -1,
 ) -> str:
     """議論フェーズ用のユーザープロンプトを生成する。
 
@@ -488,11 +520,15 @@ def build_discuss_prompt(
         player: 発言するプレイヤー
         max_recent_statements: 保持する直近の発言ログ件数。負の値で全件保持。
         personality_tag: 人格タグ文字列（stance に応じた戦略指向の注入用）
+        speaking_order: 発言順のプレイヤー名タプル
+        current_speaker_index: 現在の発言者のインデックス（speaking_order 内の位置）
 
     Returns:
         ユーザープロンプト文字列
     """
     context = _build_context(game, player, max_recent_statements=max_recent_statements, personality_tag=personality_tag)
+    speaking_status = _build_speaking_status(speaking_order, current_speaker_index)
+    speaking_section = f"\n\n{speaking_status}" if speaking_status else ""
     return f"""{context}
 
 あなたは{player.name}です。議論での発言内容を返してください。
@@ -504,11 +540,17 @@ def build_discuss_prompt(
 - 必ず自分の立場を明確にしてください。「○○が怪しい」「○○に投票したい」など具体的な主張をしましょう
 - 盤面の整理（誰が生きている、何が起きた等）は皆が知っているので不要です
 - 占い結果や霊媒結果などの重要な情報を持っている場合は、必ず議論で公表してください
-- 他のプレイヤーが公表した占い結果や霊媒結果があれば、それに基づいて推理を展開してください"""
+- 他のプレイヤーが公表した占い結果や霊媒結果があれば、それに基づいて推理を展開してください{speaking_section}"""
 
 
 def build_discuss_continuation_prompt(
-    game: GameState, player: Player, log_offset: int, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS
+    game: GameState,
+    player: Player,
+    log_offset: int,
+    *,
+    max_recent_statements: int = _MAX_RECENT_STATEMENTS,
+    speaking_order: tuple[str, ...] = (),
+    current_speaker_index: int = -1,
 ) -> str:
     """ラウンド2以降の議論プロンプトを生成する。
 
@@ -521,6 +563,8 @@ def build_discuss_continuation_prompt(
         player: 発言するプレイヤー
         log_offset: 前回のプロンプト生成時のログ長（``len(game.log)``）
         max_recent_statements: 保持する直近の発言ログ件数。負の値で全件保持。
+        speaking_order: 発言順のプレイヤー名タプル
+        current_speaker_index: 現在の発言者のインデックス（speaking_order 内の位置）
 
     Returns:
         差分コンテキスト + 議論指示のプロンプト文字列
@@ -532,6 +576,10 @@ def build_discuss_continuation_prompt(
         new_log = filter_log_entries(new_entries, player, max_recent_statements=max_recent_statements)
         if new_log:
             parts.append(f"## 前ラウンドの発言\n{new_log}")
+
+    speaking_status = _build_speaking_status(speaking_order, current_speaker_index)
+    if speaking_status:
+        parts.append(speaking_status)
 
     parts.append("""議論の次のラウンドです。前ラウンドの議論を踏まえて、1〜3文で発言してください。
 前ラウンドの発言ルールに従い、名前の接頭辞なし・具体的な主張・新しい視点を心がけてください。""")

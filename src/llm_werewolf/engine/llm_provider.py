@@ -113,6 +113,18 @@ class LLMActionProvider:
         self._discuss_day: int = 0
         self._discuss_messages: list[SystemMessage | HumanMessage | AIMessage] = []
         self._discuss_log_offset: int = 0
+        self._speaking_order: tuple[str, ...] = ()
+        self._current_speaker_index: int = -1
+
+    def set_speaking_context(self, speaking_order: tuple[str, ...], current_speaker_index: int) -> None:
+        """現在の議論ラウンドの発言順と発言者位置を設定する。
+
+        Args:
+            speaking_order: 発言順のプレイヤー名タプル
+            current_speaker_index: 現在の発言者のインデックス
+        """
+        self._speaking_order = speaking_order
+        self._current_speaker_index = current_speaker_index
 
     def _sleep(self, seconds: float) -> None:
         """スリープ処理。テスト時にモック可能。"""
@@ -384,7 +396,12 @@ class LLMActionProvider:
             max_statements = self._prompt_config.max_recent_statements
             user_prompt = self._prepend_personality(
                 build_discuss_prompt(
-                    game, player, max_recent_statements=max_statements, personality_tag=self._personality
+                    game,
+                    player,
+                    max_recent_statements=max_statements,
+                    personality_tag=self._personality,
+                    speaking_order=self._speaking_order,
+                    current_speaker_index=self._current_speaker_index,
                 )
             )
             messages: list[SystemMessage | HumanMessage | AIMessage] = [
@@ -396,7 +413,12 @@ class LLMActionProvider:
             max_statements = self._prompt_config.max_recent_statements
             user_prompt = self._prepend_personality(
                 build_discuss_continuation_prompt(
-                    game, player, self._discuss_log_offset, max_recent_statements=max_statements
+                    game,
+                    player,
+                    self._discuss_log_offset,
+                    max_recent_statements=max_statements,
+                    speaking_order=self._speaking_order,
+                    current_speaker_index=self._current_speaker_index,
                 )
             )
             messages = list(self._discuss_messages)
