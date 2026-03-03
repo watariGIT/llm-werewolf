@@ -159,10 +159,13 @@ class GameEngine:
     def _discussion_phase(self, game: GameState) -> GameState:
         rounds = get_discussion_rounds(game.day)
         ordered = get_alive_speaking_order(game, self._speaking_order)
+        order_names = tuple(p.name for p in ordered)
         for round_num in range(1, rounds + 1):
             game = game.add_log(f"[議論] ラウンド {round_num}")
-            for player in ordered:
+            for i, player in enumerate(ordered):
                 provider = self._providers[player.name]
+                if hasattr(provider, "set_speaking_context"):
+                    provider.set_speaking_context(order_names, i)
                 result = provider.discuss(game, player)
                 if result.thinking:
                     game = game.add_log(f"[思考] {player.name}: {result.thinking}")

@@ -109,14 +109,15 @@ class InteractiveGameEngine:
 
         human = self._game.find_player(self._human_player_name, alive_only=True)
         ordered = get_alive_speaking_order(self._game, self._speaking_order)
+        order_names = tuple(p.name for p in ordered)
 
         if human is None:
             ai_players = [p for p in ordered if p.name in self._providers]
-            messages = self._run_ai_discussion(ai_players)
+            messages = self._run_ai_discussion(ai_players, order_names=order_names)
         else:
             human_idx = next(i for i, p in enumerate(ordered) if p.name == self._human_player_name)
             before = [p for p in ordered[:human_idx] if p.name in self._providers]
-            messages = self._run_ai_discussion(before)
+            messages = self._run_ai_discussion(before, order_names=order_names)
 
         return messages
 
@@ -138,9 +139,10 @@ class InteractiveGameEngine:
             messages.append(f"{human.name}: {message}")
 
             ordered = get_alive_speaking_order(self._game, self._speaking_order)
+            order_names = tuple(p.name for p in ordered)
             human_idx = next(i for i, p in enumerate(ordered) if p.name == self._human_player_name)
             after = [p for p in ordered[human_idx + 1 :] if p.name in self._providers]
-            after_msgs = self._run_ai_discussion(after)
+            after_msgs = self._run_ai_discussion(after, order_names=order_names)
             messages.extend(after_msgs)
 
         max_rounds = get_discussion_rounds(self._game.day)
@@ -276,12 +278,15 @@ class InteractiveGameEngine:
         if self._on_message is not None:
             self._on_message(player_name, text)
 
-    def _run_ai_discussion(self, players: list[Player]) -> list[str]:
+    def _run_ai_discussion(self, players: list[Player], *, order_names: tuple[str, ...] = ()) -> list[str]:
         """指定 AI プレイヤーの発言を実行し、発言メッセージリストを返す。"""
         messages: list[str] = []
         for player in players:
             self._notify_progress(player.name, "discuss")
             provider = self._providers[player.name]
+            if order_names and hasattr(provider, "set_speaking_context"):
+                idx = order_names.index(player.name)
+                provider.set_speaking_context(order_names, idx)
             result = provider.discuss(self._game, player)
             if result.thinking:
                 self._game = self._game.add_log(f"[思考] {player.name}: {result.thinking}")

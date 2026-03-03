@@ -10,6 +10,7 @@ from llm_werewolf.engine.prompts import (
     TRAIT_CATEGORIES,
     _build_context,
     _build_private_info,
+    _build_speaking_status,
     _extract_role_advice,
     assign_personalities,
     build_attack_prompt,
@@ -944,3 +945,88 @@ class TestBuildDiscussContinuationPrompt:
         assert "発言3" in result
         assert "発言4" in result
         assert "発言0" not in result
+
+
+class TestBuildSpeakingStatus:
+    """_build_speaking_status のテスト。"""
+
+    def test_returns_empty_when_no_speaking_order(self) -> None:
+        result = _build_speaking_status((), 0)
+        assert result == ""
+
+    def test_returns_empty_when_negative_index(self) -> None:
+        result = _build_speaking_status(("Alice", "Bob"), -1)
+        assert result == ""
+
+    def test_first_speaker_has_no_spoken(self) -> None:
+        order = ("Alice", "Bob", "Charlie")
+        result = _build_speaking_status(order, 0)
+        assert "発言済み:" not in result
+        assert "未発言" in result
+        assert "Bob" in result
+        assert "Charlie" in result
+
+    def test_middle_speaker_has_spoken_and_unspoken(self) -> None:
+        order = ("Alice", "Bob", "Charlie", "Dave")
+        result = _build_speaking_status(order, 2)
+        assert "発言済み" in result
+        assert "Alice" in result
+        assert "Bob" in result
+        assert "未発言" in result
+        assert "Dave" in result
+
+    def test_last_speaker_has_no_unspoken(self) -> None:
+        order = ("Alice", "Bob", "Charlie")
+        result = _build_speaking_status(order, 2)
+        assert "発言済み" in result
+        assert "未発言" not in result
+
+    def test_contains_speaking_order_display(self) -> None:
+        order = ("Alice", "Bob", "Charlie")
+        result = _build_speaking_status(order, 1)
+        assert "発言順: Alice→Bob→Charlie" in result
+
+    def test_contains_unspoken_constraint(self) -> None:
+        order = ("Alice", "Bob", "Charlie")
+        result = _build_speaking_status(order, 0)
+        assert "まだ発言していないプレイヤーの発言内容や態度には言及しないでください" in result
+
+
+class TestBuildDiscussPromptWithSpeakingOrder:
+    """build_discuss_prompt の発言順情報テスト。"""
+
+    def test_includes_speaking_status_when_provided(self) -> None:
+        game = _create_game()
+        player = game.players[1]  # Bob
+        order = ("Alice", "Bob", "Charlie", "Dave")
+        result = build_discuss_prompt(game, player, speaking_order=order, current_speaker_index=1)
+        assert "発言状況" in result
+        assert "発言済み" in result
+        assert "Alice" in result
+        assert "未発言" in result
+
+    def test_no_speaking_status_without_order(self) -> None:
+        game = _create_game()
+        player = game.players[1]  # Bob
+        result = build_discuss_prompt(game, player)
+        assert "発言状況" not in result
+
+
+class TestBuildDiscussContinuationPromptWithSpeakingOrder:
+    """build_discuss_continuation_prompt の発言順情報テスト。"""
+
+    def test_includes_speaking_status_when_provided(self) -> None:
+        game = _create_game()
+        offset = len(game.log)
+        player = game.players[1]  # Bob
+        order = ("Alice", "Bob", "Charlie")
+        result = build_discuss_continuation_prompt(game, player, offset, speaking_order=order, current_speaker_index=1)
+        assert "発言状況" in result
+        assert "まだ発言していないプレイヤー" in result
+
+    def test_no_speaking_status_without_order(self) -> None:
+        game = _create_game()
+        offset = len(game.log)
+        player = game.players[1]  # Bob
+        result = build_discuss_continuation_prompt(game, player, offset)
+        assert "発言状況" not in result
