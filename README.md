@@ -110,7 +110,7 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | `GM_MODEL_NAME` | GM-AI（盤面整理AI）のモデル名 | `gpt-4o-mini` |
 | `GM_TEMPERATURE` | GM-AI の応答のランダム性（0.0〜2.0） | `0.3` |
 | `MAX_RECENT_STATEMENTS` | プレイヤー AI に渡す直近の発言ログ件数上限 | `20` |
-| `GM_MAX_RECENT_STATEMENTS` | GM-AI に渡す直近の発言ログ件数上限 | `30` |
+| `GM_MAX_RECENT_STATEMENTS` | GM-AI に渡す直近の発言ログ件数上限 | `20` |
 
 `OPENAI_API_KEY` が未設定の場合、起動時にエラーメッセージが表示されサーバーは起動しません。
 
