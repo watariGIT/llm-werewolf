@@ -218,14 +218,15 @@ def save_result(result: dict[str, Any], output_path: Path) -> None:
 
 
 def main() -> None:
-    load_dotenv()
-
     parser = argparse.ArgumentParser(description="LLM 人狼ベンチマーク")
     parser.add_argument("--games", type=int, default=10, help="実行するゲーム数 (デフォルト: 10)")
     parser.add_argument("--compare-random", action="store_true", help="RandomActionProvider との比較も実行")
     parser.add_argument("--random-only", action="store_true", help="Random のみ実行 (API KEY 不要)")
     parser.add_argument("--output", type=str, default=None, help="結果の JSON 出力先")
+    parser.add_argument("--env-file", default=".env", help="読み込む .env ファイルのパス (default: .env)")
     args = parser.parse_args()
+
+    load_dotenv(dotenv_path=args.env_file)
 
     # 出力先の決定（デフォルトはプロジェクトルート内の benchmark_results/）
     project_root = Path(__file__).resolve().parent.parent

@@ -33,6 +33,7 @@ uv run tox               # Run lint, type check, and tests
 uv run tox -e integration # Run integration tests (OPENAI_API_KEY required)
 uv run python -m llm_werewolf              # Start web server
 uv run python -m llm_werewolf --llm-debug  # Start with LLM prompt/response/token logging
+uv run python -m llm_werewolf --env-file .env.prod  # Specify env file to load
 ```
 
 ## Development Workflow
