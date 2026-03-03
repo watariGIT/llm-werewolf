@@ -285,7 +285,7 @@ class InteractiveGameEngine:
             self._notify_progress(player.name, "discuss")
             provider = self._providers[player.name]
             if order_names and hasattr(provider, "set_speaking_context"):
-                idx = order_names.index(player.name) if player.name in order_names else -1
+                idx = order_names.index(player.name)
                 provider.set_speaking_context(order_names, idx)
             result = provider.discuss(self._game, player)
             if result.thinking:
