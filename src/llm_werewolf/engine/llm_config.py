@@ -15,6 +15,7 @@ GM_DEFAULT_MODEL = "gpt-4o-mini"
 GM_DEFAULT_TEMPERATURE = 0.3
 
 DEFAULT_MAX_RECENT_STATEMENTS = 20
+GM_DEFAULT_MAX_RECENT_STATEMENTS = 20
 
 
 @dataclass(frozen=True)
@@ -57,13 +58,15 @@ class PromptConfig:
     """プロンプト生成に関する設定を保持する値オブジェクト。"""
 
     max_recent_statements: int = DEFAULT_MAX_RECENT_STATEMENTS
+    gm_max_recent_statements: int = GM_DEFAULT_MAX_RECENT_STATEMENTS
 
 
 def load_prompt_config() -> PromptConfig:
     """環境変数から PromptConfig を生成する。
 
     環境変数:
-        MAX_RECENT_STATEMENTS: 保持する直近の発言ログ件数（デフォルト: 20）
+        MAX_RECENT_STATEMENTS: プレイヤーAIが保持する直近の発言ログ件数（デフォルト: 20）
+        GM_MAX_RECENT_STATEMENTS: GM-AIが保持する直近の発言ログ件数（デフォルト: 30）
     """
     max_recent_str = os.environ.get("MAX_RECENT_STATEMENTS", "").strip()
     if max_recent_str:
@@ -73,9 +76,21 @@ def load_prompt_config() -> PromptConfig:
             raise ValueError(f"MAX_RECENT_STATEMENTS の値が不正です: {max_recent_str!r}")
         if max_recent < 0:
             raise ValueError(f"MAX_RECENT_STATEMENTS は 0 以上で指定してください: {max_recent}")
-        return PromptConfig(max_recent_statements=max_recent)
+    else:
+        max_recent = DEFAULT_MAX_RECENT_STATEMENTS
 
-    return PromptConfig()
+    gm_max_recent_str = os.environ.get("GM_MAX_RECENT_STATEMENTS", "").strip()
+    if gm_max_recent_str:
+        try:
+            gm_max_recent = int(gm_max_recent_str)
+        except ValueError:
+            raise ValueError(f"GM_MAX_RECENT_STATEMENTS の値が不正です: {gm_max_recent_str!r}")
+        if gm_max_recent < 0:
+            raise ValueError(f"GM_MAX_RECENT_STATEMENTS は 0 以上で指定してください: {gm_max_recent}")
+    else:
+        gm_max_recent = GM_DEFAULT_MAX_RECENT_STATEMENTS
+
+    return PromptConfig(max_recent_statements=max_recent, gm_max_recent_statements=gm_max_recent)
 
 
 def load_gm_config() -> LLMConfig:

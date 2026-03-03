@@ -85,7 +85,7 @@ src/llm_werewolf/
 |------|------|
 | `filter_log_entries` | 任意のログエントリ列をプレイヤー視点でフィルタリングして文字列を返す。`max_recent_statements` パラメータで発言ログの件数を制御可能（デフォルト: 制限なし）。`[思考]` ログは本人（`[思考] {name}:` の名前一致）のみ可視 |
 | `format_log_for_context` | プレイヤー視点でフィルタリングしたゲームログを生成（Step 2 の LLM コンテキスト用）。`max_recent_statements` パラメータで発言ログの件数を制御可能。イベントログ（投票・処刑・襲撃等）は常に保持され、発言ログのみが直近 N 件に制限される |
-| `format_public_log` | 全プレイヤーに見える公開ログのみを返す。GM-AI の入力用。`[思考]` ログは `_PRIVATE_PREFIXES` に含まれるため自動的に除外される |
+| `format_public_log` | 全プレイヤーに見える公開ログのみを返す。GM-AI の入力用。`[思考]` ログは `_PRIVATE_PREFIXES` に含まれるため自動的に除外される。`max_recent_statements` パラメータで発言ログの件数を制御可能（デフォルト: 制限なし）。イベントログ（投票・処刑・襲撃等）は常に保持される |
 
 ## アプリケーション層 (`engine/`)
 
@@ -109,14 +109,14 @@ src/llm_werewolf/
 | `calculate_execution_budget` | 生存者数と死亡者リストから処刑予算（吊り余裕）を計算する関数。人狼2人残/1人残の2シナリオで吊り余裕を算出する |
 | `ExecutionBudget` | 処刑予算（吊り余裕）情報の Pydantic モデル。alive_count・total_executions・margin_if_two_wolves・margin_if_one_wolf を保持する |
 | `AdviceOption` | おすすめ行動の1選択肢を表す Pydantic モデル。action（行動）・merit（メリット）・demerit（デメリット）・risk（リスクスコア1-10）・reward（リターンスコア1-10）を保持する |
-| `RoleAdvice` | 1役職分のおすすめ行動を表す Pydantic モデル。role（役職名）と options（`AdviceOption` のリスト、2〜3件）を保持する |
+| `RoleAdvice` | 1役職分のおすすめ行動を表す Pydantic モデル。role（役職名）と options（`AdviceOption` のリスト、2件）を保持する |
 | `GameAnalysis` | LLM が抽出する分析情報の Pydantic モデル（claims/contradictions/player_summaries/role_advice） |
 | `GameBoardState` | 確定情報と分析情報を統合した盤面情報の Pydantic モデル。処刑予算（`execution_budget`）を含む |
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
 | `load_llm_config` | 環境変数から `LLMConfig` を生成するファクトリ関数。`OPENAI_API_KEY` 未設定時は `ValueError` を送出 |
 | `load_gm_config` | GM-AI 用の `LLMConfig` を環境変数から生成するファクトリ関数。`GM_MODEL_NAME` / `GM_TEMPERATURE` でプレイヤー AI とは独立に指定可能。API キーは `OPENAI_API_KEY` を共有 |
-| `PromptConfig` | プロンプト生成に関する設定を保持する値オブジェクト。`max_recent_statements`（発言ログ件数上限）を管理 |
-| `load_prompt_config` | 環境変数から `PromptConfig` を生成するファクトリ関数。`MAX_RECENT_STATEMENTS` で発言ログ件数上限を設定可能（デフォルト: 20） |
+| `PromptConfig` | プロンプト生成に関する設定を保持する値オブジェクト。`max_recent_statements`（プレイヤーAI用発言ログ件数上限）と `gm_max_recent_statements`（GM-AI用発言ログ件数上限）を管理 |
+| `load_prompt_config` | 環境変数から `PromptConfig` を生成するファクトリ関数。`MAX_RECENT_STATEMENTS` でプレイヤーAIの発言ログ件数上限を設定可能（デフォルト: 20）。`GM_MAX_RECENT_STATEMENTS` でGM-AIの発言ログ件数上限を設定可能（デフォルト: 20） |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供。構造化出力の `target` が候補者リストに含まれない場合のフォールバックとしても使用される |
 | `prompts` | LLM 用プロンプトテンプレート生成。Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみ（共通ルール `_BASE_RULES` + 役職別指示 `_ROLE_INSTRUCTIONS` + 人格タグ解釈ルール `_PERSONALITY_TAG_RULES`）で構成し、同一役職のプレイヤーは常に同一のシステムプロンプトを受け取る。`_ROLE_INSTRUCTIONS` は役職の仕組み・制約に集中し、具体的な戦略アドバイスは GM-AI の動的提案に委譲する。人格特性はタグ形式（例: `personality: tone=polite, stance=aggressive, style=strategic`）でユーザーメッセージ側に含める。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。GM 要約に含まれる `role_advice` からプレイヤーの真の役職に対応するアドバイスを抽出し、risk/reward スコアと共に秘密情報として注入する。人格の `stance` に応じた戦略指向の指示（例: aggressive → 高リスク高リターン志向）もアドバイスに付加する。襲撃プロンプトには仲間の人狼情報を含める。議論プロンプトに `speaking_order` / `current_speaker_index` を渡すと発言済み/未発言プレイヤーを明示し、未発言者への言及を制約する。議論ラウンド2以降は `build_discuss_continuation_prompt` で差分コンテキストのみを渡し、会話履歴との重複を排除してトークン効率を改善する。差分プロンプトにも `max_recent_statements` による発言件数制限を適用可能 |
 | `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（タグキー: tone/stance/style/reactivity/volatility）・タグ値・説明文を保持する |

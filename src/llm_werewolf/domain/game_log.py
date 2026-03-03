@@ -129,14 +129,33 @@ def format_log_for_context(game: GameState, player_name: str, *, max_recent_stat
     return "\n".join(entry for _, entry in merged)
 
 
-def format_public_log(game: GameState) -> str:
+def format_public_log(game: GameState, *, max_recent_statements: int = -1) -> str:
     """全プレイヤーに見える公開ログのみを返す。GM-AI の入力用。
+
+    ``max_recent_statements`` が 0 以上の場合、発言ログ（``[発言]`` プレフィックス）を
+    直近 N 件に制限し、イベントログは常に全件保持する。
 
     Args:
         game: ゲーム状態
+        max_recent_statements: 保持する直近の発言ログ件数。負の値で全件保持（デフォルト）。
 
     Returns:
         公開ログ文字列（改行区切り）
     """
     public = [entry for entry in game.log if not any(entry.startswith(p) for p in _PRIVATE_PREFIXES)]
-    return "\n".join(public)
+    if max_recent_statements < 0:
+        return "\n".join(public)
+
+    events: list[tuple[int, str]] = []
+    statements: list[tuple[int, str]] = []
+    for i, entry in enumerate(public):
+        if entry.startswith(_STATEMENT_PREFIX):
+            statements.append((i, entry))
+        else:
+            events.append((i, entry))
+
+    if len(statements) > max_recent_statements:
+        statements = statements[-max_recent_statements:] if max_recent_statements > 0 else []
+
+    merged = sorted(events + statements, key=lambda x: x[0])
+    return "\n".join(entry for _, entry in merged)

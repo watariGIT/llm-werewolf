@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.game_log import format_public_log
-from llm_werewolf.engine.llm_config import LLMConfig
+from llm_werewolf.engine.llm_config import DEFAULT_MAX_RECENT_STATEMENTS, LLMConfig
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class RoleAdvice(BaseModel):
     """1役職分のおすすめ行動。"""
 
     role: str = Field(description="役職名（村人、占い師、霊媒師、狩人、狂人、人狼）")
-    options: list[AdviceOption] = Field(description="おすすめ行動の選択肢（2〜3件）")
+    options: list[AdviceOption] = Field(description="おすすめ行動の選択肢（2件）")
 
 
 class GameAnalysis(BaseModel):
@@ -227,7 +227,7 @@ _GM_SYSTEM_PROMPT = """\
 - 例: 「占い師COし、○○を黒と主張している」「○○への投票を主張し積極的に追及している」
 
 ### 4. role_advice（役職別おすすめ行動）
-- 6役職（村人、占い師、霊媒師、狩人、狂人、人狼）すべてについて、現在の盤面状況に応じたおすすめ行動を2〜3件提案
+- 6役職（村人、占い師、霊媒師、狩人、狂人、人狼）すべてについて、現在の盤面状況に応じたおすすめ行動を2件提案
 - 各行動には merit・demerit を1文ずつ、risk（1-10）・reward（1-10）を付記
 - 公開情報のみに基づいて提案すること（真の役職は不明なので、各役職が取りうる最善の行動を想定する）
 - 具体的なプレイヤー名を挙げて、盤面に即した具体的な提案をすること
@@ -235,40 +235,12 @@ _GM_SYSTEM_PROMPT = """\
 
 #### 各役職の戦略観点（アドバイス生成時に考慮すること）
 
-**村人:**
-- 吊り余裕の計算: 残り処刑可能回数と人狼残数を比較し、余裕がある/ないで戦略が変わる
-- 占いローラーのリスク: 偽物が狂人の場合（人狼0人排除+真占い喪失）は最悪、人狼の場合は許容範囲
-- グレー吊り: 占い対抗に狂人がいる可能性を考慮し、グレーから吊る方が効率的な場合もある
-- 情報の優先度: 占い結果 > 霊媒結果 > 議論での印象
-- 偽役職CO（身代わり戦略）: 真の役職者を人狼の襲撃から守る戦略もある
-
-**占い師:**
-- 占い先の優先度: 未確認のグレーを優先、情報が少ない相手を占う
-- 対抗占い師が出た場合: 対抗の占い先と被らないようにして情報量を最大化
-- 潜伏（COしない）: 襲撃を回避できるが、村の推理が進まないリスクがある
-
-**霊媒師:**
-- COタイミング: 処刑結果が出た翌朝にCOして結果を報告するのが基本
-- 占い対抗がある場合: 霊媒結果で占い師の真偽検証ができることを意識する
-
-**狩人:**
-- 占い対抗時のリスク計算: 占い2人対抗では1/2で偽物を護衛してしまう。霊媒師1人のみCOなら確実に村側を護衛できる
-- 護衛優先度: 霊媒師（1人のみCO）> 信頼度の高い占い師 > 有力な推理をしている村人
-- 護衛成功（GJ）後: 同じ相手を護衛し続けるか、別の相手に変えるかの判断
-- COしない原則: 基本はCOしない（襲撃対象になるリスク）。例外は自分が処刑されそうな時
-
-**狂人:**
-- 偽占い師CO: 村人に黒判定を出して混乱させる（人狼に黒を出すのは利敵行為）
-- 3人占いCOリスク: 人狼も占いCOした場合はローラーリスク。撤回や霊媒COに切り替える選択肢
-- 終盤の立ち回り: あえて怪しい発言で投票を人狼から自分に向ける身代わり戦略
-- 人狼特定時の勝負手: 人狼と票を合わせて多数派を作る
-
-**人狼:**
-- 議論戦略: 潜伏（村人として振る舞う）か、占いCO（偽占い師として名乗り出る）か
-  - 占いCO判断基準: 狂人が既にCOしているか、3人COローラーリスクはあるか
-- 襲撃先: 占い師狙い、霊媒師狙い、占い済み白確定者狙い、グレー狙い
-  - 注意: 偽占い（味方の狂人）が黒判定を出した相手を噛むと偽占いであることがバレる
-- 投票: 仲間の人狼をかばいすぎない（不自然な庇い立ては疑われる）
+**村人:** 吊り余裕・占いローラーリスク（偽が狂人=最悪/人狼=許容）・情報優先度（占い>霊媒>議論）を考慮
+**占い師:** 未確認グレーを優先。対抗との占い先分散で情報最大化。潜伏も選択肢
+**霊媒師:** 処刑結果が出た翌朝にCOし、霊媒結果で占い師の真偽検証を意識
+**狩人:** 2対抗時は1/2で偽護衛リスク。優先度: 霊媒師（1人CO）>信頼占い>村人。基本COしない
+**狂人:** 偽占いCO（村人に黒判定/人狼には出さない）。3COリスクなら霊媒COや撤回も検討。終盤身代わり戦略
+**人狼:** 潜伏vs占いCO判断（狂人CO済みか/3COローラーリスク）。狙い: 占い師>霊媒師>白確定者。仲間をかばいすぎない
 
 #### risk/reward スコアの例
 - 霊媒師を護衛（1人のみCO）→ risk: 2, reward: 7
@@ -283,9 +255,9 @@ _GM_SYSTEM_PROMPT = """\
 - role_advice は6役職すべてを含めてください"""
 
 
-def _build_gm_user_prompt(game: GameState, budget: ExecutionBudget) -> str:
+def _build_gm_user_prompt(game: GameState, budget: ExecutionBudget, *, max_recent_statements: int = -1) -> str:
     """GM-AI 用のユーザープロンプトを生成する。"""
-    public_log = format_public_log(game)
+    public_log = format_public_log(game, max_recent_statements=max_recent_statements)
     alive_names = "、".join(p.name for p in game.alive_players)
     budget_section = (
         f"\n\n## 処刑予算（吊り余裕）\n"
@@ -305,12 +277,13 @@ def _build_gm_user_prompt(game: GameState, budget: ExecutionBudget) -> str:
 class GameMasterProvider:
     """GM-AI プロバイダー。ゲーム状態を要約し、JSON 文字列を返す。"""
 
-    def __init__(self, config: LLMConfig) -> None:
+    def __init__(self, config: LLMConfig, max_recent_statements: int = DEFAULT_MAX_RECENT_STATEMENTS) -> None:
         self._llm = ChatOpenAI(
             model=config.model_name,
             temperature=config.temperature,
             api_key=SecretStr(config.api_key),
         )
+        self._max_recent_statements = max_recent_statements
         self.last_input_tokens: int = 0
         self.last_output_tokens: int = 0
         self.last_cache_read_input_tokens: int = 0
@@ -335,7 +308,7 @@ class GameMasterProvider:
         alive, dead, vote_history = extract_board_info(game)
         budget = calculate_execution_budget(len(alive), dead)
 
-        analysis = self._call_llm_analysis(game, budget)
+        analysis = self._call_llm_analysis(game, budget, max_recent_statements=self._max_recent_statements)
 
         board = GameBoardState(
             alive=alive,
@@ -350,14 +323,16 @@ class GameMasterProvider:
 
         return board.model_dump_json(ensure_ascii=False)
 
-    def _call_llm_analysis(self, game: GameState, budget: ExecutionBudget) -> GameAnalysis | None:
+    def _call_llm_analysis(
+        self, game: GameState, budget: ExecutionBudget, *, max_recent_statements: int = -1
+    ) -> GameAnalysis | None:
         """LLM を呼び出して GameAnalysis を構造化出力で取得する。
 
         API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
         リトライ上限到達時は None を返す。
         """
         structured_llm = self._llm.with_structured_output(GameAnalysis, include_raw=True)
-        user_prompt = _build_gm_user_prompt(game, budget)
+        user_prompt = _build_gm_user_prompt(game, budget, max_recent_statements=max_recent_statements)
         messages = [
             SystemMessage(content=_GM_SYSTEM_PROMPT),
             HumanMessage(content=user_prompt),

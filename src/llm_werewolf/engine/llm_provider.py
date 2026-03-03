@@ -43,13 +43,15 @@ class CandidateDecision(BaseModel):
     """候補者選択の構造化レスポンス。"""
 
     target: str = Field(description="選択した候補者の名前（候補者リストから正確に1つ選択）")
-    reason: str = Field(description="選択理由（1文）")
+    reason: str = Field(description="選択理由（1文以内、簡潔に）")
 
 
 class DiscussionResponse(BaseModel):
     """議論フェーズの構造化レスポンス。"""
 
-    thinking: str = Field(description="あなたの内部思考（戦略・推理・疑い等）。他のプレイヤーには見えません。")
+    thinking: str = Field(
+        description="あなたの内部思考（戦略・推理・疑い等）。2〜3文以内で簡潔に。他のプレイヤーには見えません。"
+    )
     message: str = Field(description="議論での発言内容（1〜3文）。他のプレイヤー全員に公開されます。")
 
 

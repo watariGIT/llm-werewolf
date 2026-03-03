@@ -4,6 +4,7 @@ from llm_werewolf.engine.llm_config import (
     DEFAULT_MAX_RECENT_STATEMENTS,
     DEFAULT_MODEL_NAME,
     DEFAULT_TEMPERATURE,
+    GM_DEFAULT_MAX_RECENT_STATEMENTS,
     GM_DEFAULT_MODEL,
     GM_DEFAULT_TEMPERATURE,
     PromptConfig,
@@ -157,11 +158,14 @@ class TestPromptConfig:
     def test_default_values(self) -> None:
         config = PromptConfig()
         assert config.max_recent_statements == DEFAULT_MAX_RECENT_STATEMENTS
+        assert config.gm_max_recent_statements == GM_DEFAULT_MAX_RECENT_STATEMENTS
 
     def test_load_with_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("MAX_RECENT_STATEMENTS", raising=False)
+        monkeypatch.delenv("GM_MAX_RECENT_STATEMENTS", raising=False)
         config = load_prompt_config()
         assert config.max_recent_statements == DEFAULT_MAX_RECENT_STATEMENTS
+        assert config.gm_max_recent_statements == GM_DEFAULT_MAX_RECENT_STATEMENTS
 
     def test_load_with_custom_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MAX_RECENT_STATEMENTS", "10")
@@ -180,6 +184,26 @@ class TestPromptConfig:
 
     def test_load_with_negative_value_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MAX_RECENT_STATEMENTS", "-1")
+        with pytest.raises(ValueError, match="0 以上"):
+            load_prompt_config()
+
+    def test_gm_load_with_custom_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GM_MAX_RECENT_STATEMENTS", "15")
+        config = load_prompt_config()
+        assert config.gm_max_recent_statements == 15
+
+    def test_gm_load_with_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GM_MAX_RECENT_STATEMENTS", "0")
+        config = load_prompt_config()
+        assert config.gm_max_recent_statements == 0
+
+    def test_gm_load_with_invalid_value_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GM_MAX_RECENT_STATEMENTS", "xyz")
+        with pytest.raises(ValueError, match="GM_MAX_RECENT_STATEMENTS の値が不正です"):
+            load_prompt_config()
+
+    def test_gm_load_with_negative_value_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GM_MAX_RECENT_STATEMENTS", "-5")
         with pytest.raises(ValueError, match="0 以上"):
             load_prompt_config()
 

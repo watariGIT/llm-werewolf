@@ -293,6 +293,58 @@ class TestFormatPublicLog:
         result = format_public_log(game)
         assert result == ""
 
+    def test_max_recent_statements_limits_statements(self) -> None:
+        """max_recent_statements で発言ログを直近N件に制限する。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (Player(name="Alice", role=Role.VILLAGER),)
+        game = GameState(
+            players=players,
+            log=(
+                "[発言] Alice: 発言1",
+                "[発言] Alice: 発言2",
+                "[発言] Alice: 発言3",
+                "[投票] Alice → Alice",
+            ),
+        )
+        result = format_public_log(game, max_recent_statements=2)
+        assert "発言1" not in result
+        assert "発言2" in result
+        assert "発言3" in result
+        assert "[投票]" in result
+
+    def test_max_recent_statements_zero_removes_all_statements(self) -> None:
+        """max_recent_statements=0 で全発言が除外される。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (Player(name="Alice", role=Role.VILLAGER),)
+        game = GameState(
+            players=players,
+            log=(
+                "[発言] Alice: こんにちは",
+                "[投票] Alice → Alice",
+            ),
+        )
+        result = format_public_log(game, max_recent_statements=0)
+        assert "[発言]" not in result
+        assert "[投票]" in result
+
+    def test_max_recent_statements_negative_keeps_all(self) -> None:
+        """負の値を指定した場合は全件保持する。"""
+        from llm_werewolf.domain.player import Player
+        from llm_werewolf.domain.value_objects import Role
+
+        players = (Player(name="Alice", role=Role.VILLAGER),)
+        game = GameState(
+            players=players,
+            log=tuple(f"[発言] Alice: 発言{i}" for i in range(5)),
+        )
+        result = format_public_log(game, max_recent_statements=-1)
+        for i in range(5):
+            assert f"発言{i}" in result
+
 
 class TestFilterLogEntries:
     """filter_log_entries のテスト。"""

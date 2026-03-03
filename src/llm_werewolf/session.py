@@ -113,7 +113,9 @@ class GameSessionStore:
             }
             try:
                 gm_config = load_gm_config()
-                gm_provider = GameMasterProvider(gm_config)
+                gm_provider = GameMasterProvider(
+                    gm_config, max_recent_statements=prompt_config.gm_max_recent_statements
+                )
             except ValueError:
                 pass
         else:
@@ -204,7 +206,9 @@ class InteractiveSessionStore:
             }
             try:
                 gm_config = load_gm_config()
-                gm_provider = GameMasterProvider(gm_config)
+                gm_provider = GameMasterProvider(
+                    gm_config, max_recent_statements=prompt_config.gm_max_recent_statements
+                )
             except ValueError:
                 pass
         else:
