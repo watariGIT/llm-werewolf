@@ -7,10 +7,20 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
 from llm_werewolf.engine.prompts import (
+    _SITUATION_ENDGAME,
+    _SITUATION_FIRST_DAY,
+    _SITUATION_GUARD_SUCCESS,
+    _SITUATION_SUSPECTED,
+    NUMERIC_TRAIT_CATEGORIES,
+    REACTIVITY_LEVELS,
     TRAIT_CATEGORIES,
+    VOLATILITY_LEVELS,
     _build_context,
     _build_private_info,
+    _build_situation_emotion_hint,
     _build_speaking_status,
+    _detect_situation,
+    _extract_numeric_trait,
     _extract_role_advice,
     assign_personalities,
     build_attack_prompt,
@@ -397,13 +407,15 @@ class TestPersonalitySystem:
         assert len(result) == 8
 
     def test_assign_personalities_each_has_all_categories(self) -> None:
-        """各AIに全カテゴリから1つずつ特性が割り当てられること。"""
+        """各AIに全カテゴリから1つずつ特性が割り当てられること（数値感情軸を含む）。"""
         rng = random.Random(42)
         result = assign_personalities(4, rng)
         for traits in result:
-            assert len(traits) == len(TRAIT_CATEGORIES)
+            assert len(traits) == len(TRAIT_CATEGORIES) + len(NUMERIC_TRAIT_CATEGORIES)
             categories = {t.category for t in traits}
-            expected_categories = {cat[0].category for cat in TRAIT_CATEGORIES}
+            expected_categories = {cat[0].category for cat in TRAIT_CATEGORIES} | {
+                cat[0].category for cat in NUMERIC_TRAIT_CATEGORIES
+            }
             assert categories == expected_categories
 
     def test_assign_personalities_deterministic_with_seed(self) -> None:
@@ -1030,3 +1042,233 @@ class TestBuildDiscussContinuationPromptWithSpeakingOrder:
         player = game.players[1]  # Bob
         result = build_discuss_continuation_prompt(game, player, offset)
         assert "発言状況" not in result
+
+
+class TestNumericEmotionalTraits:
+    """数値感情特性（reactivity/volatility）のテスト。"""
+
+    def test_reactivity_levels_has_nine_options(self) -> None:
+        """REACTIVITY_LEVELS が1〜9の9オプションを持つこと。"""
+        assert len(REACTIVITY_LEVELS) == 9
+        tags = [t.tag for t in REACTIVITY_LEVELS]
+        assert tags == [str(i) for i in range(1, 10)]
+
+    def test_volatility_levels_has_nine_options(self) -> None:
+        """VOLATILITY_LEVELS が1〜9の9オプションを持つこと。"""
+        assert len(VOLATILITY_LEVELS) == 9
+        tags = [t.tag for t in VOLATILITY_LEVELS]
+        assert tags == [str(i) for i in range(1, 10)]
+
+    def test_numeric_trait_categories_has_two_categories(self) -> None:
+        """NUMERIC_TRAIT_CATEGORIES に reactivity と volatility の2カテゴリがあること。"""
+        assert len(NUMERIC_TRAIT_CATEGORIES) == 2
+        categories = {cat[0].category for cat in NUMERIC_TRAIT_CATEGORIES}
+        assert categories == {"reactivity", "volatility"}
+
+    def test_assign_personalities_includes_numeric_traits(self) -> None:
+        """assign_personalities が reactivity と volatility を含む特性を返すこと。"""
+        rng = random.Random(42)
+        result = assign_personalities(4, rng)
+        for traits in result:
+            categories = {t.category for t in traits}
+            assert "reactivity" in categories
+            assert "volatility" in categories
+
+    def test_build_personality_includes_numeric_traits(self) -> None:
+        """build_personality が reactivity と volatility を含む出力を返すこと。"""
+        rng = random.Random(42)
+        traits = assign_personalities(1, rng)[0]
+        result = build_personality(traits)
+        assert "reactivity=" in result
+        assert "volatility=" in result
+
+    def test_system_prompt_contains_numeric_trait_rules(self) -> None:
+        """システムプロンプトに reactivity と volatility の解釈ルールが含まれること。"""
+        result = build_system_prompt(Role.VILLAGER)
+        assert "reactivity" in result
+        assert "volatility" in result
+
+
+class TestAssignPersonalitiesWithShuffle:
+    """シャッフル方式の多様性テスト。"""
+
+    def test_nine_players_have_unique_reactivity(self) -> None:
+        """9人に割り当てると reactivity の値が全員異なること。"""
+        rng = random.Random(42)
+        result = assign_personalities(9, rng)
+        reactivity_values = []
+        for traits in result:
+            for t in traits:
+                if t.category == "reactivity":
+                    reactivity_values.append(int(t.tag))
+        assert len(set(reactivity_values)) == 9
+
+    def test_nine_players_have_unique_volatility(self) -> None:
+        """9人に割り当てると volatility の値が全員異なること。"""
+        rng = random.Random(42)
+        result = assign_personalities(9, rng)
+        volatility_values = []
+        for traits in result:
+            for t in traits:
+                if t.category == "volatility":
+                    volatility_values.append(int(t.tag))
+        assert len(set(volatility_values)) == 9
+
+    def test_deterministic_with_seed(self) -> None:
+        """同じシードで同じシャッフル結果が返ること。"""
+        result1 = assign_personalities(9, random.Random(99))
+        result2 = assign_personalities(9, random.Random(99))
+        assert result1 == result2
+
+
+class TestDetectSituation:
+    """_detect_situation 関数のテスト。"""
+
+    def test_first_day_returns_first_day_situation(self) -> None:
+        """1日目に _SITUATION_FIRST_DAY を返すこと。"""
+        game = _create_game()
+        assert game.day == 1
+        player = game.players[0]
+        assert _detect_situation(game, player) == _SITUATION_FIRST_DAY
+
+    def test_endgame_with_four_or_fewer_alive(self) -> None:
+        """生存者4人以下で _SITUATION_ENDGAME を返すこと。"""
+        game = _create_game()
+        # Day 2 にする
+        game = dc_replace(game, day=2)
+        # 5人死亡（残り4人）
+        dead_players = tuple(p.killed() if i < 5 else p for i, p in enumerate(game.players))
+        game = dc_replace(game, players=dead_players)
+        player = game.alive_players[0]
+        assert _detect_situation(game, player) == _SITUATION_ENDGAME
+
+    def test_suspected_with_two_votes_against(self) -> None:
+        """直近ログに自分への投票が2票以上で _SITUATION_SUSPECTED を返すこと。"""
+        game = _create_game()
+        game = dc_replace(game, day=2)
+        # 生存者を十分に残す（5人以上）
+        player = game.players[1]  # Bob
+        game = game.add_log(f"[投票] Alice → {player.name}")
+        game = game.add_log(f"[投票] Charlie → {player.name}")
+        assert _detect_situation(game, player) == _SITUATION_SUSPECTED
+
+    def test_guard_success_detected(self) -> None:
+        """護衛成功ログがあれば _SITUATION_GUARD_SUCCESS を返すこと。"""
+        game = _create_game()
+        game = dc_replace(game, day=2)
+        game = game.add_log("[襲撃] 今夜は誰も襲撃されなかった")
+        player = game.players[1]  # Bob
+        assert _detect_situation(game, player) == _SITUATION_GUARD_SUCCESS
+
+    def test_guard_success_not_detected_after_discussion(self) -> None:
+        """護衛成功ログより後に発言ログがある場合は検出されないこと。"""
+        game = _create_game()
+        game = dc_replace(game, day=2)
+        game = game.add_log("[襲撃] 今夜は誰も襲撃されなかった")
+        game = game.add_log("[発言] Alice: テスト発言")
+        player = game.players[1]  # Bob
+        # 発言ログで中断するため護衛成功は検出されない
+        assert _detect_situation(game, player) is None
+
+    def test_normal_situation_returns_none(self) -> None:
+        """特筆すべき状況がなければ None を返すこと。"""
+        game = _create_game()
+        game = dc_replace(game, day=2)
+        player = game.players[0]
+        assert _detect_situation(game, player) is None
+
+    def test_first_day_takes_priority_over_endgame(self) -> None:
+        """1日目は終盤より優先されること。"""
+        game = _create_game()
+        assert game.day == 1
+        dead_players = tuple(p.killed() if i < 5 else p for i, p in enumerate(game.players))
+        game = dc_replace(game, players=dead_players)
+        player = game.alive_players[0]
+        assert _detect_situation(game, player) == _SITUATION_FIRST_DAY
+
+
+class TestExtractNumericTrait:
+    """_extract_numeric_trait 関数のテスト。"""
+
+    def test_extracts_reactivity(self) -> None:
+        """personality タグから reactivity の数値を抽出できること。"""
+        tag = "personality: tone=polite, stance=aggressive, style=strategic, reactivity=7, volatility=3"
+        assert _extract_numeric_trait(tag, "reactivity") == 7
+
+    def test_extracts_volatility(self) -> None:
+        """personality タグから volatility の数値を抽出できること。"""
+        tag = "personality: tone=polite, reactivity=5, volatility=9"
+        assert _extract_numeric_trait(tag, "volatility") == 9
+
+    def test_returns_none_for_missing_category(self) -> None:
+        """存在しないカテゴリには None を返すこと。"""
+        tag = "personality: tone=polite, stance=aggressive"
+        assert _extract_numeric_trait(tag, "reactivity") is None
+
+    def test_returns_none_for_empty_tag(self) -> None:
+        """空文字列には None を返すこと。"""
+        assert _extract_numeric_trait("", "reactivity") is None
+
+
+class TestBuildSituationEmotionHint:
+    """_build_situation_emotion_hint 関数のテスト。"""
+
+    def test_normal_situation_returns_empty(self) -> None:
+        """通常状況では空文字列を返すこと。"""
+        game = _create_game()
+        game = dc_replace(game, day=2)
+        player = game.players[0]
+        result = _build_situation_emotion_hint(game, player, "")
+        assert result == ""
+
+    def test_first_day_with_personality_includes_hint(self) -> None:
+        """初日 + personality_tag あり → 状況と感情ヒントが含まれること。"""
+        game = _create_game()
+        player = game.players[0]
+        tag = "personality: tone=polite, stance=aggressive, style=strategic, reactivity=8, volatility=6"
+        result = _build_situation_emotion_hint(game, player, tag)
+        assert "## 現在の状況" in result
+        assert _SITUATION_FIRST_DAY in result
+        assert "reactivity=8" in result
+        assert "volatility=6" in result
+
+    def test_without_personality_tag_returns_situation_only(self) -> None:
+        """personality_tag なし → 状況説明のみで感情パラメータ部分がないこと。"""
+        game = _create_game()
+        player = game.players[0]
+        result = _build_situation_emotion_hint(game, player, "")
+        # day==1 なので状況は返るが感情パラメータヒントはない
+        assert "## 現在の状況" in result
+        assert "reactivity" not in result
+
+    def test_endgame_situation_included(self) -> None:
+        """終盤状況が検出されてヒントに含まれること。"""
+        game = _create_game()
+        game = dc_replace(game, day=2)
+        dead_players = tuple(p.killed() if i < 5 else p for i, p in enumerate(game.players))
+        game = dc_replace(game, players=dead_players)
+        player = game.alive_players[0]
+        tag = "personality: reactivity=3, volatility=2"
+        result = _build_situation_emotion_hint(game, player, tag)
+        assert _SITUATION_ENDGAME in result
+
+
+class TestBuildDiscussPromptWithSituation:
+    """build_discuss_prompt の状況ヒント注入テスト。"""
+
+    def test_first_day_prompt_contains_situation(self) -> None:
+        """初日のプロンプトに '## 現在の状況' が含まれること。"""
+        game = _create_game()
+        player = game.players[0]
+        result = build_discuss_prompt(game, player)
+        assert "## 現在の状況" in result
+        assert _SITUATION_FIRST_DAY in result
+
+    def test_normal_day_prompt_without_situation_has_no_section(self) -> None:
+        """通常の2日目プロンプトには状況セクションが含まれないこと（状況が検出されない場合）。"""
+        game = _create_game()
+        game = dc_replace(game, day=2)
+        player = game.players[0]
+        # 通常状況（投票なし・護衛成功なし）
+        result = build_discuss_prompt(game, player)
+        assert "## 現在の状況" not in result
