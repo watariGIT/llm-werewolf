@@ -38,3 +38,7 @@ class ActionProvider(Protocol):
     def guard(self, game: GameState, knight: Player, candidates: tuple[Player, ...]) -> str:
         """護衛対象プレイヤー名を返す。"""
         ...
+
+    def set_speaking_context(self, speaking_order: tuple[str, ...], current_speaker_index: int) -> None:
+        """発言順と現在の発言者位置を設定する。デフォルト実装は何もしない。"""
+        pass
