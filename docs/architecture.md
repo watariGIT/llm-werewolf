@@ -119,9 +119,15 @@ src/llm_werewolf/
 | `load_prompt_config` | 環境変数から `PromptConfig` を生成するファクトリ関数。`MAX_RECENT_STATEMENTS` で発言ログ件数上限を設定可能（デフォルト: 20） |
 | `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供。構造化出力の `target` が候補者リストに含まれない場合のフォールバックとしても使用される |
 | `prompts` | LLM 用プロンプトテンプレート生成。Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみ（共通ルール `_BASE_RULES` + 役職別指示 `_ROLE_INSTRUCTIONS` + 人格タグ解釈ルール `_PERSONALITY_TAG_RULES`）で構成し、同一役職のプレイヤーは常に同一のシステムプロンプトを受け取る。`_ROLE_INSTRUCTIONS` は役職の仕組み・制約に集中し、具体的な戦略アドバイスは GM-AI の動的提案に委譲する。人格特性はタグ形式（例: `personality: tone=polite, stance=aggressive, style=strategic`）でユーザーメッセージ側に含める。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。GM 要約に含まれる `role_advice` からプレイヤーの真の役職に対応するアドバイスを抽出し、risk/reward スコアと共に秘密情報として注入する。人格の `stance` に応じた戦略指向の指示（例: aggressive → 高リスク高リターン志向）もアドバイスに付加する。襲撃プロンプトには仲間の人狼情報を含める。議論プロンプトに `speaking_order` / `current_speaker_index` を渡すと発言済み/未発言プレイヤーを明示し、未発言者への言及を制約する。議論ラウンド2以降は `build_discuss_continuation_prompt` で差分コンテキストのみを渡し、会話履歴との重複を排除してトークン効率を改善する。差分プロンプトにも `max_recent_statements` による発言件数制限を適用可能 |
-| `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（タグキー: tone/stance/style）・タグ値・説明文を保持する |
-| `assign_personalities` | AI人数分の特性組み合わせを生成する関数。各特性軸からランダムに1つ選択し、人格のバリエーションを作る |
-| `build_personality` | 特性リストから人格タグ文字列（例: `personality: tone=polite, stance=aggressive, style=strategic`）を組み立てる関数 |
+| `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（タグキー: tone/stance/style/reactivity/volatility）・タグ値・説明文を保持する |
+| `assign_personalities` | AI人数分の特性組み合わせを生成する関数。カテゴリ特性軸（tone/stance/style）は独立にランダム選択し、数値感情軸（reactivity/volatility）はシャッフルして重複なく割り当てることでプレイヤー間の多様性を保証する |
+| `build_personality` | 特性リストから人格タグ文字列（例: `personality: tone=polite, stance=aggressive, style=strategic, reactivity=7, volatility=3`）を組み立てる関数 |
+| `REACTIVITY_LEVELS` | 感情反応強度の数値トレイト定義（1〜9の9オプション）。1=感情を抑えた冷静な表現、9=感情を強く外に出す表現 |
+| `VOLATILITY_LEVELS` | 感情変動レベルの数値トレイト定義（1〜9の9オプション）。1=安定・一貫した感情表現、9=激しい変化・予測不能な感情 |
+| `NUMERIC_TRAIT_CATEGORIES` | 数値感情特性軸のタプル（REACTIVITY_LEVELS, VOLATILITY_LEVELS）。シャッフル割り当て対象 |
+| `_detect_situation` | 現在のゲーム状況を検出して説明文字列を返す内部関数。初日・終盤（生存者4人以下）・疑われている（直近2票以上）・護衛成功の4状況を検出する |
+| `_extract_numeric_trait` | 人格タグ文字列から指定カテゴリの数値を抽出するヘルパー関数 |
+| `_build_situation_emotion_hint` | 状況と感情パラメータ（reactivity/volatility）に基づいた発言ヒントを生成する内部関数（議論プロンプト専用）。`build_discuss_prompt` から呼ばれる |
 | `ActionMetrics` | 1回のアクション呼び出しのメトリクス（アクション種別・プレイヤー名・レイテンシ・入力トークン数・出力トークン数・キャッシュ済み入力トークン数）を保持するデータクラス |
 | `GameMetrics` | 1ゲーム分のメトリクスを集約するデータクラス。`total_api_calls` / `average_latency` / `total_input_tokens` / `total_output_tokens` / `total_tokens` / `total_cache_read_input_tokens` プロパティで統計を提供。`estimated_cost_usd(model_name)` メソッドでモデル別の推定コストを算出（キャッシュ割引を反映） |
 | `MetricsCollectingProvider` | ActionProvider のデコレータ。内部の Provider をラップし、各呼び出しのレイテンシ・トークン使用量・キャッシュトークン数を計測して `GameMetrics` に記録する。内部 Provider の `last_input_tokens` / `last_output_tokens` / `last_cache_read_input_tokens` 属性からトークン情報を取得。`last_thinking` プロパティで内部 Provider の思考を透過的に公開 |

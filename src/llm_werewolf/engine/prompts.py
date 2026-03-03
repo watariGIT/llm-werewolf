@@ -102,11 +102,27 @@ TRAIT_CATEGORIES: tuple[tuple[PersonalityTrait, ...], ...] = (
     THINKING_STYLES,
 )
 
+# --- 数値感情特性軸の定義 ---
+# 感情反応強度: 1=感情を抑えた冷静な表現 / 9=感情を強く外に出す表現
+REACTIVITY_LEVELS: tuple[PersonalityTrait, ...] = tuple(
+    PersonalityTrait(category="reactivity", tag=str(i), description=f"感情反応強度 {i}/9") for i in range(1, 10)
+)
+# 感情変動レベル: 1=安定・一貫した感情表現 / 9=激しい変化・予測不能な感情
+VOLATILITY_LEVELS: tuple[PersonalityTrait, ...] = tuple(
+    PersonalityTrait(category="volatility", tag=str(i), description=f"感情変動 {i}/9") for i in range(1, 10)
+)
+NUMERIC_TRAIT_CATEGORIES: tuple[tuple[PersonalityTrait, ...], ...] = (
+    REACTIVITY_LEVELS,
+    VOLATILITY_LEVELS,
+)
+
 
 def assign_personalities(ai_count: int, rng: random.Random) -> list[tuple[PersonalityTrait, ...]]:
     """各AIプレイヤーに特性の組み合わせを割り当てる。
 
-    各特性軸からランダムに1つずつ選択し、AI人数分の組み合わせを生成する。
+    カテゴリ特性軸（tone/stance/style）は独立にランダム選択し、
+    数値感情軸（reactivity/volatility）はシャッフルして重複なく割り当てることで
+    プレイヤー間の多様性を保証する。
 
     Args:
         ai_count: AIプレイヤーの人数
@@ -115,11 +131,15 @@ def assign_personalities(ai_count: int, rng: random.Random) -> list[tuple[Person
     Returns:
         AI人数分の特性タプルのリスト
     """
-    personalities: list[tuple[PersonalityTrait, ...]] = []
-    for _ in range(ai_count):
-        traits = tuple(rng.choice(category) for category in TRAIT_CATEGORIES)
-        personalities.append(traits)
-    return personalities
+    personalities: list[list[PersonalityTrait]] = [
+        [rng.choice(category) for category in TRAIT_CATEGORIES] for _ in range(ai_count)
+    ]
+    for numeric_category in NUMERIC_TRAIT_CATEGORIES:
+        shuffled = list(numeric_category)
+        rng.shuffle(shuffled)
+        for i in range(ai_count):
+            personalities[i].append(shuffled[i % len(shuffled)])
+    return [tuple(traits) for traits in personalities]
 
 
 def build_personality(traits: tuple[PersonalityTrait, ...]) -> str:
@@ -132,7 +152,7 @@ def build_personality(traits: tuple[PersonalityTrait, ...]) -> str:
         traits: 特性のタプル
 
     Returns:
-        人格タグ文字列（例: "personality: tone=polite, stance=aggressive, style=strategic"）
+        人格タグ文字列（例: "personality: tone=polite, stance=aggressive, style=strategic, reactivity=7, volatility=3"）
     """
     tag_parts = ", ".join(f"{t.category}={t.tag}" for t in traits)
     return f"personality: {tag_parts}"
@@ -170,6 +190,14 @@ def _build_personality_tag_rules() -> str:
         category = category_traits[0].category
         tag_descriptions = " / ".join(f"{t.tag}={t.description}" for t in category_traits)
         lines.append(f"- {category}: {tag_descriptions}")
+    lines.append(
+        "- reactivity: 1〜9の数値。9に近いほど感情を強く外に表現し（怒り・悲しみ・喜びを率直に出す）、"
+        "1に近いほど感情を抑えた冷静な発言をする"
+    )
+    lines.append(
+        "- volatility: 1〜9の数値。9に近いほど感情の波が激しく発言ごとに変化しやすい、"
+        "1に近いほど安定した一貫した感情表現をする"
+    )
     return "\n".join(lines)
 
 
@@ -344,6 +372,90 @@ def _extract_stance_guidance(personality_tag: str) -> str:
         if f"stance={stance}" in personality_tag:
             return guidance
     return ""
+
+
+_SITUATION_FIRST_DAY = "初日（情報がない状況）"
+_SITUATION_ENDGAME = "終盤（残り人数が少なく一手が勝敗を左右する状況）"
+_SITUATION_SUSPECTED = "複数のプレイヤーから疑われている状況"
+_SITUATION_GUARD_SUCCESS = "昨夜誰も死ななかった（護衛成功の可能性がある状況）"
+
+
+def _detect_situation(game: GameState, player: Player) -> str | None:
+    """現在のゲーム状況を検出して説明文を返す。
+
+    複数条件が重なる場合は優先度の高い順（初日 > 終盤 > 疑われ > 護衛成功）で返す。
+
+    Args:
+        game: ゲーム状態
+        player: 視点プレイヤー
+
+    Returns:
+        状況の説明文字列。特筆すべき状況がなければ None。
+    """
+    if game.day == 1:
+        return _SITUATION_FIRST_DAY
+
+    if len(game.alive_players) <= 4:
+        return _SITUATION_ENDGAME
+
+    recent_votes_against = sum(1 for e in game.log[-30:] if e.startswith("[投票]") and f"→ {player.name}" in e)
+    if recent_votes_against >= 2:
+        return _SITUATION_SUSPECTED
+
+    for entry in reversed(game.log[-20:]):
+        if entry == "[襲撃] 今夜は誰も襲撃されなかった":
+            return _SITUATION_GUARD_SUCCESS
+        if entry.startswith("[発言]") or entry.startswith("[処刑]"):
+            break
+
+    return None
+
+
+def _extract_numeric_trait(personality_tag: str, category: str) -> int | None:
+    """人格タグ文字列から指定カテゴリの数値を抽出する。
+
+    Args:
+        personality_tag: 人格タグ文字列（例: "personality: tone=polite, reactivity=7"）
+        category: 抽出するカテゴリ名
+
+    Returns:
+        整数値。該当なしまたはパース失敗の場合は None。
+    """
+    for part in personality_tag.split(","):
+        part = part.strip()
+        if part.startswith(f"{category}="):
+            try:
+                return int(part.removeprefix(f"{category}="))
+            except ValueError:
+                return None
+    return None
+
+
+def _build_situation_emotion_hint(game: GameState, player: Player, personality_tag: str) -> str:
+    """状況と感情パラメータに基づいた発言ヒントを生成する（議論プロンプト専用）。
+
+    Args:
+        game: ゲーム状態
+        player: 視点プレイヤー
+        personality_tag: 人格タグ文字列（reactivity/volatility の数値を含む）
+
+    Returns:
+        状況ヒント文字列。特筆すべき状況がなければ空文字列。
+    """
+    situation = _detect_situation(game, player)
+    if not situation:
+        return ""
+
+    reactivity = _extract_numeric_trait(personality_tag, "reactivity")
+    volatility = _extract_numeric_trait(personality_tag, "volatility")
+
+    lines = [f"## 現在の状況\n{situation}"]
+    if reactivity is not None and volatility is not None:
+        lines.append(
+            f"あなたの感情パラメータ（reactivity={reactivity}, volatility={volatility}）に基づき、"
+            "この状況への感情的反応を発言に自然に反映させてください。"
+        )
+    return "\n".join(lines)
 
 
 def _build_private_info(game: GameState, player: Player, *, personality_tag: str = "") -> str:
@@ -527,9 +639,11 @@ def build_discuss_prompt(
         ユーザープロンプト文字列
     """
     context = _build_context(game, player, max_recent_statements=max_recent_statements, personality_tag=personality_tag)
+    situation_hint = _build_situation_emotion_hint(game, player, personality_tag)
+    situation_section = f"\n\n{situation_hint}" if situation_hint else ""
     speaking_status = _build_speaking_status(speaking_order, current_speaker_index)
     speaking_section = f"\n\n{speaking_status}" if speaking_status else ""
-    return f"""{context}
+    return f"""{context}{situation_section}
 
 あなたは{player.name}です。議論での発言内容を返してください。
 短く簡潔に、1〜3文程度で発言してください。
