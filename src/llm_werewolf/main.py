@@ -17,7 +17,7 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
 from llm_werewolf.domain.value_objects import Role
-from llm_werewolf.engine.llm_config import load_llm_config
+from llm_werewolf.engine.llm_config import load_gm_config, load_llm_config, load_prompt_config
 from llm_werewolf.session import (
     GameSessionStore,
     GameStep,
@@ -54,9 +54,21 @@ logger = logging.getLogger(__name__)
 
 try:
     llm_config = load_llm_config()
+    gm_config = load_gm_config()
+    prompt_config = load_prompt_config()
 except ValueError as e:
     logger.error(str(e))
     sys.exit(1)
+
+logger.info("=== LLM人狼 設定情報 ===")
+logger.info("  プレイヤーAI: model=%s, temperature=%s", llm_config.model_name, llm_config.temperature)
+logger.info("  GM-AI:       model=%s, temperature=%s", gm_config.model_name, gm_config.temperature)
+logger.info(
+    "  発言ログ上限: player=%d, gm=%d", prompt_config.max_recent_statements, prompt_config.gm_max_recent_statements
+)
+logger.info("  LLM_DEBUG=%s, LOG_LEVEL=%s", bool(os.environ.get("LLM_DEBUG", "").strip()), _log_level_name)
+logger.info("  OPENAI_API_KEY: 設定済み")
+logger.info("========================")
 
 app = FastAPI(title="LLM人狼")
 
