@@ -75,9 +75,9 @@ class TestDayPhase:
         engine, _ = self._setup_game()
         result = engine._day_phase()  # noqa: SLF001
 
-        # Day 1 は 1巡 = 5人分の発言
+        # Day 1 は 2巡 = 5人 × 2 = 10人分の発言
         discussion_logs = [log for log in result.log if "[発言]" in log]
-        assert len(discussion_logs) == 5
+        assert len(discussion_logs) == 10
 
     def test_discussion_logs_created_day2(self) -> None:
         engine, game = self._setup_game()

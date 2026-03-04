@@ -83,10 +83,12 @@ class TestAdvanceDiscussion:
 
 
 class TestHandleUserDiscuss:
-    def test_day1_one_round_returns_vote_ready(self) -> None:
+    def test_day1_two_rounds(self) -> None:
         engine = _create_engine()
         engine.advance_discussion()
-        msgs, vote_ready = engine.handle_user_discuss("テスト発言")
+        _, vote_ready = engine.handle_user_discuss("テスト発言ラウンド1")
+        assert vote_ready is False
+        _, vote_ready = engine.handle_user_discuss("テスト発言ラウンド2")
         assert vote_ready is True
 
     def test_records_user_message(self) -> None:
@@ -100,7 +102,8 @@ class TestHandleUserDiscuss:
         for seed in range(50):
             engine = _create_engine(seed=seed)
             engine.advance_discussion()
-            _, vote_ready = engine.handle_user_discuss("test")
+            engine.handle_user_discuss("Day1 ラウンド1")
+            engine.handle_user_discuss("Day1 ラウンド2")
 
             # 投票→処刑→夜→Day2 まで進める
             candidates = [p for p in engine.game.alive_players if p.name != "Alice"]
@@ -586,7 +589,8 @@ class TestMediumResultInteractive:
         for seed in range(50):
             engine = _create_engine(seed=seed, role=Role.VILLAGER)
             engine.advance_discussion()
-            engine.handle_user_discuss("test")
+            engine.handle_user_discuss("Day1 ラウンド1")
+            engine.handle_user_discuss("Day1 ラウンド2")
             candidates = [p for p in engine.game.alive_players if p.name != "Alice"]
             _, winner = engine.handle_user_vote(candidates[0].name)
             if winner is not None:
