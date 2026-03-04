@@ -780,9 +780,12 @@
                         for (var i = 0; i < events.length; i++) {
                             var ev = events[i];
                             if (ev.type === 'progress') {
-                                loadingText.textContent = getLoadingText(ev.data.player, ev.data.action);
                                 if (ev.data.action === 'discuss') {
+                                    // 議論中はストリーミング行を開始し、ローディングテキストは非表示
                                     startStreamingMessage(ev.data.player);
+                                    loadingText.textContent = '';
+                                } else {
+                                    loadingText.textContent = getLoadingText(ev.data.player, ev.data.action);
                                 }
                             } else if (ev.type === 'token') {
                                 appendTokenChunk(ev.data.player, ev.data.chunk);
