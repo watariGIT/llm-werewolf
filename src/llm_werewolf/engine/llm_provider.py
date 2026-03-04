@@ -1,7 +1,7 @@
 """LLM ベースの ActionProvider 実装。
 
 LangChain + OpenAI API を使用して AI プレイヤーの行動を生成する。
-API エラー時はリトライ（指数バックオフ）を行い、上限到達時はフォールバック動作で代替する。
+API エラー時のリトライは ChatOpenAI の max_retries に委譲し、上限到達時はフォールバック動作で代替する。
 各 API 呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する。
 """
 
@@ -13,7 +13,6 @@ import time
 import warnings
 from typing import NamedTuple
 
-import openai
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field, SecretStr
@@ -35,7 +34,6 @@ from llm_werewolf.engine.response_parser import parse_candidate_response, parse_
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRIES = 3
 FALLBACK_DISCUSS_MESSAGE = "（通信エラーのため発言できませんでした）"
 
 
@@ -90,7 +88,8 @@ class LLMActionProvider:
 
     ActionProvider Protocol に準拠し、LangChain + OpenAI API で
     AI プレイヤーの議論・投票・占い・襲撃の行動を生成する。
-    API エラー時は最大3回リトライし、失敗時はフォールバック動作で代替する。
+    API エラー時のリトライは ChatOpenAI の max_retries に委譲し、
+    失敗時はフォールバック動作で代替する。
     """
 
     def __init__(
@@ -104,6 +103,7 @@ class LLMActionProvider:
             model=config.model_name,
             temperature=config.temperature,
             api_key=SecretStr(config.api_key),
+            max_retries=3,
         )
         self._rng = rng if rng is not None else random.Random()
         self._personality = personality
@@ -128,10 +128,6 @@ class LLMActionProvider:
         self._speaking_order = speaking_order
         self._current_speaker_index = current_speaker_index
 
-    def _sleep(self, seconds: float) -> None:
-        """スリープ処理。テスト時にモック可能。"""
-        time.sleep(seconds)
-
     def _update_token_usage(
         self, result: _LLMResult | _StructuredLLMResult | _StructuredDiscussionResult | None
     ) -> None:
@@ -148,7 +144,7 @@ class LLMActionProvider:
     def _call_llm_structured(self, system_prompt: str, user_prompt: str) -> _StructuredLLMResult | None:
         """構造化出力で LLM を呼び出し、CandidateDecision を返す。
 
-        API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
+        API エラー時のリトライは ChatOpenAI の max_retries に委譲する。
         リトライ上限到達時は None を返す。
         """
         structured_llm = self._llm.with_structured_output(CandidateDecision, include_raw=True)
@@ -157,164 +153,23 @@ class LLMActionProvider:
             HumanMessage(content=user_prompt),
         ]
         logger.debug("LLM 構造化出力プロンプト:\n  system: %s\n  user: %s", system_prompt, user_prompt)
-        for attempt in range(MAX_RETRIES):
-            try:
-                start = time.monotonic()
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
-                    response = structured_llm.invoke(messages)
-                elapsed = time.monotonic() - start
-                parsed = response.get("parsed") if isinstance(response, dict) else response
-                if not isinstance(parsed, CandidateDecision):
-                    logger.warning("構造化出力のパースに失敗しました。フォールバックします。")
-                    return None
-                logger.debug("LLM 構造化レスポンス: target=%s, reason=%s", parsed.target, parsed.reason)
-                input_tokens = 0
-                output_tokens = 0
-                cache_read = 0
-                if isinstance(response, dict):
-                    raw = response.get("raw")
-                    usage = getattr(raw, "usage_metadata", None) if raw else None
-                    if usage:
-                        input_tokens = usage.get("input_tokens", 0)
-                        output_tokens = usage.get("output_tokens", 0)
-                        details = usage.get("input_token_details", {})
-                        if details:
-                            cache_read = details.get("cache_read", 0)
-                        logger.debug(
-                            "トークン使用量: input=%d, output=%d, total=%d, cache_read=%d",
-                            input_tokens,
-                            output_tokens,
-                            input_tokens + output_tokens,
-                            cache_read,
-                        )
-                return _StructuredLLMResult(
-                    decision=parsed,
-                    elapsed=elapsed,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cache_read_input_tokens=cache_read,
-                )
-            except (openai.APITimeoutError, openai.RateLimitError) as e:
-                wait = 2**attempt
-                logger.warning(
-                    "LLM API エラー (試行 %d/%d): %s。%d秒後にリトライします。", attempt + 1, MAX_RETRIES, e, wait
-                )
-                self._sleep(wait)
-            except openai.APIStatusError as e:
-                if e.status_code >= 500:
-                    wait = 2**attempt
-                    logger.warning(
-                        "LLM API サーバーエラー %d (試行 %d/%d): %s。%d秒後にリトライします。",
-                        e.status_code,
-                        attempt + 1,
-                        MAX_RETRIES,
-                        e,
-                        wait,
-                    )
-                    self._sleep(wait)
-                else:
-                    logger.warning("LLM API クライアントエラー %d: %s。リトライしません。", e.status_code, e)
-                    return None
-            except Exception as e:
-                logger.warning("構造化出力の処理中に予期しない例外が発生しました: %s。フォールバックします。", e)
+        try:
+            start = time.monotonic()
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
+                response = structured_llm.invoke(messages)
+            elapsed = time.monotonic() - start
+            parsed = response.get("parsed") if isinstance(response, dict) else response
+            if not isinstance(parsed, CandidateDecision):
+                logger.warning("構造化出力のパースに失敗しました。フォールバックします。")
                 return None
-        logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
-        return None
-
-    def _call_llm_structured_discussion(
-        self, messages: list[SystemMessage | HumanMessage | AIMessage]
-    ) -> _StructuredDiscussionResult | None:
-        """構造化出力で議論 LLM を呼び出し、DiscussionResponse を返す。
-
-        API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
-        リトライ上限到達時は None を返す。
-        """
-        structured_llm = self._llm.with_structured_output(DiscussionResponse, include_raw=True)
-        logger.debug("LLM 構造化議論プロンプト (messages=%d):\n  %s", len(messages), messages)
-        for attempt in range(MAX_RETRIES):
-            try:
-                start = time.monotonic()
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
-                    response = structured_llm.invoke(messages)
-                elapsed = time.monotonic() - start
-                parsed = response.get("parsed") if isinstance(response, dict) else response
-                if not isinstance(parsed, DiscussionResponse):
-                    logger.warning("構造化議論出力のパースに失敗しました。フォールバックします。")
-                    return None
-                logger.debug("LLM 構造化議論レスポンス: thinking=%s, message=%s", parsed.thinking, parsed.message)
-                input_tokens = 0
-                output_tokens = 0
-                cache_read = 0
-                if isinstance(response, dict):
-                    raw = response.get("raw")
-                    usage = getattr(raw, "usage_metadata", None) if raw else None
-                    if usage:
-                        input_tokens = usage.get("input_tokens", 0)
-                        output_tokens = usage.get("output_tokens", 0)
-                        details = usage.get("input_token_details", {})
-                        if details:
-                            cache_read = details.get("cache_read", 0)
-                        logger.debug(
-                            "トークン使用量: input=%d, output=%d, total=%d, cache_read=%d",
-                            input_tokens,
-                            output_tokens,
-                            input_tokens + output_tokens,
-                            cache_read,
-                        )
-                return _StructuredDiscussionResult(
-                    discussion=parsed,
-                    elapsed=elapsed,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cache_read_input_tokens=cache_read,
-                )
-            except (openai.APITimeoutError, openai.RateLimitError) as e:
-                wait = 2**attempt
-                logger.warning(
-                    "LLM API エラー (試行 %d/%d): %s。%d秒後にリトライします。", attempt + 1, MAX_RETRIES, e, wait
-                )
-                self._sleep(wait)
-            except openai.APIStatusError as e:
-                if e.status_code >= 500:
-                    wait = 2**attempt
-                    logger.warning(
-                        "LLM API サーバーエラー %d (試行 %d/%d): %s。%d秒後にリトライします。",
-                        e.status_code,
-                        attempt + 1,
-                        MAX_RETRIES,
-                        e,
-                        wait,
-                    )
-                    self._sleep(wait)
-                else:
-                    logger.warning("LLM API クライアントエラー %d: %s。リトライしません。", e.status_code, e)
-                    return None
-            except Exception as e:
-                logger.warning("構造化議論出力の処理中に予期しない例外が発生しました: %s。フォールバックします。", e)
-                return None
-        logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
-        return None
-
-    def _call_llm_with_messages(self, messages: list[SystemMessage | HumanMessage | AIMessage]) -> _LLMResult | None:
-        """メッセージリストを直接指定して LLM を呼び出す。
-
-        API エラー時は指数バックオフで最大 MAX_RETRIES 回リトライする。
-        リトライ上限到達時は None を返す。
-        """
-        logger.debug("LLM プロンプト (messages=%d):\n  %s", len(messages), messages)
-        for attempt in range(MAX_RETRIES):
-            try:
-                start = time.monotonic()
-                response = self._llm.invoke(messages)
-                elapsed = time.monotonic() - start
-                content = str(response.content)
-                logger.debug("LLM レスポンス: %s", content)
-                usage = getattr(response, "usage_metadata", None)
-                input_tokens = 0
-                output_tokens = 0
-                cache_read = 0
+            logger.debug("LLM 構造化レスポンス: target=%s, reason=%s", parsed.target, parsed.reason)
+            input_tokens = 0
+            output_tokens = 0
+            cache_read = 0
+            if isinstance(response, dict):
+                raw = response.get("raw")
+                usage = getattr(raw, "usage_metadata", None) if raw else None
                 if usage:
                     input_tokens = usage.get("input_tokens", 0)
                     output_tokens = usage.get("output_tokens", 0)
@@ -328,36 +183,108 @@ class LLMActionProvider:
                         input_tokens + output_tokens,
                         cache_read,
                     )
-                return _LLMResult(
-                    content=content,
-                    elapsed=elapsed,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cache_read_input_tokens=cache_read,
-                )
-            except (openai.APITimeoutError, openai.RateLimitError) as e:
-                wait = 2**attempt
-                logger.warning(
-                    "LLM API エラー (試行 %d/%d): %s。%d秒後にリトライします。", attempt + 1, MAX_RETRIES, e, wait
-                )
-                self._sleep(wait)
-            except openai.APIStatusError as e:
-                if e.status_code >= 500:
-                    wait = 2**attempt
-                    logger.warning(
-                        "LLM API サーバーエラー %d (試行 %d/%d): %s。%d秒後にリトライします。",
-                        e.status_code,
-                        attempt + 1,
-                        MAX_RETRIES,
-                        e,
-                        wait,
+            return _StructuredLLMResult(
+                decision=parsed,
+                elapsed=elapsed,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read_input_tokens=cache_read,
+            )
+        except Exception as e:
+            logger.warning("LLM API エラー: %s。フォールバックします。", e)
+            return None
+
+    def _call_llm_structured_discussion(
+        self, messages: list[SystemMessage | HumanMessage | AIMessage]
+    ) -> _StructuredDiscussionResult | None:
+        """構造化出力で議論 LLM を呼び出し、DiscussionResponse を返す。
+
+        API エラー時のリトライは ChatOpenAI の max_retries に委譲する。
+        リトライ上限到達時は None を返す。
+        """
+        structured_llm = self._llm.with_structured_output(DiscussionResponse, include_raw=True)
+        logger.debug("LLM 構造化議論プロンプト (messages=%d):\n  %s", len(messages), messages)
+        try:
+            start = time.monotonic()
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
+                response = structured_llm.invoke(messages)
+            elapsed = time.monotonic() - start
+            parsed = response.get("parsed") if isinstance(response, dict) else response
+            if not isinstance(parsed, DiscussionResponse):
+                logger.warning("構造化議論出力のパースに失敗しました。フォールバックします。")
+                return None
+            logger.debug("LLM 構造化議論レスポンス: thinking=%s, message=%s", parsed.thinking, parsed.message)
+            input_tokens = 0
+            output_tokens = 0
+            cache_read = 0
+            if isinstance(response, dict):
+                raw = response.get("raw")
+                usage = getattr(raw, "usage_metadata", None) if raw else None
+                if usage:
+                    input_tokens = usage.get("input_tokens", 0)
+                    output_tokens = usage.get("output_tokens", 0)
+                    details = usage.get("input_token_details", {})
+                    if details:
+                        cache_read = details.get("cache_read", 0)
+                    logger.debug(
+                        "トークン使用量: input=%d, output=%d, total=%d, cache_read=%d",
+                        input_tokens,
+                        output_tokens,
+                        input_tokens + output_tokens,
+                        cache_read,
                     )
-                    self._sleep(wait)
-                else:
-                    logger.warning("LLM API クライアントエラー %d: %s。リトライしません。", e.status_code, e)
-                    return None
-        logger.warning("LLM API リトライ上限 (%d回) に到達しました。フォールバック動作に切り替えます。", MAX_RETRIES)
-        return None
+            return _StructuredDiscussionResult(
+                discussion=parsed,
+                elapsed=elapsed,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read_input_tokens=cache_read,
+            )
+        except Exception as e:
+            logger.warning("LLM API エラー: %s。フォールバックします。", e)
+            return None
+
+    def _call_llm_with_messages(self, messages: list[SystemMessage | HumanMessage | AIMessage]) -> _LLMResult | None:
+        """メッセージリストを直接指定して LLM を呼び出す。
+
+        API エラー時のリトライは ChatOpenAI の max_retries に委譲する。
+        リトライ上限到達時は None を返す。
+        """
+        logger.debug("LLM プロンプト (messages=%d):\n  %s", len(messages), messages)
+        try:
+            start = time.monotonic()
+            response = self._llm.invoke(messages)
+            elapsed = time.monotonic() - start
+            content = str(response.content)
+            logger.debug("LLM レスポンス: %s", content)
+            usage = getattr(response, "usage_metadata", None)
+            input_tokens = 0
+            output_tokens = 0
+            cache_read = 0
+            if usage:
+                input_tokens = usage.get("input_tokens", 0)
+                output_tokens = usage.get("output_tokens", 0)
+                details = usage.get("input_token_details", {})
+                if details:
+                    cache_read = details.get("cache_read", 0)
+                logger.debug(
+                    "トークン使用量: input=%d, output=%d, total=%d, cache_read=%d",
+                    input_tokens,
+                    output_tokens,
+                    input_tokens + output_tokens,
+                    cache_read,
+                )
+            return _LLMResult(
+                content=content,
+                elapsed=elapsed,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read_input_tokens=cache_read,
+            )
+        except Exception as e:
+            logger.warning("LLM API エラー: %s。フォールバックします。", e)
+            return None
 
     def _call_llm(self, system_prompt: str, user_prompt: str) -> _LLMResult | None:
         """LLM を呼び出してレスポンステキストとメタデータを返す。
