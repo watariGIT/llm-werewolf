@@ -305,7 +305,7 @@
                 仲間の人狼: {% for ally in werewolf_allies %}{{ ally.name }}{% if not loop.last %}、{% endif %}{% endfor %}
             </p>
             {% endif %}
-            {% if human_player and human_player.role.value == "seer" %}
+            {% if human_player and human_player.role.value == "seer" and human_player.is_alive %}
                 {% set history = game.get_divined_history(human_player.name) %}
                 {% if history %}
                     {% set last_target = history[-1] %}
