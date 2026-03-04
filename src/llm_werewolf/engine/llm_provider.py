@@ -49,9 +49,7 @@ class CandidateDecision(BaseModel):
 class DiscussionResponse(BaseModel):
     """議論フェーズの構造化レスポンス。"""
 
-    thinking: str = Field(
-        description="あなたの内部思考（戦略・推理・疑い等）。2〜3文以内で簡潔に。他のプレイヤーには見えません。"
-    )
+    thinking: str = Field(description="あなたの内部思考（戦略・推理・疑い等）。他のプレイヤーには見えません。")
     message: str = Field(description="議論での発言内容（1〜3文）。他のプレイヤー全員に公開されます。")
 
 
