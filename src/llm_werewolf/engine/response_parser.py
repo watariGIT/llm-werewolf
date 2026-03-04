@@ -29,6 +29,8 @@ def parse_discuss_response(response: str) -> str:
     stripped = response.strip()
     if not stripped:
         return DEFAULT_DISCUSS_MESSAGE
+    # LLM 構造化出力でエスケープされた改行リテラルを実際の改行に変換
+    stripped = stripped.replace("\\n", "\n")
     return stripped
 
 

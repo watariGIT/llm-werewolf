@@ -25,6 +25,15 @@ class TestParseDiscussResponse:
     def test_strips_leading_trailing_whitespace(self) -> None:
         assert parse_discuss_response("  hello  ") == "hello"
 
+    def test_escaped_newline_converted_to_actual_newline(self) -> None:
+        assert parse_discuss_response("こんにちは\\nよろしく") == "こんにちは\nよろしく"
+
+    def test_multiple_escaped_newlines(self) -> None:
+        assert parse_discuss_response("行1\\n行2\\n行3") == "行1\n行2\n行3"
+
+    def test_actual_newline_preserved(self) -> None:
+        assert parse_discuss_response("行1\n行2") == "行1\n行2"
+
 
 class TestParseCandidateResponse:
     """候補者選択レスポンスパースのテスト。"""

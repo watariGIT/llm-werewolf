@@ -363,7 +363,7 @@ class LLMActionProvider:
 
         discussion = result.discussion
         response_text = parse_discuss_response(discussion.message)
-        thinking = discussion.thinking
+        thinking = discussion.thinking.replace("\\n", "\n")
 
         logger.info(
             "LLM アクション完了: player=%s, action=discuss, elapsed=%.2fs, thinking=%s",
