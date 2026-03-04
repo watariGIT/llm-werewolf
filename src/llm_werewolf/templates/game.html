@@ -661,6 +661,7 @@
             li.appendChild(textSpan);
             var cursor = document.createElement('span');
             cursor.className = 'typing-cursor';
+            cursor.setAttribute('aria-hidden', 'true');
             li.appendChild(cursor);
             list.appendChild(li);
             streamingElements[player] = { li: li, textSpan: textSpan, cursor: cursor };
