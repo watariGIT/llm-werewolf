@@ -11,6 +11,7 @@ import logging
 import random
 import time
 import warnings
+from collections.abc import Callable
 from typing import NamedTuple
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -30,9 +31,17 @@ from llm_werewolf.engine.prompts import (
     build_system_prompt,
     build_vote_prompt,
 )
-from llm_werewolf.engine.response_parser import parse_candidate_response, parse_discuss_response
+from llm_werewolf.engine.response_parser import (
+    extract_speech_delta,
+    parse_candidate_response,
+    parse_discuss_response,
+    parse_discussion_text,
+)
 
 logger = logging.getLogger(__name__)
+
+# トークンストリーミング用コールバック型: chunk テキストを受け取る
+TokenCallback = Callable[[str], None]
 
 FALLBACK_DISCUSS_MESSAGE = "（通信エラーのため発言できませんでした）"
 
@@ -117,6 +126,18 @@ class LLMActionProvider:
         self._discuss_log_offset: int = 0
         self._speaking_order: tuple[str, ...] = ()
         self._current_speaker_index: int = -1
+        self._token_callback: TokenCallback | None = None
+
+    def set_token_callback(self, callback: TokenCallback | None) -> None:
+        """トークンストリーミング用コールバックを設定する。
+
+        コールバックが設定されている場合、discuss() はストリーミングモードで動作し、
+        【発言】セクションのトークンを逐次コールバックに渡す。
+
+        Args:
+            callback: トークンチャンクを受け取るコールバック関数。None で解除。
+        """
+        self._token_callback = callback
 
     def set_speaking_context(self, speaking_order: tuple[str, ...], current_speaker_index: int) -> None:
         """現在の議論ラウンドの発言順と発言者位置を設定する。
@@ -245,6 +266,67 @@ class LLMActionProvider:
             logger.warning("LLM API エラー: %s。フォールバックします。", e)
             return None
 
+    def _call_llm_streaming_discussion(
+        self, messages: list[SystemMessage | HumanMessage | AIMessage]
+    ) -> _StructuredDiscussionResult | None:
+        """ストリーミングで議論 LLM を呼び出し、トークンを逐次コールバック通知する。
+
+        【思考】/【発言】形式のテキストを受信し、【発言】セクションのデルタのみをコールバックで通知する。
+        """
+        logger.debug("LLM ストリーミング議論プロンプト (messages=%d):\n  %s", len(messages), messages)
+        try:
+            start = time.monotonic()
+            buffer = ""
+            prev_buffer_len = 0
+            input_tokens = 0
+            output_tokens = 0
+            cache_read = 0
+
+            for chunk in self._llm.stream(messages, stream_usage=True):
+                content = chunk.content
+                if isinstance(content, str) and content:
+                    buffer += content
+                    if self._token_callback is not None:
+                        delta = extract_speech_delta(buffer, prev_buffer_len)
+                        if delta:
+                            self._token_callback(delta)
+                    prev_buffer_len = len(buffer)
+
+                usage = getattr(chunk, "usage_metadata", None)
+                if usage:
+                    input_tokens = usage.get("input_tokens", 0) or input_tokens
+                    output_tokens = usage.get("output_tokens", 0) or output_tokens
+                    details = usage.get("input_token_details", {})
+                    if details:
+                        cache_read = details.get("cache_read", 0) or cache_read
+
+            elapsed = time.monotonic() - start
+
+            if not buffer.strip():
+                logger.warning("ストリーミング議論: 空レスポンスを受信しました。")
+                return None
+
+            thinking, message = parse_discussion_text(buffer)
+            discussion = DiscussionResponse(thinking=thinking, message=message)
+
+            logger.debug(
+                "トークン使用量: input=%d, output=%d, total=%d, cache_read=%d",
+                input_tokens,
+                output_tokens,
+                input_tokens + output_tokens,
+                cache_read,
+            )
+            return _StructuredDiscussionResult(
+                discussion=discussion,
+                elapsed=elapsed,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read_input_tokens=cache_read,
+            )
+        except Exception as e:
+            logger.warning("LLM ストリーミング API エラー: %s。フォールバックします。", e)
+            return None
+
     def _call_llm_with_messages(self, messages: list[SystemMessage | HumanMessage | AIMessage]) -> _LLMResult | None:
         """メッセージリストを直接指定して LLM を呼び出す。
 
@@ -353,7 +435,16 @@ class LLMActionProvider:
             messages = list(self._discuss_messages)
             messages.append(HumanMessage(content=user_prompt))
 
-        result = self._call_llm_structured_discussion(messages)
+        # ストリーミングモード: コールバックが設定されている場合
+        if self._token_callback is not None:
+            result = self._call_llm_streaming_discussion(messages)
+            if result is None:
+                # ストリーミング失敗 → 構造化出力にフォールバック
+                logger.info("ストリーミング失敗: 構造化出力にフォールバックします。player=%s", player.name)
+                result = self._call_llm_structured_discussion(messages)
+        else:
+            result = self._call_llm_structured_discussion(messages)
+
         self._update_token_usage(result)
 
         if result is None:

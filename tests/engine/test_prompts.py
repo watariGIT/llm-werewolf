@@ -179,7 +179,8 @@ class TestBuildDiscussPrompt:
         game = _create_game()
         player = game.players[1]  # Bob
         result = build_discuss_prompt(game, player)
-        assert "発言内容を返してください" in result
+        assert "【思考】" in result
+        assert "【発言】" in result
 
     def test_contains_game_log(self) -> None:
         game = _create_game()

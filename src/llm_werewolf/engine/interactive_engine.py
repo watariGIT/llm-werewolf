@@ -38,6 +38,8 @@ if TYPE_CHECKING:
 ProgressCallback = Callable[[str, str], None]
 # 発言完了コールバック: (player_name, message_text) を受け取る
 MessageCallback = Callable[[str, str], None]
+# トークンチャンクコールバック: (player_name, chunk) を受け取る
+TokenChunkCallback = Callable[[str, str], None]
 
 
 class InteractiveGameEngine:
@@ -59,6 +61,7 @@ class InteractiveGameEngine:
         gm_provider: GameMasterProvider | None = None,
         on_progress: ProgressCallback | None = None,
         on_message: MessageCallback | None = None,
+        on_token_chunk: TokenChunkCallback | None = None,
     ) -> None:
         self._game = game
         self._providers = providers
@@ -69,6 +72,7 @@ class InteractiveGameEngine:
         self._gm_provider = gm_provider
         self._on_progress = on_progress
         self._on_message = on_message
+        self._on_token_chunk = on_token_chunk
 
     @property
     def game(self) -> GameState:
@@ -287,7 +291,24 @@ class InteractiveGameEngine:
             if order_names:
                 idx = order_names.index(player.name)
                 provider.set_speaking_context(order_names, idx)
+
+            # ストリーミングコールバック設定
+            if self._on_token_chunk is not None and hasattr(provider, "set_token_callback"):
+
+                def _make_cb(name: str) -> Callable[[str], None]:
+                    def cb(chunk: str) -> None:
+                        self._on_token_chunk(name, chunk)  # type: ignore[misc]
+
+                    return cb
+
+                provider.set_token_callback(_make_cb(player.name))
+
             result = provider.discuss(self._game, player)
+
+            # コールバック解除
+            if hasattr(provider, "set_token_callback"):
+                provider.set_token_callback(None)
+
             if result.thinking:
                 self._game = self._game.add_log(f"[思考] {player.name}: {result.thinking}")
             self._game = self._game.add_log(f"[発言] {player.name}: {result.message}")

@@ -5,8 +5,10 @@ import pytest
 
 from llm_werewolf.engine.response_parser import (
     DEFAULT_DISCUSS_MESSAGE,
+    extract_speech_delta,
     parse_candidate_response,
     parse_discuss_response,
+    parse_discussion_text,
 )
 
 
@@ -33,6 +35,93 @@ class TestParseDiscussResponse:
 
     def test_actual_newline_preserved(self) -> None:
         assert parse_discuss_response("行1\n行2") == "行1\n行2"
+
+
+class TestParseDiscussionText:
+    """【思考】/【発言】形式パーサーのテスト。"""
+
+    def test_normal_format(self) -> None:
+        thinking, message = parse_discussion_text("【思考】戦略を考える【発言】Bobが怪しい")
+        assert thinking == "戦略を考える"
+        assert message == "Bobが怪しい"
+
+    def test_thinking_only(self) -> None:
+        thinking, message = parse_discussion_text("【思考】考え中")
+        assert thinking == ""
+        assert message == "【思考】考え中"
+
+    def test_speech_only(self) -> None:
+        thinking, message = parse_discussion_text("【発言】直接発言")
+        assert thinking == ""
+        assert message == "直接発言"
+
+    def test_no_markers(self) -> None:
+        thinking, message = parse_discussion_text("普通のテキスト")
+        assert thinking == ""
+        assert message == "普通のテキスト"
+
+    def test_empty_string(self) -> None:
+        thinking, message = parse_discussion_text("")
+        assert thinking == ""
+        assert message == DEFAULT_DISCUSS_MESSAGE
+
+    def test_whitespace_in_sections(self) -> None:
+        thinking, message = parse_discussion_text("【思考】 思考内容 【発言】 発言内容 ")
+        assert thinking == "思考内容"
+        assert message == "発言内容"
+
+    def test_empty_message_returns_default(self) -> None:
+        thinking, message = parse_discussion_text("【思考】考えた【発言】")
+        assert thinking == "考えた"
+        assert message == DEFAULT_DISCUSS_MESSAGE
+
+    def test_multiline_content(self) -> None:
+        text = "【思考】まず占い結果を確認\n次に投票先を決める【発言】Aliceに賛成です\n投票はBobにします"
+        thinking, message = parse_discussion_text(text)
+        assert "占い結果を確認" in thinking
+        assert "Aliceに賛成です" in message
+
+
+class TestExtractSpeechDelta:
+    """ストリーミングデルタ抽出のテスト。"""
+
+    def test_before_speech_marker(self) -> None:
+        assert extract_speech_delta("【思考】考え中...", 0) == ""
+
+    def test_speech_marker_just_appeared(self) -> None:
+        buffer = "【思考】考えた【発言】こんにちは"
+        delta = extract_speech_delta(buffer, 0)
+        assert delta == "こんにちは"
+
+    def test_incremental_delta(self) -> None:
+        buffer1 = "【思考】考えた【発言】こん"
+        buffer2 = "【思考】考えた【発言】こんにちは"
+        prev_len = len(buffer1)
+        delta = extract_speech_delta(buffer2, prev_len)
+        assert delta == "にちは"
+
+    def test_no_new_content(self) -> None:
+        buffer = "【思考】考えた【発言】こんにちは"
+        delta = extract_speech_delta(buffer, len(buffer))
+        assert delta == ""
+
+    def test_partial_marker(self) -> None:
+        """チャンク境界で【発が途中の場合"""
+        assert extract_speech_delta("【思考】考え【発", 0) == ""
+
+    def test_speech_only_buffer(self) -> None:
+        buffer = "【発言】テスト"
+        delta = extract_speech_delta(buffer, 0)
+        assert delta == "テスト"
+
+    def test_delta_after_prev_in_speech(self) -> None:
+        """prev_buffer_len が発言セクション内の場合"""
+        buffer = "【発言】ABCDE"
+        # 前回は "【発言】AB" まで (len=7)
+        marker_end = len("【発言】")  # 4 (in chars: 【=1,発=1,言=1,】=1 -> 4 chars)
+        prev_len = marker_end + 2  # "AB" の後
+        delta = extract_speech_delta(buffer, prev_len)
+        assert delta == "CDE"
 
 
 class TestParseCandidateResponse:

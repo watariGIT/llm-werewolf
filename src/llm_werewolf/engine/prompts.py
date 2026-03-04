@@ -645,8 +645,11 @@ def build_discuss_prompt(
     speaking_section = f"\n\n{speaking_status}" if speaking_status else ""
     return f"""{context}{situation_section}
 
-あなたは{player.name}です。議論での発言内容を返してください。
-短く簡潔に、1〜3文程度で発言してください。
+あなたは{player.name}です。以下の出力形式に従って回答してください。
+
+## 出力形式
+【思考】（ここにあなたの内部思考を書く。戦略・推理・疑い等を2〜3文以内で。他のプレイヤーには見えません）
+【発言】（ここに議論での発言内容を書く。1〜3文で簡潔に）
 
 ## 発言のルール
 - 発言の冒頭に自分の名前を付けないでください（「{player.name}: 」のような接頭辞は不要です）
@@ -695,8 +698,12 @@ def build_discuss_continuation_prompt(
     if speaking_status:
         parts.append(speaking_status)
 
-    parts.append("""議論の次のラウンドです。前ラウンドの議論を踏まえて、1〜3文で発言してください。
-前ラウンドの発言ルールに従い、名前の接頭辞なし・具体的な主張・新しい視点を心がけてください。""")
+    parts.append("""議論の次のラウンドです。前ラウンドの議論を踏まえて発言してください。
+前ラウンドの発言ルールに従い、名前の接頭辞なし・具体的な主張・新しい視点を心がけてください。
+
+## 出力形式
+【思考】（内部思考を2〜3文以内で）
+【発言】（発言内容を1〜3文で）""")
 
     return "\n\n".join(parts)
 

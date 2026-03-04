@@ -19,7 +19,12 @@ from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
 from llm_werewolf.engine.game_logic import get_discussion_rounds
 from llm_werewolf.engine.game_master import GameMasterProvider
-from llm_werewolf.engine.interactive_engine import InteractiveGameEngine, MessageCallback, ProgressCallback
+from llm_werewolf.engine.interactive_engine import (
+    InteractiveGameEngine,
+    MessageCallback,
+    ProgressCallback,
+    TokenChunkCallback,
+)
 from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config, load_prompt_config
 from llm_werewolf.engine.llm_provider import LLMActionProvider
 from llm_werewolf.engine.prompts import assign_personalities, build_personality
@@ -257,6 +262,7 @@ def _create_engine(
     session: InteractiveSession,
     on_progress: ProgressCallback | None = None,
     on_message: MessageCallback | None = None,
+    on_token_chunk: TokenChunkCallback | None = None,
 ) -> InteractiveGameEngine:
     """セッションから InteractiveGameEngine を生成する。"""
     return InteractiveGameEngine(
@@ -269,6 +275,7 @@ def _create_engine(
         gm_provider=session.gm_provider,
         on_progress=on_progress,
         on_message=on_message,
+        on_token_chunk=on_token_chunk,
     )
 
 
@@ -283,12 +290,13 @@ def advance_to_discussion(
     session: InteractiveSession,
     on_progress: ProgressCallback | None = None,
     on_message: MessageCallback | None = None,
+    on_token_chunk: TokenChunkCallback | None = None,
 ) -> None:
     """1ラウンド分の AI 議論（ユーザーの手番まで）を実行し、DISCUSSION ステップへ遷移する。"""
     if session.discussion_round == 0:
         session.current_discussion = []
 
-    engine = _create_engine(session, on_progress=on_progress, on_message=on_message)
+    engine = _create_engine(session, on_progress=on_progress, on_message=on_message, on_token_chunk=on_token_chunk)
     msgs = engine.advance_discussion()
     _sync_engine_to_session(session, engine)
     session.current_discussion.extend(msgs)
@@ -300,9 +308,10 @@ def handle_user_discuss(
     message: str,
     on_progress: ProgressCallback | None = None,
     on_message: MessageCallback | None = None,
+    on_token_chunk: TokenChunkCallback | None = None,
 ) -> None:
     """ユーザー発言を記録し、後半 AI 発言を実行。ラウンドが残っていれば次ラウンドへ、なければ VOTE へ。"""
-    engine = _create_engine(session, on_progress=on_progress, on_message=on_message)
+    engine = _create_engine(session, on_progress=on_progress, on_message=on_message, on_token_chunk=on_token_chunk)
     msgs, vote_ready = engine.handle_user_discuss(message)
     _sync_engine_to_session(session, engine)
     session.current_discussion.extend(msgs)
@@ -317,11 +326,12 @@ def skip_to_vote(
     session: InteractiveSession,
     on_progress: ProgressCallback | None = None,
     on_message: MessageCallback | None = None,
+    on_token_chunk: TokenChunkCallback | None = None,
 ) -> None:
     """ユーザー死亡時に残りの議論ラウンドを AI のみで実行し、VOTE ステップへスキップする。"""
     max_rounds = get_discussion_rounds(session.game.day)
     while session.discussion_round < max_rounds:
-        advance_to_discussion(session, on_progress=on_progress, on_message=on_message)
+        advance_to_discussion(session, on_progress=on_progress, on_message=on_message, on_token_chunk=on_token_chunk)
     session.step = GameStep.VOTE
 
 
