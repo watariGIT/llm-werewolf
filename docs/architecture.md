@@ -97,13 +97,15 @@ src/llm_werewolf/
 | `DiscussResult` | 議論の返り値（NamedTuple）。`message`（発言テキスト）と `thinking`（内部思考、デフォルト空文字）を保持 |
 | `game_logic` | 両エンジン共通のゲームロジック関数群。初日占い・占い結果通知・占い/襲撃/護衛実行・霊媒結果通知・投票集計・発言順管理・議論ラウンド数判定を提供。`execute_initial_divine` でゲーム開始時に人狼以外からランダムに占い先を決定。`find_night_actor` / `get_night_action_candidates` で役職メタデータに基づく汎用的な夜行動解決を提供 |
 | `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑（霊媒結果記録）→夜行動（占い→護衛→襲撃、護衛成功判定）→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用。オプションの `on_phase_end` コールバックにより、昼/夜フェーズ完了時に外部へ `GameState` を通知可能（ベンチマークの進捗表示等に使用） |
-| `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動（占い・襲撃・護衛）の各メソッドを提供し、護衛成功判定・霊媒結果通知を含む。`game_logic` の共通関数を利用。オプションの `on_progress` / `on_message` コールバックにより、各 AI の処理開始・発言完了をリアルタイムに外部へ通知可能（SSE ストリーミング用） |
+| `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動（占い・襲撃・護衛）の各メソッドを提供し、護衛成功判定・霊媒結果通知を含む。`game_logic` の共通関数を利用。オプションの `on_progress` / `on_message` / `on_token_chunk` コールバックにより、各 AI の処理開始・発言完了・トークンチャンクをリアルタイムに外部へ通知可能（SSE ストリーミング用）。`on_token_chunk` 設定時は議論中の各 AI プロバイダーに `set_token_callback()` を設定し、発言完了後に解除する |
 | `ProgressCallback` | 進捗コールバック型エイリアス `Callable[[str, str], None]`。`(player_name, action_type)` を受け取り、AI の処理開始を通知する |
 | `MessageCallback` | 発言完了コールバック型エイリアス `Callable[[str, str], None]`。`(player_name, message_text)` を受け取り、議論での発言結果を通知する |
+| `TokenChunkCallback` | トークンチャンクコールバック型エイリアス `Callable[[str, str], None]`。`(player_name, chunk)` を受け取り、議論中のストリーミングトークンを逐次通知する |
 | `RandomActionProvider` | 全行動をランダムで実行するダミーAI（Mock版） |
 | `CandidateDecision` | 候補者選択の構造化レスポンスモデル（Pydantic BaseModel）。`target`（選択した候補者名）と `reason`（選択理由）を保持する。`with_structured_output()` で LLM に型安全なレスポンスを強制し、パースエラーを削減する |
 | `DiscussionResponse` | 議論の構造化レスポンスモデル（Pydantic BaseModel）。`thinking`（内部思考）と `message`（発言テキスト）を保持する。`with_structured_output()` で LLM に思考と発言の分離を強制する |
-| `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は `with_structured_output()` + `DiscussionResponse` で内部思考と発言を分離、候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。`last_thinking` 属性で直近のアクションの思考/理由を保持する。同一日内の議論ラウンド間で LangChain 会話履歴を保持し、前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる（日が変わると履歴はリセット）。ラウンド2以降は `_discuss_log_offset` で差分を追跡し、`build_discuss_continuation_prompt` で新しいログのみを渡すことでトークン効率を改善する。`set_speaking_context(speaking_order, current_speaker_index)` で発言順と現在位置を設定でき、議論プロンプトに発言済み/未発言プレイヤー情報を含めることで未発言者への言及を防止する。API エラー時のリトライは `ChatOpenAI` の `max_retries` に委譲し、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+思考/理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
+| `TokenCallback` | トークンコールバック型エイリアス `Callable[[str], None]`。ストリーミング時に【発言】セクション内のデルタテキストを受け取る。`LLMActionProvider.set_token_callback()` で設定 |
+| `LLMActionProvider` | LLM ベースの ActionProvider 実装。LangChain + OpenAI API で議論・投票・占い・襲撃・護衛の行動を生成。議論は2つのパスを持つ: (1) ストリーミングパス（`_token_callback` 設定時）— `stream()` で【思考】/【発言】形式のテキストを逐次受信し、`extract_speech_delta()` でデルタを計算してコールバックで通知、(2) 構造化出力パス（`_token_callback` 未設定時）— `with_structured_output()` + `DiscussionResponse` で内部思考と発言を分離。ストリーミング失敗時は構造化出力パスにフォールバックする。候補者選択（投票・占い・襲撃・護衛）は `with_structured_output()` + `CandidateDecision` による構造化出力を使用。`last_thinking` 属性で直近のアクションの思考/理由を保持する。同一日内の議論ラウンド間で LangChain 会話履歴を保持し、前回の発言コンテキストを LLM に渡すことで文脈連続性を向上させる（日が変わると履歴はリセット）。ラウンド2以降は `_discuss_log_offset` で差分を追跡し、`build_discuss_continuation_prompt` で新しいログのみを渡すことでトークン効率を改善する。`set_speaking_context(speaking_order, current_speaker_index)` で発言順と現在位置を設定でき、議論プロンプトに発言済み/未発言プレイヤー情報を含めることで未発言者への言及を防止する。API エラー時のリトライは `ChatOpenAI` の `max_retries` に委譲し、上限到達時は RandomActionProvider 相当のフォールバック動作で代替する。各呼び出しのプロンプト・レスポンス・レイテンシ・トークン使用量をログ出力する（INFO: アクション完了+思考/理由、DEBUG: 詳細、WARNING: エラー/フォールバック） |
 | `GameMasterProvider` | GM-AI プロバイダー。Day 2 以降にゲームログを構造化 JSON に整理し、プレイヤー AI の情報抽出負荷を削減する。確定情報（生存/死亡/投票）はプログラムで生成、分析情報（CO抽出/矛盾/要約/役職別アドバイス）は LLM 構造化出力で抽出するハイブリッドアプローチ。`GameBoardState` を JSON 文字列として返す |
 | `extract_board_info` | `GameState` のログから確定的な盤面情報（生存者/死亡者/投票履歴）をプログラムで抽出する関数 |
 | `calculate_execution_budget` | 生存者数と死亡者リストから処刑予算（吊り余裕）を計算する関数。人狼2人残/1人残の2シナリオで吊り余裕を算出する |
@@ -117,7 +119,7 @@ src/llm_werewolf/
 | `load_gm_config` | GM-AI 用の `LLMConfig` を環境変数から生成するファクトリ関数。`GM_MODEL_NAME` / `GM_TEMPERATURE` でプレイヤー AI とは独立に指定可能。API キーは `OPENAI_API_KEY` を共有 |
 | `PromptConfig` | プロンプト生成に関する設定を保持する値オブジェクト。`max_recent_statements`（プレイヤーAI用発言ログ件数上限）と `gm_max_recent_statements`（GM-AI用発言ログ件数上限）を管理 |
 | `load_prompt_config` | 環境変数から `PromptConfig` を生成するファクトリ関数。`MAX_RECENT_STATEMENTS` でプレイヤーAIの発言ログ件数上限を設定可能（デフォルト: 20）。`GM_MAX_RECENT_STATEMENTS` でGM-AIの発言ログ件数上限を設定可能（デフォルト: 20） |
-| `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供。構造化出力の `target` が候補者リストに含まれない場合のフォールバックとしても使用される |
+| `response_parser` | LLM レスポンスのパースとバリデーション。議論テキストの正規化、候補者名マッチング（完全一致→部分一致→ランダムフォールバック）を提供。構造化出力の `target` が候補者リストに含まれない場合のフォールバックとしても使用される。ストリーミング用に `parse_discussion_text()` で【思考】/【発言】形式テキストを `(thinking, message)` タプルにパース、`extract_speech_delta()` でバッファから【発言】セクション内のデルタ（新規追加分）のみを抽出する |
 | `prompts` | LLM 用プロンプトテンプレート生成。Prompt Caching を最大限活用するため、システムプロンプトは固定部分のみ（共通ルール `_BASE_RULES` + 役職別指示 `_ROLE_INSTRUCTIONS` + 人格タグ解釈ルール `_PERSONALITY_TAG_RULES`）で構成し、同一役職のプレイヤーは常に同一のシステムプロンプトを受け取る。`_ROLE_INSTRUCTIONS` は役職の仕組み・制約に集中し、具体的な戦略アドバイスは GM-AI の動的提案に委譲する。人格特性はタグ形式（例: `personality: tone=polite, stance=aggressive, style=strategic`）でユーザーメッセージ側に含める。アクション別ユーザープロンプト（discuss, vote, divine, attack, guard）を提供。`format_log_for_context` を活用したゲームコンテキスト埋め込みを行う。GM 要約に含まれる `role_advice` からプレイヤーの真の役職に対応するアドバイスを抽出し、risk/reward スコアと共に秘密情報として注入する。人格の `stance` に応じた戦略指向の指示（例: aggressive → 高リスク高リターン志向）もアドバイスに付加する。襲撃プロンプトには仲間の人狼情報を含める。議論プロンプトに `speaking_order` / `current_speaker_index` を渡すと発言済み/未発言プレイヤーを明示し、未発言者への言及を制約する。議論ラウンド2以降は `build_discuss_continuation_prompt` で差分コンテキストのみを渡し、会話履歴との重複を排除してトークン効率を改善する。差分プロンプトにも `max_recent_statements` による発言件数制限を適用可能 |
 | `PersonalityTrait` | 人格特性の1要素を表すデータクラス。カテゴリ（タグキー: tone/stance/style/reactivity/volatility）・タグ値・説明文を保持する |
 | `assign_personalities` | AI人数分の特性組み合わせを生成する関数。カテゴリ特性軸（tone/stance/style）は独立にランダム選択し、数値感情軸（reactivity/volatility）はシャッフルして重複なく割り当てることでプレイヤー間の多様性を保証する |
@@ -195,7 +197,7 @@ src/llm_werewolf/
 | `/play/{id}/discuss` | POST | ユーザー発言送信 |
 | `/play/{id}/vote` | POST | ユーザー投票送信 |
 | `/play/{id}/night-action` | POST | ユーザー夜行動送信（占い/襲撃対象） |
-| `/play/{id}/sse/next` | POST | 次ステップへ進む（SSE ストリーム版）。AI の処理進捗をリアルタイムに `progress` / `message` / `done` イベントで返す |
+| `/play/{id}/sse/next` | POST | 次ステップへ進む（SSE ストリーム版）。AI の処理進捗をリアルタイムに `progress` / `message` / `token` / `done` イベントで返す。`token` イベントは議論中のストリーミングトークンチャンクを `{player, chunk}` で通知する |
 | `/play/{id}/sse/discuss` | POST | ユーザー発言送信（SSE ストリーム版） |
 | `/play/{id}/sse/vote` | POST | ユーザー投票送信（SSE ストリーム版） |
 | `/play/{id}/sse/night-action` | POST | ユーザー夜行動送信（SSE ストリーム版） |

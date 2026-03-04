@@ -236,6 +236,18 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        .typing-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            background-color: #e0e0e0;
+            margin-left: 2px;
+            vertical-align: text-bottom;
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
         @media (max-width: 600px) {
             .header {
                 flex-direction: column;
@@ -646,6 +658,47 @@
             list.appendChild(li);
         }
 
+        // --- トークンストリーミング表示 ---
+        var streamingElements = {};
+
+        function startStreamingMessage(player) {
+            var list = document.getElementById('current-discussion-list');
+            if (!list) return;
+            var li = document.createElement('li');
+            var speaker = document.createElement('span');
+            speaker.className = 'speaker';
+            speaker.textContent = player;
+            li.appendChild(speaker);
+            var textSpan = document.createElement('span');
+            textSpan.className = 'streaming-text';
+            textSpan.textContent = ': ';
+            li.appendChild(textSpan);
+            var cursor = document.createElement('span');
+            cursor.className = 'typing-cursor';
+            cursor.setAttribute('aria-hidden', 'true');
+            li.appendChild(cursor);
+            list.appendChild(li);
+            streamingElements[player] = { li: li, textSpan: textSpan, cursor: cursor };
+            li.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
+        function appendTokenChunk(player, chunk) {
+            var el = streamingElements[player];
+            if (!el) { startStreamingMessage(player); el = streamingElements[player]; }
+            el.textSpan.textContent += chunk;
+            el.li.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
+        function finalizeStreamingMessage(player, finalText) {
+            var el = streamingElements[player];
+            if (el) {
+                if (el.cursor) el.cursor.remove();
+                // 確定テキストで差し替え
+                el.textSpan.textContent = ': ' + finalText;
+                delete streamingElements[player];
+            }
+        }
+
         // ACTION_LABELS マッピング
         var ACTION_LABELS = {
             'discuss': 'が考え中...',
@@ -741,9 +794,23 @@
                         for (var i = 0; i < events.length; i++) {
                             var ev = events[i];
                             if (ev.type === 'progress') {
-                                loadingText.textContent = getLoadingText(ev.data.player, ev.data.action);
+                                if (ev.data.action === 'discuss') {
+                                    // 議論中はストリーミング行を開始し、ローディングテキストは非表示
+                                    startStreamingMessage(ev.data.player);
+                                    loadingText.textContent = '';
+                                } else {
+                                    loadingText.textContent = getLoadingText(ev.data.player, ev.data.action);
+                                }
+                            } else if (ev.type === 'token') {
+                                appendTokenChunk(ev.data.player, ev.data.chunk);
                             } else if (ev.type === 'message') {
-                                appendMessage(ev.data.player, ev.data.text);
+                                if (streamingElements[ev.data.player]) {
+                                    // ストリーミング中: 確定テキストで差し替え
+                                    finalizeStreamingMessage(ev.data.player, ev.data.text);
+                                } else {
+                                    // ストリーミングなし（フォールバック時等）: 通常の追加
+                                    appendMessage(ev.data.player, ev.data.text);
+                                }
                             } else if (ev.type === 'done') {
                                 setTimeout(function() { location.reload(); }, 500);
                                 return;

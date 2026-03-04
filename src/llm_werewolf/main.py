@@ -496,8 +496,8 @@ def _get_session_or_raise(game_id: str) -> InteractiveSession:
 
 def _make_sse_callbacks(
     loop: asyncio.AbstractEventLoop, queue: asyncio.Queue[dict[str, Any] | None]
-) -> tuple[Any, Any]:
-    """SSE 用の on_progress / on_message コールバックを生成する。
+) -> tuple[Any, Any, Any]:
+    """SSE 用の on_progress / on_message / on_token_chunk コールバックを生成する。
 
     コールバックはワーカースレッドから呼ばれるため loop.call_soon_threadsafe を使用する。
     """
@@ -508,7 +508,10 @@ def _make_sse_callbacks(
     def on_message(player_name: str, text: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, {"event": "message", "player": player_name, "text": text})
 
-    return on_progress, on_message
+    def on_token_chunk(player_name: str, chunk: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, {"event": "token", "player": player_name, "chunk": chunk})
+
+    return on_progress, on_message, on_token_chunk
 
 
 async def _sse_stream(queue: asyncio.Queue[dict[str, Any] | None]) -> AsyncGenerator[str, None]:
@@ -532,20 +535,24 @@ async def sse_advance_game(game_id: str) -> StreamingResponse:
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, on_message = _make_sse_callbacks(loop, queue)
+    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue)
 
     def process() -> None:
         try:
             if session.step == GameStep.ROLE_REVEAL:
-                advance_to_discussion(session, on_progress=on_progress, on_message=on_message)
+                advance_to_discussion(
+                    session, on_progress=on_progress, on_message=on_message, on_token_chunk=on_token_chunk
+                )
             elif session.step == GameStep.DISCUSSION and not human_is_alive:
-                skip_to_vote(session, on_progress=on_progress, on_message=on_message)
+                skip_to_vote(session, on_progress=on_progress, on_message=on_message, on_token_chunk=on_token_chunk)
             elif session.step == GameStep.VOTE and not human_is_alive:
                 handle_auto_vote(session, on_progress=on_progress)
             elif session.step == GameStep.EXECUTION_RESULT:
                 advance_from_execution_result(session, on_progress=on_progress)
             elif session.step == GameStep.NIGHT_RESULT:
-                advance_to_discussion(session, on_progress=on_progress, on_message=on_message)
+                advance_to_discussion(
+                    session, on_progress=on_progress, on_message=on_message, on_token_chunk=on_token_chunk
+                )
             interactive_store.save(session)
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
@@ -568,11 +575,13 @@ async def sse_submit_discussion(game_id: str, message: str = Form("")) -> Stream
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, on_message = _make_sse_callbacks(loop, queue)
+    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue)
 
     def process() -> None:
         try:
-            handle_user_discuss(session, text, on_progress=on_progress, on_message=on_message)
+            handle_user_discuss(
+                session, text, on_progress=on_progress, on_message=on_message, on_token_chunk=on_token_chunk
+            )
             interactive_store.save(session)
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
@@ -597,7 +606,7 @@ async def sse_submit_vote(game_id: str, target: str = Form(...)) -> StreamingRes
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, _ = _make_sse_callbacks(loop, queue)
+    on_progress, _, _ = _make_sse_callbacks(loop, queue)
 
     def process() -> None:
         try:
@@ -625,7 +634,7 @@ async def sse_submit_night_action(game_id: str, target: str = Form(...)) -> Stre
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, _ = _make_sse_callbacks(loop, queue)
+    on_progress, _, _ = _make_sse_callbacks(loop, queue)
 
     def process() -> None:
         try:

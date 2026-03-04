@@ -14,6 +14,62 @@ logger = logging.getLogger(__name__)
 DEFAULT_DISCUSS_MESSAGE = "..."
 
 
+_SPEECH_MARKER = "【発言】"
+_THINKING_MARKER = "【思考】"
+
+
+def parse_discussion_text(full_text: str) -> tuple[str, str]:
+    """【思考】/【発言】形式テキストをパースし (thinking, message) を返す。
+
+    Args:
+        full_text: LLM が返したテキスト全体
+
+    Returns:
+        (thinking, message) のタプル。【発言】が見つからない場合はテキスト全体を message とする。
+    """
+    speech_pos = full_text.find(_SPEECH_MARKER)
+    if speech_pos < 0:
+        # セパレータなし: テキスト全体を message として扱う
+        stripped = full_text.strip()
+        if not stripped:
+            return ("", DEFAULT_DISCUSS_MESSAGE)
+        return ("", stripped)
+
+    thinking_part = full_text[:speech_pos]
+    message_part = full_text[speech_pos + len(_SPEECH_MARKER) :]
+
+    # 【思考】マーカーを除去
+    thinking = thinking_part.replace(_THINKING_MARKER, "").strip()
+    message = message_part.strip()
+    if not message:
+        message = DEFAULT_DISCUSS_MESSAGE
+    return (thinking, message)
+
+
+def extract_speech_delta(buffer: str, prev_buffer_len: int) -> str:
+    """バッファ全体から【発言】セクション内のデルタ（新規追加分）のみを返す。
+
+    【発言】がまだ見つからない場合は空文字を返す（チャンク境界分割対策）。
+
+    Args:
+        buffer: 現在までに蓄積されたテキスト全体
+        prev_buffer_len: 前回のバッファ長
+
+    Returns:
+        【発言】セクション内の新規追加テキスト
+    """
+    speech_pos = buffer.find(_SPEECH_MARKER)
+    if speech_pos < 0:
+        return ""
+
+    speech_content_start = speech_pos + len(_SPEECH_MARKER)
+    # デルタの開始位置: 前回バッファ長と発言セクション開始位置の大きい方
+    delta_start = max(speech_content_start, prev_buffer_len)
+    if delta_start >= len(buffer):
+        return ""
+    return buffer[delta_start:]
+
+
 def parse_discuss_response(response: str) -> str:
     """議論レスポンスをパースする。
 
