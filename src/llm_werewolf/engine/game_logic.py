@@ -24,11 +24,25 @@ def get_alive_speaking_order(game: GameState, speaking_order: tuple[str, ...]) -
     return [name_to_player[name] for name in speaking_order if name in alive_names]
 
 
-def notify_divine_result(game: GameState) -> GameState:
-    """占い結果を通知する（Day 2+）。"""
-    if game.day < 2:
+def execute_initial_divine(game: GameState, rng: random.Random) -> GameState:
+    """初日占い: ゲーム開始時に占い師が人狼以外の1人をランダムに占う。"""
+    seer_players = [p for p in game.alive_players if p.role == Role.SEER]
+    if not seer_players:
         return game
+    seer = seer_players[0]
+    candidates = [p for p in game.alive_players if p.name != seer.name and p.role != Role.WEREWOLF]
+    if not candidates:
+        return game
+    target = rng.choice(candidates)
+    game, result = execute_divine(game, seer, target.name)
+    if result is not None:
+        seer_name, target_name, _ = result
+        game = game.add_divine_history(seer_name, target_name)
+    return game
 
+
+def notify_divine_result(game: GameState) -> GameState:
+    """占い結果を通知する。"""
     seer_players = [p for p in game.alive_players if p.role == Role.SEER]
     if not seer_players:
         return game

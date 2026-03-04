@@ -17,7 +17,7 @@ from llm_werewolf.domain.services import create_game, create_game_with_role
 from llm_werewolf.domain.value_objects import NightActionType, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
 from llm_werewolf.engine.game_engine import GameEngine
-from llm_werewolf.engine.game_logic import get_discussion_rounds
+from llm_werewolf.engine.game_logic import execute_initial_divine, get_discussion_rounds
 from llm_werewolf.engine.game_master import GameMasterProvider
 from llm_werewolf.engine.interactive_engine import InteractiveGameEngine, MessageCallback, ProgressCallback
 from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config, load_prompt_config
@@ -189,6 +189,9 @@ class InteractiveSessionStore:
         game = game.add_log("=== ゲーム開始 ===")
         for p in game.players:
             game = game.add_log(f"[配役] {p.name}: {p.role.value}")
+
+        # 初日占い
+        game = execute_initial_divine(game, rng)
 
         providers: dict[str, ActionProvider]
         gm_provider: GameMasterProvider | None = None
