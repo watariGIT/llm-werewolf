@@ -95,7 +95,7 @@ src/llm_werewolf/
 |---------------------------|------|
 | `ActionProvider` | プレイヤー行動の抽象インターフェース（Protocol）。議論・投票・占い・襲撃・護衛の行動を定義。`discuss()` は `DiscussResult` を返す。`last_thinking: str` 属性で直近のアクションの思考/理由を保持する。`set_speaking_context(speaking_order, current_speaker_index)` は議論前に発言順情報を渡すオプションメソッド（デフォルト実装は no-op） |
 | `DiscussResult` | 議論の返り値（NamedTuple）。`message`（発言テキスト）と `thinking`（内部思考、デフォルト空文字）を保持 |
-| `game_logic` | 両エンジン共通のゲームロジック関数群。占い結果通知・占い/襲撃/護衛実行・霊媒結果通知・投票集計・発言順管理・議論ラウンド数判定を提供。`find_night_actor` / `get_night_action_candidates` で役職メタデータに基づく汎用的な夜行動解決を提供 |
+| `game_logic` | 両エンジン共通のゲームロジック関数群。初日占い・占い結果通知・占い/襲撃/護衛実行・霊媒結果通知・投票集計・発言順管理・議論ラウンド数判定を提供。`execute_initial_divine` でゲーム開始時に人狼以外からランダムに占い先を決定。`find_night_actor` / `get_night_action_candidates` で役職メタデータに基づく汎用的な夜行動解決を提供 |
 | `GameEngine` | 一括実行用ゲームループ管理。昼議論→投票→処刑（霊媒結果記録）→夜行動（占い→護衛→襲撃、護衛成功判定）→勝利判定のサイクルを自動実行。`game_logic` の共通関数を利用。オプションの `on_phase_end` コールバックにより、昼/夜フェーズ完了時に外部へ `GameState` を通知可能（ベンチマークの進捗表示等に使用） |
 | `InteractiveGameEngine` | インタラクティブ用ステップ実行エンジン。ユーザー入力を受け付けながら1ステップずつゲームを進行。議論・投票・夜行動（占い・襲撃・護衛）の各メソッドを提供し、護衛成功判定・霊媒結果通知を含む。`game_logic` の共通関数を利用。オプションの `on_progress` / `on_message` コールバックにより、各 AI の処理開始・発言完了をリアルタイムに外部へ通知可能（SSE ストリーミング用） |
 | `ProgressCallback` | 進捗コールバック型エイリアス `Callable[[str, str], None]`。`(player_name, action_type)` を受け取り、AI の処理開始を通知する |

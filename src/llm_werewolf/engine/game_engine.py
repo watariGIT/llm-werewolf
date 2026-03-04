@@ -17,6 +17,7 @@ from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
     execute_guard,
+    execute_initial_divine,
     find_night_actor,
     get_alive_speaking_order,
     get_discussion_rounds,
@@ -59,6 +60,7 @@ class GameEngine:
         """ゲーム終了までループを実行し、最終状態を返す。"""
         self._game = self._game.add_log("=== ゲーム開始 ===")
         self._game = self._log_role_assignment()
+        self._game = execute_initial_divine(self._game, self._rng)
 
         while True:
             # 昼フェーズ

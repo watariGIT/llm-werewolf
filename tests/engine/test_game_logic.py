@@ -7,6 +7,7 @@ from llm_werewolf.engine.game_logic import (
     execute_attack,
     execute_divine,
     execute_guard,
+    execute_initial_divine,
     find_night_actor,
     get_alive_speaking_order,
     get_attack_candidates,
@@ -56,6 +57,69 @@ class TestGetAliveSpeakingOrder:
         game = _make_game()
         result = get_alive_speaking_order(game, ())
         assert len(result) == 9
+
+
+class TestExecuteInitialDivine:
+    def test_adds_divine_history(self) -> None:
+        game = _make_game()
+        rng = random.Random(42)
+        result = execute_initial_divine(game, rng)
+        assert len(result.divined_history) == 1
+        seer_name, target_name = result.divined_history[0]
+        assert seer_name == "Alice"
+        # 占い対象が生存者であることを確認
+        target = result.find_player(target_name)
+        assert target is not None
+
+    def test_target_is_not_werewolf(self) -> None:
+        """初日占いの対象は人狼以外であることを確認。"""
+        for seed in range(50):
+            game = _make_game()
+            rng = random.Random(seed)
+            result = execute_initial_divine(game, rng)
+            _, target_name = result.divined_history[0]
+            target = result.find_player(target_name)
+            assert target is not None
+            assert target.role != Role.WEREWOLF
+
+    def test_target_is_not_seer(self) -> None:
+        """初日占いの対象は占い師自身ではないことを確認。"""
+        for seed in range(50):
+            game = _make_game()
+            rng = random.Random(seed)
+            result = execute_initial_divine(game, rng)
+            _, target_name = result.divined_history[0]
+            assert target_name != "Alice"
+
+    def test_logs_divine_action(self) -> None:
+        game = _make_game()
+        rng = random.Random(42)
+        result = execute_initial_divine(game, rng)
+        divine_logs = [log for log in result.log if "[占い]" in log]
+        assert len(divine_logs) == 1
+
+    def test_no_op_without_seer(self) -> None:
+        """占い師がいない場合は何もしない。"""
+        game = GameState(
+            players=(
+                Player(name="Alice", role=Role.VILLAGER),
+                Player(name="Bob", role=Role.WEREWOLF),
+                Player(name="Charlie", role=Role.VILLAGER),
+            )
+        )
+        rng = random.Random(42)
+        result = execute_initial_divine(game, rng)
+        assert len(result.divined_history) == 0
+
+    def test_day1_notify_divine_result_with_initial_divine(self) -> None:
+        """初日占い後、Day 1 で notify_divine_result が結果を通知する。"""
+        game = _make_game()
+        rng = random.Random(42)
+        game = execute_initial_divine(game, rng)
+        result = notify_divine_result(game)
+        divine_result_logs = [log for log in result.log if "[占い結果]" in log]
+        assert len(divine_result_logs) == 1
+        assert "人狼ではない" in divine_result_logs[0]
 
 
 class TestNotifyDivineResult:

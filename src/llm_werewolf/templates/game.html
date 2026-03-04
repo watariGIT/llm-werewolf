@@ -305,6 +305,20 @@
                 仲間の人狼: {% for ally in werewolf_allies %}{{ ally.name }}{% if not loop.last %}、{% endif %}{% endfor %}
             </p>
             {% endif %}
+            {% if human_player and human_player.role.value == "seer" and human_player.is_alive %}
+                {% set history = game.get_divined_history(human_player.name) %}
+                {% if history %}
+                    {% set last_target = history[-1] %}
+                    {% for p in game.players %}
+                        {% if p.name == last_target %}
+                            <div class="event-msg divine" style="margin-top: 1rem;">
+                                初日占い結果: {{ last_target }} は
+                                {% if p.role.value == "werewolf" %}人狼{% else %}人狼ではない{% endif %}
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endif %}
             <div class="actions">
                 <form action="/play/{{ game_id }}/next" method="post">
                     <button type="submit" class="btn">ゲーム開始</button>
