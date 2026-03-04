@@ -80,6 +80,7 @@
 | 発言順 | Speaking Order | `speaking_order` | 議論で発言する順番 |
 | UI表示順 | Display Order | `display_order` | ゲーム中固定のプレイヤー表示順。ゲーム開始時の発言順で固定される |
 | 占い結果 | Divine Result | `divine_result` | 占い師が占いで得た情報（人狼か否か） |
+| 初日占い | Initial Divine | `execute_initial_divine` | ゲーム開始時に占い師が人狼以外の1人をランダムに占う。Day 1 開始時に結果が通知される |
 
 ## インタラクティブゲーム
 
