@@ -109,7 +109,7 @@ src/llm_werewolf/
 | `calculate_execution_budget` | 生存者数と死亡者リストから処刑予算（吊り余裕）を計算する関数。人狼2人残/1人残の2シナリオで吊り余裕を算出する |
 | `ExecutionBudget` | 処刑予算（吊り余裕）情報の Pydantic モデル。alive_count・total_executions・margin_if_two_wolves・margin_if_one_wolf を保持する |
 | `AdviceOption` | おすすめ行動の1選択肢を表す Pydantic モデル。action（行動）・merit（メリット）・demerit（デメリット）・risk（リスクスコア1-10）・reward（リターンスコア1-10）を保持する |
-| `RoleAdvice` | 1役職分のおすすめ行動を表す Pydantic モデル。role（役職名）と options（`AdviceOption` のリスト、2件）を保持する |
+| `RoleAdvice` | 1役職分のおすすめ行動を表す Pydantic モデル。role（役職名）と options（`AdviceOption` のリスト、2〜3件）を保持する |
 | `GameAnalysis` | LLM が抽出する分析情報の Pydantic モデル（claims/contradictions/player_summaries/role_advice） |
 | `GameBoardState` | 確定情報と分析情報を統合した盤面情報の Pydantic モデル。処刑予算（`execution_budget`）を含む |
 | `LLMConfig` | LLM 設定を保持する値オブジェクト。model_name・temperature・api_key を管理 |
