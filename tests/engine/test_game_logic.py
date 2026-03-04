@@ -416,8 +416,8 @@ class TestGetNightActionCandidates:
 
 
 class TestGetDiscussionRounds:
-    def test_day1_one_round(self) -> None:
-        assert get_discussion_rounds(1) == 1
+    def test_day1_two_rounds(self) -> None:
+        assert get_discussion_rounds(1) == 2
 
     def test_day2_two_rounds(self) -> None:
         assert get_discussion_rounds(2) == 2

@@ -119,7 +119,9 @@ class TestHandleUserDiscuss:
     def test_transitions_to_vote(self) -> None:
         session = _create_session()
         advance_to_discussion(session)
-        handle_user_discuss(session, "こんにちは")
+        handle_user_discuss(session, "こんにちは ラウンド1")
+        assert session.step == GameStep.DISCUSSION
+        handle_user_discuss(session, "こんにちは ラウンド2")
         assert session.step == GameStep.VOTE
 
     def test_records_message_in_log(self) -> None:
@@ -131,9 +133,10 @@ class TestHandleUserDiscuss:
 
 def _advance_to_day2(session: InteractiveSession) -> None:
     """セッションを Day 2 の議論開始前まで進める。"""
-    # Day 1: 議論 → 投票 → 処刑
+    # Day 1: 議論（2巡） → 投票 → 処刑
     advance_to_discussion(session)
-    handle_user_discuss(session, "テスト")
+    handle_user_discuss(session, "テスト ラウンド1")
+    handle_user_discuss(session, "テスト ラウンド2")
     candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
     handle_user_vote(session, candidates[0].name)
     # 処刑結果 → 夜フェーズ
@@ -171,7 +174,8 @@ class TestHandleUserVote:
     def test_always_transitions_to_execution_result(self) -> None:
         session = _create_session()
         advance_to_discussion(session)
-        handle_user_discuss(session, "test")
+        handle_user_discuss(session, "test ラウンド1")
+        handle_user_discuss(session, "test ラウンド2")
         # 誰か生存者に投票
         candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
         handle_user_vote(session, candidates[0].name)
@@ -180,7 +184,8 @@ class TestHandleUserVote:
     def test_records_votes_in_log(self) -> None:
         session = _create_session()
         advance_to_discussion(session)
-        handle_user_discuss(session, "test")
+        handle_user_discuss(session, "test ラウンド1")
+        handle_user_discuss(session, "test ラウンド2")
         candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
         handle_user_vote(session, candidates[0].name)
         vote_logs = [line for line in session.game.log if "[投票]" in line]
@@ -598,7 +603,8 @@ class TestMediumResultSession:
         for seed in range(50):
             session = _create_session(seed=seed, role=Role.VILLAGER)
             advance_to_discussion(session)
-            handle_user_discuss(session, "test")
+            handle_user_discuss(session, "Day1 ラウンド1")
+            handle_user_discuss(session, "Day1 ラウンド2")
             candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
             handle_user_vote(session, candidates[0].name)
             if session.winner is not None:
@@ -671,49 +677,21 @@ class TestFullGameWithKnight:
 
 
 class TestDiscussionRounds:
-    def test_day1_one_round(self) -> None:
-        """Day 1 ではユーザー発言後に即 VOTE へ遷移する。"""
+    def test_day1_two_rounds(self) -> None:
+        """Day 1 でも2巡の議論が行われる。"""
         session = _create_session()
         advance_to_discussion(session)
         assert session.discussion_round == 1
-        handle_user_discuss(session, "こんにちは")
+
+        # ラウンド1のユーザー発言 → まだ DISCUSSION（ラウンド2）
+        handle_user_discuss(session, "こんにちは ラウンド1")
+        assert session.step == GameStep.DISCUSSION
+        assert session.discussion_round == 2
+
+        # ラウンド2のユーザー発言 → VOTE
+        handle_user_discuss(session, "こんにちは ラウンド2")
         assert session.step == GameStep.VOTE
         assert session.discussion_round == 0
-
-    def test_day2_two_rounds(self) -> None:
-        """Day 2 ではユーザーが2回発言できる。"""
-        for seed in range(50):
-            session = _create_session(seed=seed)
-            advance_to_discussion(session)
-            handle_user_discuss(session, "Day1 発言")
-            candidates = [p for p in session.game.alive_players if p.name != session.human_player_name]
-            handle_user_vote(session, candidates[0].name)
-            if session.winner is not None:
-                continue
-            start_night_phase(session)
-            if session.step == GameStep.NIGHT_ACTION:
-                night_cands = get_night_action_candidates(session)
-                if night_cands:
-                    handle_night_action(session, night_cands[0].name)
-            if session.step != GameStep.NIGHT_RESULT:
-                continue
-
-            # Day 2 の議論開始
-            advance_to_discussion(session)
-            assert session.step == GameStep.DISCUSSION
-            assert session.discussion_round == 1
-
-            # ラウンド1のユーザー発言 → まだ DISCUSSION（ラウンド2）
-            handle_user_discuss(session, "Day2 ラウンド1")
-            assert session.step == GameStep.DISCUSSION
-            assert session.discussion_round == 2
-
-            # ラウンド2のユーザー発言 → VOTE
-            handle_user_discuss(session, "Day2 ラウンド2")
-            assert session.step == GameStep.VOTE
-            assert session.discussion_round == 0
-            return
-        pytest.skip("No seed found for day2 two rounds test")
 
     def test_speaking_order_includes_human(self) -> None:
         """ユーザーの発言が speaking_order の順序通りに挿入される。"""
@@ -765,7 +743,8 @@ class TestSpeakingOrder:
             session = _create_session(seed=seed, human_name="Alice", role=Role.VILLAGER)
             original_display_order = session.display_order
             advance_to_discussion(session)
-            handle_user_discuss(session, "test")
+            handle_user_discuss(session, "test ラウンド1")
+            handle_user_discuss(session, "test ラウンド2")
 
             villager = next(
                 (p for p in session.game.alive_players if p.role == Role.VILLAGER and p.name != "Alice"),
@@ -810,12 +789,13 @@ class TestSpeakingOrder:
         advance_to_discussion(session)
         handle_user_discuss(session, "テスト発言")
 
-        # 全発言者の順序を取得
+        # ラウンド1の発言者の順序を取得
         discussion_speakers = [msg.split(": ", 1)[0] for msg in session.current_discussion]
 
-        # speaking_order から生存者のみ抽出
+        # speaking_order から生存者のみ抽出（2巡分繰り返す）
         alive_names = {p.name for p in session.game.alive_players}
-        expected_order = [name for name in session.speaking_order if name in alive_names]
+        single_order = [name for name in session.speaking_order if name in alive_names]
+        expected_order = single_order * 2
 
         # discussion_speakers は expected_order のサブシーケンスであるべき
         expected_idx = 0
@@ -831,7 +811,8 @@ class TestSpeakingOrder:
             session = _create_session(seed=seed, human_name="Alice", role=Role.VILLAGER)
             original_order = session.speaking_order
             advance_to_discussion(session)
-            handle_user_discuss(session, "test")
+            handle_user_discuss(session, "test ラウンド1")
+            handle_user_discuss(session, "test ラウンド2")
 
             # 村人を投票対象にする（人狼以外）
             villager = next(

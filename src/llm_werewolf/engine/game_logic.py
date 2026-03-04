@@ -169,5 +169,5 @@ def notify_medium_result(game: GameState) -> GameState:
 
 
 def get_discussion_rounds(day: int) -> int:
-    """議論ラウンド数を返す。Day 1 は 1巡、Day 2 以降は 2巡。"""
-    return 1 if day == 1 else 2
+    """議論ラウンド数を返す。全日程で2巡。"""
+    return 2
