@@ -147,7 +147,22 @@ def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
             "last_cache_read_input_tokens": cache_read,
             "last_cost": f"${cost:.6f}" if cost is not None else "N/A",
         }
-    return {"players": debug_players}
+    result: dict[str, Any] = {"players": debug_players}
+
+    gm = session.gm_provider
+    if gm is not None:
+        gm_input = gm.last_input_tokens
+        gm_output = gm.last_output_tokens
+        gm_cache = gm.last_cache_read_input_tokens
+        gm_cost = estimate_cost(gm_config.model_name, gm_input, gm_output, gm_cache)
+        result["gm"] = {
+            "last_input_tokens": gm_input,
+            "last_output_tokens": gm_output,
+            "last_cache_read_input_tokens": gm_cache,
+            "last_cost": f"${gm_cost:.6f}" if gm_cost is not None else "N/A",
+        }
+
+    return result
 
 
 def _format_cost(provider: object) -> str:

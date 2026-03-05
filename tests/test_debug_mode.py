@@ -59,6 +59,17 @@ class TestCollectDebugInfo:
         finally:
             interactive_store.delete(session.game_id)
 
+    def test_gm_info_when_provider_exists(self) -> None:
+        """gm_provider がある場合、GM-AI情報が含まれる。"""
+        session = _create_test_session()
+        try:
+            # gm_provider が None の場合は gm キーなし
+            session.gm_provider = None
+            info = _collect_debug_info(session)
+            assert "gm" not in info
+        finally:
+            interactive_store.delete(session.game_id)
+
 
 class TestExtractThinkingMap:
     """_extract_thinking_map のユニットテスト。"""

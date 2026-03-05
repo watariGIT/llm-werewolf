@@ -727,6 +727,27 @@
                     {% endfor %}
                 </tbody>
             </table>
+            {% if debug_info.gm is defined %}
+            <h3 style="margin-top: 1rem;">GM-AI</h3>
+            <table class="debug-table">
+                <thead>
+                    <tr>
+                        <th>入力</th>
+                        <th>出力</th>
+                        <th>キャッシュ</th>
+                        <th>コスト</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ debug_info.gm.last_input_tokens }}</td>
+                        <td>{{ debug_info.gm.last_output_tokens }}</td>
+                        <td>{{ debug_info.gm.last_cache_read_input_tokens }}</td>
+                        <td>{{ debug_info.gm.last_cost }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% endif %}
         </div>
         {% endif %}
     </div>
