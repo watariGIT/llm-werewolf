@@ -189,6 +189,8 @@ src/llm_werewolf/
 | `_extract_thinking_map` | ゲームログから当日の `[思考]` エントリを抽出し `{player_name: [thinking_text]}` で返す。デバッグモードの議論表示用 |
 | `_extract_vote_thinking` | 当日の投票フェーズの思考を抽出する。発言後に議論思考がクリアされるため、投票理由のみを `{player_name: thinking_text}` で返す |
 | `_extract_night_thinking` | 指定された夜フェーズの思考を抽出する。`{player_name: thinking_text}` の辞書を返す |
+| `_extract_thinking_by_day` | 全日の思考ログを日別に抽出する。議論中の思考は発言が続いた場合のみ discussion に確定し、発言なしで投票が来た場合は vote に分類する。`{day: {"discussion": {name: [text]}, "vote": {name: text}, "night": {name: text}}}` を返す |
+| `_format_cost` | プロバイダーのトークン情報からコスト文字列（`$X.XXXXXX` または `N/A`）を生成するヘルパー関数 |
 
 ### Web エンドポイント (`main.py`)
 

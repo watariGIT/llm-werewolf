@@ -56,7 +56,7 @@
             </div>
             {% endif %}
             {% if debug_mode and n_thinking %}
-            <div style="margin-top: 0.5rem;">
+            <div class="debug-section-sm">
                 {% for name, thinking in n_thinking.items() %}
                 <details class="debug-thinking">
                     <summary>{{ name }} の夜の思考</summary>
@@ -344,6 +344,15 @@
         }
         .debug-personality {
             font-size: 0.75rem;
+        }
+        .debug-section {
+            margin-top: 1rem;
+        }
+        .debug-section-sm {
+            margin-top: 0.5rem;
+        }
+        .debug-panel h3 {
+            margin-top: 1rem;
         }
         @media (max-width: 600px) {
             .header {
@@ -687,7 +696,7 @@
             {% endif %}
 
             {% if debug_mode and night_thinking is defined and night_thinking %}
-            <div style="margin-top: 1rem;">
+            <div class="debug-section">
                 {% for name, thinking in night_thinking.items() %}
                 <details class="debug-thinking">
                     <summary>{{ name }} の思考</summary>
@@ -763,7 +772,7 @@
                 </tbody>
             </table>
             {% if debug_info.gm is defined %}
-            <h3 style="margin-top: 1rem;">GM-AI</h3>
+            <h3>GM-AI</h3>
             <table class="debug-table">
                 <thead>
                     <tr>
@@ -784,7 +793,7 @@
             </table>
             {% endif %}
             {% if debug_info.totals is defined %}
-            <h3 style="margin-top: 1rem;">合計</h3>
+            <h3>合計</h3>
             <table class="debug-table">
                 <thead>
                     <tr>
