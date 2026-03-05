@@ -187,6 +187,8 @@ src/llm_werewolf/
 | `_extract_events_by_day` | 日ごとの公開イベント（`[投票]`・`[処刑]`・`[襲撃]`）を `{day: [(type, text)]}` で返す。議論・投票フェーズで過去日の履歴表示に使用 |
 | `_collect_debug_info` | デバッグモード用に各 AI プレイヤーの役職・人格パラメータ・内部思考・トークン使用量を収集する |
 | `_extract_thinking_map` | ゲームログから当日の `[思考]` エントリを抽出し `{player_name: [thinking_text]}` で返す。デバッグモードの議論表示用 |
+| `_extract_vote_thinking` | 当日の投票フェーズの思考を抽出する。発言後に議論思考がクリアされるため、投票理由のみを `{player_name: thinking_text}` で返す |
+| `_extract_night_thinking` | 指定された夜フェーズの思考を抽出する。`{player_name: thinking_text}` の辞書を返す |
 
 ### Web エンドポイント (`main.py`)
 
