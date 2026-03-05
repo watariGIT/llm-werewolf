@@ -307,6 +307,74 @@ def _extract_night_thinking(game: GameState, night_number: int) -> dict[str, str
     return night_thinking
 
 
+def _extract_thinking_by_day(game: GameState) -> dict[int, dict[str, Any]]:
+    """全日の思考ログを日別に抽出する。
+
+    議論中の思考は [発言] が続いた場合のみ discussion に確定する。
+    [発言] なしで [投票] が来た場合は vote に分類される。
+
+    Returns:
+        {day: {"discussion": {name: [text, ...]}, "vote": {name: text}, "night": {name: text}}}
+    """
+    result: dict[int, dict[str, Any]] = {}
+    current_day = 0
+    current_night = 0
+    in_night = False
+    in_vote_phase = False
+    # pending_thinking: 思考を一時保持し、[発言] or [投票] で確定先を決める
+    pending_thinking: dict[str, str] = {}
+
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+            in_night = False
+            in_vote_phase = False
+            pending_thinking = {}
+            if current_day not in result:
+                result[current_day] = {"discussion": {}, "vote": {}, "night": {}}
+        elif entry.startswith(_NIGHT_HEADER_PREFIX):
+            parts = entry[len(_NIGHT_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_night = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+            in_night = True
+            in_vote_phase = False
+            pending_thinking = {}
+        elif in_night:
+            if entry.startswith(_THINKING_PREFIX):
+                rest = entry[len(_THINKING_PREFIX) :]
+                if ": " in rest:
+                    name, text = rest.split(": ", 1)
+                    day_data = result.get(current_night, {"discussion": {}, "vote": {}, "night": {}})
+                    result[current_night] = day_data
+                    day_data["night"][name] = text
+        elif current_day > 0:
+            if entry.startswith(_VOTE_PREFIX):
+                in_vote_phase = True
+                if pending_thinking:
+                    day_data = result[current_day]
+                    day_data["vote"].update(pending_thinking)
+                    pending_thinking = {}
+            elif entry.startswith(_THINKING_PREFIX) and not in_vote_phase:
+                rest = entry[len(_THINKING_PREFIX) :]
+                if ": " in rest:
+                    name, text = rest.split(": ", 1)
+                    pending_thinking[name] = text
+            elif entry.startswith(_SPEECH_PREFIX):
+                speaker = entry[len(_SPEECH_PREFIX) :].split(": ", 1)[0]
+                # 発言が来たので、その話者の pending_thinking を discussion に確定
+                if speaker in pending_thinking:
+                    day_data = result[current_day]
+                    day_data["discussion"].setdefault(speaker, []).append(pending_thinking.pop(speaker))
+
+    return result
+
+
 def _extract_discussions_by_day(game: GameState) -> dict[int, list[str]]:
     """ゲームログから日ごとの発言を抽出する。
 
@@ -556,6 +624,8 @@ async def play_game(request: Request, game_id: str, debug: str = "") -> HTMLResp
         context["thinking_map"] = _extract_thinking_map(session.game)
         context["vote_thinking"] = _extract_vote_thinking(session.game)
         context["night_thinking"] = _extract_night_thinking(session.game, session.game.day - 1)
+        all_thinking = _extract_thinking_by_day(session.game)
+        context["past_thinking"] = {day: data for day, data in all_thinking.items() if day < session.game.day}
 
     return templates.TemplateResponse(request, "game.html", context)
 

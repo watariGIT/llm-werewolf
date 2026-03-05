@@ -1,16 +1,32 @@
-{% macro past_day_details(past_days, past_discussions, past_events) %}
+{% macro past_day_details(past_days, past_discussions, past_events, past_thinking=none, debug_mode=false) %}
 {% if past_days %}
 <div class="past-discussion">
     {% for day in past_days %}
+    {% set day_thinking = past_thinking.get(day, {}) if past_thinking else {} %}
+    {% set disc_thinking = day_thinking.get('discussion', {}) if day_thinking else {} %}
+    {% set v_thinking = day_thinking.get('vote', {}) if day_thinking else {} %}
+    {% set n_thinking = day_thinking.get('night', {}) if day_thinking else {} %}
     <details>
         <summary>Day {{ day }}</summary>
         <div class="detail-content">
             {% if past_discussions.get(day) %}
             <ul class="message-list">
+                {% set thinking_counters = {} %}
                 {% for msg in past_discussions[day] %}
+                {% set speaker_name = msg.split(': ', 1)[0] %}
                 <li>
-                    <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                    <span class="speaker">{{ speaker_name }}</span>:
                     {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                    {% if debug_mode and disc_thinking.get(speaker_name) %}
+                        {% set idx = thinking_counters.get(speaker_name, 0) %}
+                        {% if idx < disc_thinking[speaker_name]|length %}
+                        <details class="debug-thinking">
+                            <summary>思考を表示</summary>
+                            <div class="debug-thinking-text">{{ disc_thinking[speaker_name][idx] }}</div>
+                        </details>
+                        {% endif %}
+                        {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                    {% endif %}
                 </li>
                 {% endfor %}
             </ul>
@@ -21,12 +37,31 @@
                     {% if event_type == "vote" %}
                     <div class="past-vote-entry">
                         <span class="vote-arrow">&rarr;</span> {{ event_text }}
+                        {% if debug_mode and v_thinking %}
+                            {% set voter_name = event_text.split(' → ', 1)[0] if ' → ' in event_text else '' %}
+                            {% if v_thinking.get(voter_name) %}
+                            <details class="debug-thinking">
+                                <summary>思考を表示</summary>
+                                <div class="debug-thinking-text">{{ v_thinking[voter_name] }}</div>
+                            </details>
+                            {% endif %}
+                        {% endif %}
                     </div>
                     {% elif event_type == "execution" %}
                     <div class="event-msg execution">{{ event_text }}</div>
                     {% elif event_type == "attack" %}
                     <div class="event-msg attack">{{ event_text }}</div>
                     {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if debug_mode and n_thinking %}
+            <div style="margin-top: 0.5rem;">
+                {% for name, thinking in n_thinking.items() %}
+                <details class="debug-thinking">
+                    <summary>{{ name }} の夜の思考</summary>
+                    <div class="debug-thinking-text">{{ thinking }}</div>
+                </details>
                 {% endfor %}
             </div>
             {% endif %}
@@ -403,7 +438,7 @@
 
         <!-- DISCUSSION: 議論フェーズ -->
         {% if step == "discussion" %}
-        {{ past_day_details(past_days, past_discussions, past_events) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
         <div class="panel" id="current-discussion-panel">
             <h2>議論 - Day {{ game.day }}</h2>
             <ul class="message-list" id="current-discussion-list">
@@ -450,7 +485,7 @@
 
         <!-- VOTE: 投票フェーズ -->
         {% if step == "vote" %}
-        {{ past_day_details(past_days, past_discussions, past_events) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
         {% if session.current_discussion %}
         <div class="panel">
             <h2>議論 - Day {{ game.day }}</h2>
@@ -526,7 +561,7 @@
 
         <!-- NIGHT_ACTION: 夜行動選択 -->
         {% if step == "night_action" %}
-        {{ past_day_details(past_days, past_discussions, past_events) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
         <div class="past-discussion">
             <details>
                 <summary>Day {{ game.day }}（今日）</summary>

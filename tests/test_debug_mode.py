@@ -9,6 +9,7 @@ from llm_werewolf.domain.services import create_game
 from llm_werewolf.main import (
     _collect_debug_info,
     _extract_night_thinking,
+    _extract_thinking_by_day,
     _extract_thinking_map,
     _extract_vote_thinking,
     app,
@@ -292,3 +293,80 @@ class TestDebugModeEndpoint:
             assert "<h2>デバッグ情報</h2>" not in html
         finally:
             interactive_store.delete(session.game_id)
+
+
+class TestExtractThinkingByDay:
+    """_extract_thinking_by_day のユニットテスト。"""
+
+    def test_empty_log(self) -> None:
+        game = GameState(players=create_game(PLAYER_NAMES, rng=random.Random(42)).players)
+        result = _extract_thinking_by_day(game)
+        assert result == {}
+
+    def test_extracts_discussion_thinking(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            day=1,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[思考] AI-1: 占い師COすべきか",
+                "[発言] AI-1: おはようございます",
+                "[思考] AI-2: 静観しよう",
+                "[発言] AI-2: よろしく",
+            ),
+        )
+        result = _extract_thinking_by_day(game)
+        assert 1 in result
+        assert result[1]["discussion"] == {"AI-1": ["占い師COすべきか"], "AI-2": ["静観しよう"]}
+
+    def test_extracts_vote_thinking(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            day=1,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[思考] AI-1: 議論の思考",
+                "[発言] AI-1: 発言内容",
+                "[思考] AI-1: AI-3が怪しい",
+                "[投票] AI-1 → AI-3",
+            ),
+        )
+        result = _extract_thinking_by_day(game)
+        assert result[1]["vote"] == {"AI-1": "AI-3が怪しい"}
+
+    def test_extracts_night_thinking(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            day=2,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "--- Night 1 （夜フェーズ） ---",
+                "[思考] AI-1: AI-3を占いたい",
+                "--- Day 2 （昼フェーズ） ---",
+            ),
+        )
+        result = _extract_thinking_by_day(game)
+        assert result[1]["night"] == {"AI-1": "AI-3を占いたい"}
+
+    def test_multiple_days(self) -> None:
+        game = GameState(
+            players=create_game(PLAYER_NAMES, rng=random.Random(42)).players,
+            day=2,
+            log=(
+                "--- Day 1 （昼フェーズ） ---",
+                "[思考] AI-1: Day1の思考",
+                "[発言] AI-1: Day1の発言",
+                "[思考] AI-1: Day1投票理由",
+                "[投票] AI-1 → AI-2",
+                "--- Night 1 （夜フェーズ） ---",
+                "[思考] AI-1: Night1の思考",
+                "--- Day 2 （昼フェーズ） ---",
+                "[思考] AI-2: Day2の思考",
+                "[発言] AI-2: Day2の発言",
+            ),
+        )
+        result = _extract_thinking_by_day(game)
+        assert result[1]["discussion"] == {"AI-1": ["Day1の思考"]}
+        assert result[1]["vote"] == {"AI-1": "Day1投票理由"}
+        assert result[1]["night"] == {"AI-1": "Night1の思考"}
+        assert result[2]["discussion"] == {"AI-2": ["Day2の思考"]}
