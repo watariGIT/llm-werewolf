@@ -3,10 +3,12 @@ from __future__ import annotations
 import random
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from llm_werewolf.domain.game import GameState
+from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import check_victory
 from llm_werewolf.domain.value_objects import NightActionType, Phase, Role, Team
 from llm_werewolf.engine.action_provider import ActionProvider
@@ -119,10 +121,20 @@ class GameEngine:
         game = game.add_log(f"--- Night {game.day} （夜フェーズ） ---")
         game = replace(game, phase=Phase.NIGHT)
 
-        # 占い → 護衛 → 襲撃 の順に解決
-        game, divine_result = self._resolve_divine(game)
-        game, guard_target_name = self._resolve_guard(game)
-        game, attack_target_name = self._resolve_attack(game)
+        # LLM 判断を並行収集
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            divine_future = executor.submit(self._collect_night_decision, game, NightActionType.DIVINE)
+            guard_future = executor.submit(self._collect_night_decision, game, NightActionType.GUARD)
+            attack_future = executor.submit(self._collect_night_decision, game, NightActionType.ATTACK)
+
+        divine_decision = divine_future.result()
+        guard_decision = guard_future.result()
+        attack_decision = attack_future.result()
+
+        # 結果の適用は逐次（占い → 護衛 → 襲撃の順）
+        game, divine_result = self._apply_night_divine(game, divine_decision)
+        game, guard_target_name = self._apply_night_guard(game, guard_decision)
+        game, attack_target_name = self._apply_night_attack(game, attack_decision)
 
         # 襲撃処理（護衛判定を含む）
         attacked_name: str | None = None
@@ -176,14 +188,22 @@ class GameEngine:
     def _vote_and_execution_phase(self, game: GameState) -> GameState:
         votes: dict[str, str] = {}
         vote_thinking: dict[str, str] = {}
-        for player in game.alive_players:
+
+        voters = [(player, self._providers[player.name]) for player in game.alive_players]
+
+        def vote_task(player: Player, provider: ActionProvider) -> tuple[str, str, str]:
             candidates = tuple(p for p in game.alive_players if p.name != player.name)
-            provider = self._providers[player.name]
             target_name = provider.vote(game, player, candidates)
             thinking = getattr(provider, "last_thinking", "")
-            votes[player.name] = target_name
-            if thinking:
-                vote_thinking[player.name] = thinking
+            return player.name, target_name, thinking
+
+        with ThreadPoolExecutor(max_workers=len(voters)) as executor:
+            futures = {executor.submit(vote_task, p, prov): p.name for p, prov in voters}
+            for future in as_completed(futures):
+                name, target_name, thinking = future.result()
+                votes[name] = target_name
+                if thinking:
+                    vote_thinking[name] = thinking
 
         # 全投票収集後にまとめてログ記録（投票中に他者の投票が見えないようにする）
         for voter_name, vote_target in votes.items():
@@ -208,53 +228,59 @@ class GameEngine:
 
         return game
 
-    def _resolve_divine(self, game: GameState) -> tuple[GameState, tuple[str, str, bool] | None]:
-        """占いを実行し、更新された game と結果を返す。結果は (seer_name, target_name, is_werewolf) または None。"""
-        seer = find_night_actor(game, NightActionType.DIVINE)
-        if seer is None:
-            return game, None
+    def _collect_night_decision(self, game: GameState, action_type: NightActionType) -> tuple[Player, str, str] | None:
+        """夜行動の LLM 判断のみを収集する（ゲーム状態は変更しない）。
 
-        candidates = get_night_action_candidates(game, seer)
+        Returns:
+            (actor, target_name, thinking) または None
+        """
+        actor = find_night_actor(game, action_type)
+        if actor is None:
+            return None
+
+        candidates = get_night_action_candidates(game, actor)
         if not candidates:
-            return game, None
+            return None
 
-        provider = self._providers[seer.name]
-        target_name = provider.divine(game, seer, candidates)
+        provider = self._providers[actor.name]
+        method_map = {
+            NightActionType.DIVINE: provider.divine,
+            NightActionType.GUARD: provider.guard,
+            NightActionType.ATTACK: provider.attack,
+        }
+        target_name = method_map[action_type](game, actor, candidates)
         thinking = getattr(provider, "last_thinking", "")
+        return (actor, target_name, thinking)
+
+    def _apply_night_divine(
+        self, game: GameState, decision: tuple[Player, str, str] | None
+    ) -> tuple[GameState, tuple[str, str, bool] | None]:
+        """占い判断の結果をゲーム状態に適用する。"""
+        if decision is None:
+            return game, None
+        actor, target_name, thinking = decision
         if thinking:
-            game = game.add_log(f"[思考] {seer.name}: {thinking}")
-        return execute_divine(game, seer, target_name)
+            game = game.add_log(f"[思考] {actor.name}: {thinking}")
+        return execute_divine(game, actor, target_name)
 
-    def _resolve_guard(self, game: GameState) -> tuple[GameState, str | None]:
-        """護衛を実行し、更新された game と護衛対象の名前を返す。"""
-        knight = find_night_actor(game, NightActionType.GUARD)
-        if knight is None:
+    def _apply_night_guard(
+        self, game: GameState, decision: tuple[Player, str, str] | None
+    ) -> tuple[GameState, str | None]:
+        """護衛判断の結果をゲーム状態に適用する。"""
+        if decision is None:
             return game, None
-
-        candidates = get_night_action_candidates(game, knight)
-        if not candidates:
-            return game, None
-
-        provider = self._providers[knight.name]
-        target_name = provider.guard(game, knight, candidates)
-        thinking = getattr(provider, "last_thinking", "")
+        actor, target_name, thinking = decision
         if thinking:
-            game = game.add_log(f"[思考] {knight.name}: {thinking}")
-        return execute_guard(game, knight, target_name)
+            game = game.add_log(f"[思考] {actor.name}: {thinking}")
+        return execute_guard(game, actor, target_name)
 
-    def _resolve_attack(self, game: GameState) -> tuple[GameState, str | None]:
-        """襲撃を実行し、更新された game と対象の名前を返す。"""
-        werewolf = find_night_actor(game, NightActionType.ATTACK)
-        if werewolf is None:
+    def _apply_night_attack(
+        self, game: GameState, decision: tuple[Player, str, str] | None
+    ) -> tuple[GameState, str | None]:
+        """襲撃判断の結果をゲーム状態に適用する。"""
+        if decision is None:
             return game, None
-
-        candidates = get_night_action_candidates(game, werewolf)
-        if not candidates:
-            return game, None
-
-        provider = self._providers[werewolf.name]
-        target_name = provider.attack(game, werewolf, candidates)
-        thinking = getattr(provider, "last_thinking", "")
+        actor, target_name, thinking = decision
         if thinking:
-            game = game.add_log(f"[思考] {werewolf.name}: {thinking}")
-        return execute_attack(game, werewolf, target_name)
+            game = game.add_log(f"[思考] {actor.name}: {thinking}")
+        return execute_attack(game, actor, target_name)
