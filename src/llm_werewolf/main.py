@@ -121,6 +121,51 @@ _SPEECH_PREFIX = "[発言] "
 _EXECUTION_PREFIX = "[処刑] "
 _VOTE_PREFIX = "[投票] "
 _ATTACK_PREFIX = "[襲撃] "
+_THINKING_PREFIX = "[思考] "
+
+
+def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
+    """デバッグモード用のAI内部情報を収集する。"""
+    debug_players: dict[str, dict[str, Any]] = {}
+    for p in session.game.players:
+        if p.name == session.human_player_name:
+            continue
+        provider = session.providers.get(p.name)
+        if provider is None:
+            continue
+        debug_players[p.name] = {
+            "role": p.role.value,
+            "personality": getattr(provider, "_personality", ""),
+            "last_thinking": getattr(provider, "last_thinking", ""),
+            "last_input_tokens": getattr(provider, "last_input_tokens", 0),
+            "last_output_tokens": getattr(provider, "last_output_tokens", 0),
+            "last_cache_read_input_tokens": getattr(provider, "last_cache_read_input_tokens", 0),
+        }
+    return {"players": debug_players}
+
+
+def _extract_thinking_map(game: GameState) -> dict[str, list[str]]:
+    """ゲームログから発言順に対応する思考ログを抽出する。
+
+    Returns:
+        {player_name: [thinking_text, ...]} の辞書。議論の発言順に対応。
+    """
+    thinking_map: dict[str, list[str]] = {}
+    current_day = 0
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+        elif entry.startswith(_THINKING_PREFIX) and current_day == game.day:
+            # "[思考] PlayerName: thinking text"
+            rest = entry[len(_THINKING_PREFIX) :]
+            if ": " in rest:
+                name, text = rest.split(": ", 1)
+                thinking_map.setdefault(name, []).append(text)
+    return thinking_map
 
 
 def _extract_discussions_by_day(game: GameState) -> dict[int, list[str]]:
@@ -301,11 +346,13 @@ async def create_interactive_game(player_name: str = Form(...), role: str = Form
 
 
 @app.get("/play/{game_id}", response_class=HTMLResponse)
-async def play_game(request: Request, game_id: str) -> HTMLResponse:
+async def play_game(request: Request, game_id: str, debug: str = "") -> HTMLResponse:
     """ゲーム画面を表示する。"""
     session = interactive_store.get(game_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Game not found")
+
+    debug_mode = debug == "1"
 
     human_player = session.game.find_player(session.human_player_name)
     human_is_alive = human_player is not None and human_player.is_alive
@@ -347,27 +394,29 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     if human_player and human_player.role == Role.WEREWOLF:
         werewolf_allies = [p for p in session.game.alive_werewolves if p.name != session.human_player_name]
 
-    return templates.TemplateResponse(
-        request,
-        "game.html",
-        {
-            "session": session,
-            "game": session.game,
-            "step": session.step.value,
-            "human_player": human_player,
-            "human_is_alive": human_is_alive,
-            "vote_candidates": vote_candidates,
-            "night_action_type": night_action_type,
-            "night_action_candidates": night_action_candidates,
-            "game_id": game_id,
-            "ordered_players": ordered_players,
-            "current_execution_logs": current_execution_logs,
-            "past_discussions": past_discussions,
-            "past_events": past_events,
-            "past_days": past_days,
-            "werewolf_allies": werewolf_allies,
-        },
-    )
+    context: dict[str, Any] = {
+        "session": session,
+        "game": session.game,
+        "step": session.step.value,
+        "human_player": human_player,
+        "human_is_alive": human_is_alive,
+        "vote_candidates": vote_candidates,
+        "night_action_type": night_action_type,
+        "night_action_candidates": night_action_candidates,
+        "game_id": game_id,
+        "ordered_players": ordered_players,
+        "current_execution_logs": current_execution_logs,
+        "past_discussions": past_discussions,
+        "past_events": past_events,
+        "past_days": past_days,
+        "werewolf_allies": werewolf_allies,
+        "debug_mode": debug_mode,
+    }
+    if debug_mode:
+        context["debug_info"] = _collect_debug_info(session)
+        context["thinking_map"] = _extract_thinking_map(session.game)
+
+    return templates.TemplateResponse(request, "game.html", context)
 
 
 @app.post("/play/{game_id}/next")
@@ -495,11 +544,15 @@ def _get_session_or_raise(game_id: str) -> InteractiveSession:
 
 
 def _make_sse_callbacks(
-    loop: asyncio.AbstractEventLoop, queue: asyncio.Queue[dict[str, Any] | None]
+    loop: asyncio.AbstractEventLoop,
+    queue: asyncio.Queue[dict[str, Any] | None],
+    session: InteractiveSession | None = None,
+    debug_mode: bool = False,
 ) -> tuple[Any, Any, Any]:
     """SSE 用の on_progress / on_message / on_token_chunk コールバックを生成する。
 
     コールバックはワーカースレッドから呼ばれるため loop.call_soon_threadsafe を使用する。
+    debug_mode が有効な場合、on_message 後に debug イベントを送信する。
     """
 
     def on_progress(player_name: str, action_type: str) -> None:
@@ -507,6 +560,20 @@ def _make_sse_callbacks(
 
     def on_message(player_name: str, text: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, {"event": "message", "player": player_name, "text": text})
+        if debug_mode and session is not None:
+            provider = session.providers.get(player_name)
+            if provider is not None:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {
+                        "event": "debug",
+                        "player": player_name,
+                        "thinking": getattr(provider, "last_thinking", ""),
+                        "input_tokens": getattr(provider, "last_input_tokens", 0),
+                        "output_tokens": getattr(provider, "last_output_tokens", 0),
+                        "cache_read_tokens": getattr(provider, "last_cache_read_input_tokens", 0),
+                    },
+                )
 
     def on_token_chunk(player_name: str, chunk: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, {"event": "token", "player": player_name, "chunk": chunk})
@@ -526,16 +593,17 @@ async def _sse_stream(queue: asyncio.Queue[dict[str, Any] | None]) -> AsyncGener
 
 
 @app.post("/play/{game_id}/sse/next")
-async def sse_advance_game(game_id: str) -> StreamingResponse:
+async def sse_advance_game(request: Request, game_id: str) -> StreamingResponse:
     """次のステップへ進む（SSE ストリーム版）。"""
     session = _get_session_or_raise(game_id)
+    debug_mode = request.query_params.get("debug") == "1"
 
     human_player = session.game.find_player(session.human_player_name)
     human_is_alive = human_player is not None and human_player.is_alive
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue)
+    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue, session, debug_mode)
 
     def process() -> None:
         try:
@@ -562,9 +630,10 @@ async def sse_advance_game(game_id: str) -> StreamingResponse:
 
 
 @app.post("/play/{game_id}/sse/discuss")
-async def sse_submit_discussion(game_id: str, message: str = Form("")) -> StreamingResponse:
+async def sse_submit_discussion(request: Request, game_id: str, message: str = Form("")) -> StreamingResponse:
     """ユーザー発言を送信する（SSE ストリーム版）。"""
     session = _get_session_or_raise(game_id)
+    debug_mode = request.query_params.get("debug") == "1"
 
     if session.step != GameStep.DISCUSSION:
         raise HTTPException(status_code=400, detail="Invalid step")
@@ -575,7 +644,7 @@ async def sse_submit_discussion(game_id: str, message: str = Form("")) -> Stream
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue)
+    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue, session, debug_mode)
 
     def process() -> None:
         try:
@@ -591,9 +660,10 @@ async def sse_submit_discussion(game_id: str, message: str = Form("")) -> Stream
 
 
 @app.post("/play/{game_id}/sse/vote")
-async def sse_submit_vote(game_id: str, target: str = Form(...)) -> StreamingResponse:
+async def sse_submit_vote(request: Request, game_id: str, target: str = Form(...)) -> StreamingResponse:
     """ユーザー投票を送信する（SSE ストリーム版）。"""
     session = _get_session_or_raise(game_id)
+    debug_mode = request.query_params.get("debug") == "1"
 
     if session.step != GameStep.VOTE:
         raise HTTPException(status_code=400, detail="Invalid step")
@@ -606,7 +676,7 @@ async def sse_submit_vote(game_id: str, target: str = Form(...)) -> StreamingRes
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, _, _ = _make_sse_callbacks(loop, queue)
+    on_progress, _, _ = _make_sse_callbacks(loop, queue, session, debug_mode)
 
     def process() -> None:
         try:
@@ -620,9 +690,10 @@ async def sse_submit_vote(game_id: str, target: str = Form(...)) -> StreamingRes
 
 
 @app.post("/play/{game_id}/sse/night-action")
-async def sse_submit_night_action(game_id: str, target: str = Form(...)) -> StreamingResponse:
+async def sse_submit_night_action(request: Request, game_id: str, target: str = Form(...)) -> StreamingResponse:
     """ユーザーの夜行動を送信する（SSE ストリーム版）。"""
     session = _get_session_or_raise(game_id)
+    debug_mode = request.query_params.get("debug") == "1"
 
     if session.step != GameStep.NIGHT_ACTION:
         raise HTTPException(status_code=400, detail="Invalid step")
@@ -634,7 +705,7 @@ async def sse_submit_night_action(game_id: str, target: str = Form(...)) -> Stre
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, _, _ = _make_sse_callbacks(loop, queue)
+    on_progress, _, _ = _make_sse_callbacks(loop, queue, session, debug_mode)
 
     def process() -> None:
         try:
