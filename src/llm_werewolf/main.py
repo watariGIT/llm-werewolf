@@ -150,6 +150,10 @@ def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
     result: dict[str, Any] = {"players": debug_players}
 
     gm = session.gm_provider
+    gm_input = 0
+    gm_output = 0
+    gm_cache = 0
+    gm_cost: float | None = None
     if gm is not None:
         gm_input = gm.last_input_tokens
         gm_output = gm.last_output_tokens
@@ -161,6 +165,35 @@ def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
             "last_cache_read_input_tokens": gm_cache,
             "last_cost": f"${gm_cost:.6f}" if gm_cost is not None else "N/A",
         }
+
+    # 合計の計算
+    total_input = sum(pi["last_input_tokens"] for pi in debug_players.values())
+    total_output = sum(pi["last_output_tokens"] for pi in debug_players.values())
+    total_cache = sum(pi["last_cache_read_input_tokens"] for pi in debug_players.values())
+    total_cost_usd = 0.0
+    cost_available = True
+    for pi in debug_players.values():
+        c = estimate_cost(
+            llm_config.model_name, pi["last_input_tokens"], pi["last_output_tokens"], pi["last_cache_read_input_tokens"]
+        )
+        if c is not None:
+            total_cost_usd += c
+        else:
+            cost_available = False
+    if gm is not None:
+        total_input += gm_input
+        total_output += gm_output
+        total_cache += gm_cache
+        if gm_cost is not None:
+            total_cost_usd += gm_cost
+        else:
+            cost_available = False
+    result["totals"] = {
+        "input_tokens": total_input,
+        "output_tokens": total_output,
+        "cache_read_input_tokens": total_cache,
+        "cost": f"${total_cost_usd:.6f}" if cost_available else "N/A",
+    }
 
     return result
 

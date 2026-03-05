@@ -70,6 +70,24 @@ class TestCollectDebugInfo:
         finally:
             interactive_store.delete(session.game_id)
 
+    def test_totals_included(self) -> None:
+        """合計値が含まれる。"""
+        session = _create_test_session()
+        try:
+            info = _collect_debug_info(session)
+            assert "totals" in info
+            totals = info["totals"]
+            assert "input_tokens" in totals
+            assert "output_tokens" in totals
+            assert "cache_read_input_tokens" in totals
+            assert "cost" in totals
+            assert isinstance(totals["input_tokens"], int)
+            assert isinstance(totals["output_tokens"], int)
+            assert isinstance(totals["cache_read_input_tokens"], int)
+            assert isinstance(totals["cost"], str)
+        finally:
+            interactive_store.delete(session.game_id)
+
 
 class TestExtractThinkingMap:
     """_extract_thinking_map のユニットテスト。"""
