@@ -17,7 +17,7 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
 from llm_werewolf.domain.value_objects import Role
-from llm_werewolf.engine.llm_config import LLMConfig, PromptConfig, load_gm_config, load_llm_config, load_prompt_config
+from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config, load_llm_config, load_prompt_config
 from llm_werewolf.engine.metrics import estimate_cost
 from llm_werewolf.session import (
     GameSessionStore,
@@ -53,17 +53,27 @@ if os.environ.get("LLM_DEBUG", "").strip():
 
 logger = logging.getLogger(__name__)
 
-try:
-    llm_config = load_llm_config()
-except ValueError as e:
-    logger.error("プレイヤーAI設定の読み込みに失敗しました: %s", e)
-    sys.exit(1)
+_random_mode = bool(os.environ.get("RANDOM_MODE", "").strip())
 
-try:
-    gm_config = load_gm_config()
-except ValueError as e:
-    logger.error("GM-AI設定の読み込みに失敗しました: %s", e)
-    sys.exit(1)
+llm_config: LLMConfig | None = None
+gm_config: LLMConfig | None = None
+
+if _random_mode:
+    logger.info("=== LLM人狼 ランダムモード ===")
+    logger.info("  RandomActionProvider を使用（OPENAI_API_KEY 不要）")
+    logger.info("==============================")
+else:
+    try:
+        llm_config = load_llm_config()
+    except ValueError as e:
+        logger.error("プレイヤーAI設定の読み込みに失敗しました: %s", e)
+        sys.exit(1)
+
+    try:
+        gm_config = load_gm_config()
+    except ValueError as e:
+        logger.error("GM-AI設定の読み込みに失敗しました: %s", e)
+        sys.exit(1)
 
 try:
     prompt_config = load_prompt_config()
@@ -71,32 +81,16 @@ except ValueError as e:
     logger.error("プロンプト設定の読み込みに失敗しました: %s", e)
     sys.exit(1)
 
-
-def _log_startup_config(
-    llm_cfg: LLMConfig,
-    gm_cfg: LLMConfig,
-    prompt_cfg: PromptConfig,
-    llm_debug: bool,
-    log_level: str,
-) -> None:
+if not _random_mode and llm_config is not None and gm_config is not None:
     logger.info("=== LLM人狼 設定情報 ===")
-    logger.info("  プレイヤーAI: model=%s, temperature=%s", llm_cfg.model_name, llm_cfg.temperature)
-    logger.info("  GM-AI:       model=%s, temperature=%s", gm_cfg.model_name, gm_cfg.temperature)
+    logger.info("  プレイヤーAI: model=%s, temperature=%s", llm_config.model_name, llm_config.temperature)
+    logger.info("  GM-AI:       model=%s, temperature=%s", gm_config.model_name, gm_config.temperature)
     logger.info(
-        "  発言ログ上限: player=%d, gm=%d", prompt_cfg.max_recent_statements, prompt_cfg.gm_max_recent_statements
+        "  発言ログ上限: player=%d, gm=%d", prompt_config.max_recent_statements, prompt_config.gm_max_recent_statements
     )
-    logger.info("  LLM_DEBUG=%s, LOG_LEVEL=%s", llm_debug, log_level)
+    logger.info("  LLM_DEBUG=%s, LOG_LEVEL=%s", bool(os.environ.get("LLM_DEBUG", "").strip()), _log_level_name)
     logger.info("  OPENAI_API_KEY: 設定済み")
     logger.info("========================")
-
-
-_log_startup_config(
-    llm_config,
-    gm_config,
-    prompt_config,
-    llm_debug=bool(os.environ.get("LLM_DEBUG", "").strip()),
-    log_level=_log_level_name,
-)
 
 app = FastAPI(title="LLM人狼")
 
@@ -144,7 +138,8 @@ def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
             input_tokens = getattr(provider, "last_input_tokens", 0)
             output_tokens = getattr(provider, "last_output_tokens", 0)
             cache_read = getattr(provider, "last_cache_read_input_tokens", 0)
-        cost = estimate_cost(llm_config.model_name, input_tokens, output_tokens, cache_read)
+        model_name = llm_config.model_name if llm_config is not None else ""
+        cost = estimate_cost(model_name, input_tokens, output_tokens, cache_read)
         debug_players[p.name] = {
             "role": p.role.value,
             "personality": getattr(provider, "_personality", ""),
@@ -165,7 +160,8 @@ def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
         gm_input = gm.last_input_tokens
         gm_output = gm.last_output_tokens
         gm_cache = gm.last_cache_read_input_tokens
-        gm_cost = estimate_cost(gm_config.model_name, gm_input, gm_output, gm_cache)
+        gm_model_name = gm_config.model_name if gm_config is not None else ""
+        gm_cost = estimate_cost(gm_model_name, gm_input, gm_output, gm_cache)
         result["gm"] = {
             "last_input_tokens": gm_input,
             "last_output_tokens": gm_output,
@@ -181,7 +177,7 @@ def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
     cost_available = True
     for pi in debug_players.values():
         c = estimate_cost(
-            llm_config.model_name, pi["last_input_tokens"], pi["last_output_tokens"], pi["last_cache_read_input_tokens"]
+            model_name, pi["last_input_tokens"], pi["last_output_tokens"], pi["last_cache_read_input_tokens"]
         )
         if c is not None:
             total_cost_usd += c
@@ -210,7 +206,8 @@ def _format_cost(provider: object) -> str:
     input_tokens = getattr(provider, "last_input_tokens", 0)
     output_tokens = getattr(provider, "last_output_tokens", 0)
     cache_read = getattr(provider, "last_cache_read_input_tokens", 0)
-    cost = estimate_cost(llm_config.model_name, input_tokens, output_tokens, cache_read)
+    model_name = llm_config.model_name if llm_config is not None else ""
+    cost = estimate_cost(model_name, input_tokens, output_tokens, cache_read)
     return f"${cost:.6f}" if cost is not None else "N/A"
 
 

@@ -8,6 +8,7 @@ Usage::
     uv run python -m llm_werewolf --llm-debug              # LLM プロンプト/レスポンス/トークン数を表示
     uv run python -m llm_werewolf --port 8080              # ポート指定
     uv run python -m llm_werewolf --env-file .env.prod     # 読み込む env ファイルを指定
+    uv run python -m llm_werewolf --random                 # OPENAI_API_KEY 不要のランダムモードで起動
 """
 
 from __future__ import annotations
@@ -30,9 +31,17 @@ def main() -> None:
         help="LLM プロンプト・レスポンス・トークン使用量を標準出力に表示",
     )
     parser.add_argument("--env-file", default=".env", help="読み込む .env ファイルのパス (default: .env)")
+    parser.add_argument(
+        "--random",
+        action="store_true",
+        help="OPENAI_API_KEY 不要のランダムモードで起動（RandomActionProvider を使用）",
+    )
     args = parser.parse_args()
 
     load_dotenv(dotenv_path=args.env_file)
+
+    if args.random:
+        os.environ["RANDOM_MODE"] = "1"
 
     if args.llm_debug:
         os.environ["LLM_DEBUG"] = "1"
