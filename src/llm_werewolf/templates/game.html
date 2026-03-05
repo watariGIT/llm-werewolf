@@ -1,16 +1,32 @@
-{% macro past_day_details(past_days, past_discussions, past_events) %}
+{% macro past_day_details(past_days, past_discussions, past_events, past_thinking=none, debug_mode=false) %}
 {% if past_days %}
 <div class="past-discussion">
     {% for day in past_days %}
+    {% set day_thinking = past_thinking.get(day, {}) if past_thinking else {} %}
+    {% set disc_thinking = day_thinking.get('discussion', {}) if day_thinking else {} %}
+    {% set v_thinking = day_thinking.get('vote', {}) if day_thinking else {} %}
+    {% set n_thinking = day_thinking.get('night', {}) if day_thinking else {} %}
     <details>
         <summary>Day {{ day }}</summary>
         <div class="detail-content">
             {% if past_discussions.get(day) %}
             <ul class="message-list">
+                {% set thinking_counters = {} %}
                 {% for msg in past_discussions[day] %}
+                {% set speaker_name = msg.split(': ', 1)[0] %}
                 <li>
-                    <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                    <span class="speaker">{{ speaker_name }}</span>:
                     {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                    {% if debug_mode and disc_thinking.get(speaker_name) %}
+                        {% set idx = thinking_counters.get(speaker_name, 0) %}
+                        {% if idx < disc_thinking[speaker_name]|length %}
+                        <details class="debug-thinking">
+                            <summary>思考を表示</summary>
+                            <div class="debug-thinking-text">{{ disc_thinking[speaker_name][idx] }}</div>
+                        </details>
+                        {% endif %}
+                        {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                    {% endif %}
                 </li>
                 {% endfor %}
             </ul>
@@ -21,12 +37,31 @@
                     {% if event_type == "vote" %}
                     <div class="past-vote-entry">
                         <span class="vote-arrow">&rarr;</span> {{ event_text }}
+                        {% if debug_mode and v_thinking %}
+                            {% set voter_name = event_text.split(' → ', 1)[0] if ' → ' in event_text else '' %}
+                            {% if v_thinking.get(voter_name) %}
+                            <details class="debug-thinking">
+                                <summary>思考を表示</summary>
+                                <div class="debug-thinking-text">{{ v_thinking[voter_name] }}</div>
+                            </details>
+                            {% endif %}
+                        {% endif %}
                     </div>
                     {% elif event_type == "execution" %}
                     <div class="event-msg execution">{{ event_text }}</div>
                     {% elif event_type == "attack" %}
                     <div class="event-msg attack">{{ event_text }}</div>
                     {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if debug_mode and n_thinking %}
+            <div class="debug-section-sm">
+                {% for name, thinking in n_thinking.items() %}
+                <details class="debug-thinking">
+                    <summary>{{ name }} の夜の思考</summary>
+                    <div class="debug-thinking-text">{{ thinking }}</div>
+                </details>
                 {% endfor %}
             </div>
             {% endif %}
@@ -248,6 +283,77 @@
         @keyframes blink {
             50% { opacity: 0; }
         }
+        /* デバッグモード */
+        .debug-badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            background-color: #f59e0b;
+            color: #000;
+            margin-left: 0.5rem;
+            font-weight: bold;
+        }
+        .debug-thinking {
+            margin-top: 0.3rem;
+            margin-bottom: 0.3rem;
+        }
+        .debug-thinking summary {
+            font-size: 0.8rem;
+            color: #a0a0b0;
+            cursor: pointer;
+        }
+        .debug-thinking summary:hover {
+            color: #e0e0e0;
+        }
+        .debug-thinking-text {
+            font-size: 0.85rem;
+            color: #b0b0c0;
+            padding: 0.5rem;
+            margin-top: 0.3rem;
+            background-color: #1a1a2e;
+            border-left: 2px solid #f59e0b;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .debug-panel {
+            background-color: #16213e;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .debug-panel h2 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            color: #f59e0b;
+        }
+        .debug-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .debug-table th, .debug-table td {
+            padding: 0.4rem 0.6rem;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+        .debug-table th {
+            color: #a0a0b0;
+            font-weight: bold;
+        }
+        .debug-personality {
+            font-size: 0.75rem;
+        }
+        .debug-section {
+            margin-top: 1rem;
+        }
+        .debug-section-sm {
+            margin-top: 0.5rem;
+        }
+        .debug-panel h3 {
+            margin-top: 1rem;
+        }
         @media (max-width: 600px) {
             .header {
                 flex-direction: column;
@@ -265,7 +371,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>LLM人狼</h1>
+        <h1>LLM人狼{% if debug_mode %}<span class="debug-badge">DEBUG</span>{% endif %}</h1>
         <div class="info">
             Day {{ game.day }} /
             {% if human_player %}
@@ -285,7 +391,7 @@
                     {{ p.name }}
                     {% if p.name == session.human_player_name %}
                         <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
-                    {% elif step == "game_over" %}
+                    {% elif step == "game_over" or debug_mode %}
                         <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
                     {% elif p in werewolf_allies %}
                         <span class="role-badge role-{{ p.role.value }}">{{ p.role.value }}</span>
@@ -341,14 +447,26 @@
 
         <!-- DISCUSSION: 議論フェーズ -->
         {% if step == "discussion" %}
-        {{ past_day_details(past_days, past_discussions, past_events) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
         <div class="panel" id="current-discussion-panel">
             <h2>議論 - Day {{ game.day }}</h2>
             <ul class="message-list" id="current-discussion-list">
+                {% set thinking_counters = {} %}
                 {% for msg in session.current_discussion %}
+                {% set speaker_name = msg.split(': ', 1)[0] %}
                 <li>
-                    <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
+                    <span class="speaker">{{ speaker_name }}</span>:
                     {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                    {% if debug_mode and thinking_map is defined and thinking_map.get(speaker_name) %}
+                        {% set idx = thinking_counters.get(speaker_name, 0) %}
+                        {% if idx < thinking_map[speaker_name]|length %}
+                        <details class="debug-thinking">
+                            <summary>思考を表示</summary>
+                            <div class="debug-thinking-text">{{ thinking_map[speaker_name][idx] }}</div>
+                        </details>
+                        {% endif %}
+                        {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                    {% endif %}
                 </li>
                 {% endfor %}
             </ul>
@@ -376,7 +494,7 @@
 
         <!-- VOTE: 投票フェーズ -->
         {% if step == "vote" %}
-        {{ past_day_details(past_days, past_discussions, past_events) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
         {% if session.current_discussion %}
         <div class="panel">
             <h2>議論 - Day {{ game.day }}</h2>
@@ -425,7 +543,15 @@
             {% if session.current_votes %}
             <ul class="vote-list">
                 {% for voter, target in session.current_votes.items() %}
-                <li>{{ voter }} <span class="vote-arrow">&rarr;</span> {{ target }}</li>
+                <li>
+                    {{ voter }} <span class="vote-arrow">&rarr;</span> {{ target }}
+                    {% if debug_mode and vote_thinking is defined and vote_thinking.get(voter) %}
+                    <details class="debug-thinking">
+                        <summary>思考を表示</summary>
+                        <div class="debug-thinking-text">{{ vote_thinking[voter] }}</div>
+                    </details>
+                    {% endif %}
+                </li>
                 {% endfor %}
             </ul>
             {% endif %}
@@ -444,7 +570,7 @@
 
         <!-- NIGHT_ACTION: 夜行動選択 -->
         {% if step == "night_action" %}
-        {{ past_day_details(past_days, past_discussions, past_events) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
         <div class="past-discussion">
             <details>
                 <summary>Day {{ game.day }}（今日）</summary>
@@ -569,6 +695,17 @@
                 {% endif %}
             {% endif %}
 
+            {% if debug_mode and night_thinking is defined and night_thinking %}
+            <div class="debug-section">
+                {% for name, thinking in night_thinking.items() %}
+                <details class="debug-thinking">
+                    <summary>{{ name }} の思考</summary>
+                    <div class="debug-thinking-text">{{ thinking }}</div>
+                </details>
+                {% endfor %}
+            </div>
+            {% endif %}
+
             <div class="actions">
                 <form action="/play/{{ game_id }}/next" method="post">
                     <button type="submit" class="btn">次の日へ</button>
@@ -604,6 +741,80 @@
             </div>
         </div>
         {% endif %}
+        <!-- DEBUG: デバッグ情報パネル -->
+        {% if debug_mode and debug_info is defined %}
+        <div class="debug-panel">
+            <h2>デバッグ情報</h2>
+            <table class="debug-table">
+                <thead>
+                    <tr>
+                        <th>プレイヤー</th>
+                        <th>役職</th>
+                        <th>性格</th>
+                        <th>入力</th>
+                        <th>出力</th>
+                        <th>キャッシュ</th>
+                        <th>コスト</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for name, info in debug_info.players.items() %}
+                    <tr>
+                        <td>{{ name }}</td>
+                        <td><span class="role-badge role-{{ info.role }}">{{ info.role }}</span></td>
+                        <td class="debug-personality">{{ info.personality }}</td>
+                        <td>{{ info.last_input_tokens }}</td>
+                        <td>{{ info.last_output_tokens }}</td>
+                        <td>{{ info.last_cache_read_input_tokens }}</td>
+                        <td>{{ info.last_cost }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if debug_info.gm is defined %}
+            <h3>GM-AI</h3>
+            <table class="debug-table">
+                <thead>
+                    <tr>
+                        <th>入力</th>
+                        <th>出力</th>
+                        <th>キャッシュ</th>
+                        <th>コスト</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ debug_info.gm.last_input_tokens }}</td>
+                        <td>{{ debug_info.gm.last_output_tokens }}</td>
+                        <td>{{ debug_info.gm.last_cache_read_input_tokens }}</td>
+                        <td>{{ debug_info.gm.last_cost }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% endif %}
+            {% if debug_info.totals is defined %}
+            <h3>合計</h3>
+            <table class="debug-table">
+                <thead>
+                    <tr>
+                        <th>入力</th>
+                        <th>出力</th>
+                        <th>キャッシュ</th>
+                        <th>コスト</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ debug_info.totals.input_tokens }}</td>
+                        <td>{{ debug_info.totals.output_tokens }}</td>
+                        <td>{{ debug_info.totals.cache_read_input_tokens }}</td>
+                        <td>{{ debug_info.totals.cost }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
     <div id="sse-loading" style="display:none; text-align:center; margin-top:1rem;">
         <span class="loading-spinner"></span>
@@ -611,6 +822,7 @@
     </div>
     <script>
         var HUMAN_PLAYER_NAME = "{{ session.human_player_name }}";
+        var DEBUG_MODE = {% if debug_mode %}true{% else %}false{% endif %};
 
         // SSE エンドポイントのマッピング
         var SSE_ENDPOINTS = {
@@ -699,6 +911,33 @@
             }
         }
 
+        // デバッグ: 直前の発言要素に思考情報を追記
+        function appendDebugThinking(player, thinking, inputTokens, outputTokens, cost) {
+            if (!DEBUG_MODE || !thinking) return;
+            var list = document.getElementById('current-discussion-list');
+            if (!list) return;
+            // 最後の li を探す（直前のメッセージ）
+            var items = list.querySelectorAll('li');
+            for (var i = items.length - 1; i >= 0; i--) {
+                var speakerEl = items[i].querySelector('.speaker');
+                if (speakerEl && speakerEl.textContent === player) {
+                    // 既にデバッグ情報がある場合はスキップ
+                    if (items[i].querySelector('.debug-thinking')) break;
+                    var details = document.createElement('details');
+                    details.className = 'debug-thinking';
+                    var summary = document.createElement('summary');
+                    summary.textContent = '思考を表示 (in:' + inputTokens + ' out:' + outputTokens + ' ' + (cost || '') + ')';
+                    details.appendChild(summary);
+                    var div = document.createElement('div');
+                    div.className = 'debug-thinking-text';
+                    div.textContent = thinking;
+                    details.appendChild(div);
+                    items[i].appendChild(details);
+                    break;
+                }
+            }
+        }
+
         // ACTION_LABELS マッピング
         var ACTION_LABELS = {
             'discuss': 'が考え中...',
@@ -729,6 +968,9 @@
                 }
             }
             if (!sseAction) return false; // SSE 対象外
+            if (DEBUG_MODE) {
+                sseAction += (sseAction.indexOf('?') >= 0 ? '&' : '?') + 'debug=1';
+            }
 
             var formData = new FormData(form);
             var loadingEl = document.getElementById('sse-loading');
@@ -781,7 +1023,7 @@
                     return reader.read().then(function(result) {
                         if (result.done) {
                             // ストリーム終了 — リロード
-                            location.reload();
+                            if (DEBUG_MODE && location.search.indexOf('debug=1') < 0) { location.href = location.pathname + '?debug=1'; } else { location.reload(); }
                             return;
                         }
                         buffer += decoder.decode(result.value, {stream: true});
@@ -811,8 +1053,10 @@
                                     // ストリーミングなし（フォールバック時等）: 通常の追加
                                     appendMessage(ev.data.player, ev.data.text);
                                 }
+                            } else if (ev.type === 'debug') {
+                                appendDebugThinking(ev.data.player, ev.data.thinking, ev.data.input_tokens, ev.data.output_tokens, ev.data.cost);
                             } else if (ev.type === 'done') {
-                                setTimeout(function() { location.reload(); }, 500);
+                                setTimeout(function() { if (DEBUG_MODE && location.search.indexOf('debug=1') < 0) { location.href = location.pathname + '?debug=1'; } else { location.reload(); } }, 500);
                                 return;
                             }
                         }

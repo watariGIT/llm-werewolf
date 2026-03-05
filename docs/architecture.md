@@ -185,6 +185,12 @@ src/llm_werewolf/
 | `_extract_discussions_by_day` | ゲームログから日ごとの発言（`[発言]`）を抽出し `{day: [messages]}` を返す |
 | `_extract_current_execution_logs` | 当日の処刑ログ（`[処刑]`）を抽出しプレフィックスを除去して返す |
 | `_extract_events_by_day` | 日ごとの公開イベント（`[投票]`・`[処刑]`・`[襲撃]`）を `{day: [(type, text)]}` で返す。議論・投票フェーズで過去日の履歴表示に使用 |
+| `_collect_debug_info` | デバッグモード用に各 AI プレイヤーの役職・人格パラメータ・内部思考・トークン使用量を収集する |
+| `_extract_thinking_map` | ゲームログから当日の `[思考]` エントリを抽出し `{player_name: [thinking_text]}` で返す。デバッグモードの議論表示用 |
+| `_extract_vote_thinking` | 当日の投票フェーズの思考を抽出する。発言後に議論思考がクリアされるため、投票理由のみを `{player_name: thinking_text}` で返す |
+| `_extract_night_thinking` | 指定された夜フェーズの思考を抽出する。`{player_name: thinking_text}` の辞書を返す |
+| `_extract_thinking_by_day` | 全日の思考ログを日別に抽出する。議論中の思考は発言が続いた場合のみ discussion に確定し、発言なしで投票が来た場合は vote に分類する。`{day: {"discussion": {name: [text]}, "vote": {name: text}, "night": {name: text}}}` を返す |
+| `_format_cost` | プロバイダーのトークン情報からコスト文字列（`$X.XXXXXX` または `N/A`）を生成するヘルパー関数 |
 
 ### Web エンドポイント (`main.py`)
 
@@ -192,12 +198,12 @@ src/llm_werewolf/
 |------|---------|------|
 | `/` | GET | トップページ（名前入力フォーム） |
 | `/play` | POST | インタラクティブゲーム作成（名前 + 役職選択） |
-| `/play/{id}` | GET | ゲーム画面（現在ステップに応じた表示） |
+| `/play/{id}` | GET | ゲーム画面（現在ステップに応じた表示）。`?debug=1` クエリパラメータでデバッグモードを有効化し、全 AI の役職・内部思考・人格パラメータ・トークン使用量を表示する |
 | `/play/{id}/next` | POST | 次ステップへ進む |
 | `/play/{id}/discuss` | POST | ユーザー発言送信 |
 | `/play/{id}/vote` | POST | ユーザー投票送信 |
 | `/play/{id}/night-action` | POST | ユーザー夜行動送信（占い/襲撃対象） |
-| `/play/{id}/sse/next` | POST | 次ステップへ進む（SSE ストリーム版）。AI の処理進捗をリアルタイムに `progress` / `message` / `token` / `done` イベントで返す。`token` イベントは議論中のストリーミングトークンチャンクを `{player, chunk}` で通知する |
+| `/play/{id}/sse/next` | POST | 次ステップへ進む（SSE ストリーム版）。AI の処理進捗をリアルタイムに `progress` / `message` / `token` / `debug` / `done` イベントで返す。`token` イベントは議論中のストリーミングトークンチャンクを `{player, chunk}` で通知する。`debug` イベントは `?debug=1` 時のみ送信され、各 AI の内部思考・トークン使用量を `{player, thinking, input_tokens, output_tokens, cache_read_tokens}` で通知する |
 | `/play/{id}/sse/discuss` | POST | ユーザー発言送信（SSE ストリーム版） |
 | `/play/{id}/sse/vote` | POST | ユーザー投票送信（SSE ストリーム版） |
 | `/play/{id}/sse/night-action` | POST | ユーザー夜行動送信（SSE ストリーム版） |

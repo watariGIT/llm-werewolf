@@ -18,6 +18,7 @@ from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
 from llm_werewolf.domain.value_objects import Role
 from llm_werewolf.engine.llm_config import LLMConfig, PromptConfig, load_gm_config, load_llm_config, load_prompt_config
+from llm_werewolf.engine.metrics import estimate_cost
 from llm_werewolf.session import (
     GameSessionStore,
     GameStep,
@@ -121,6 +122,264 @@ _SPEECH_PREFIX = "[発言] "
 _EXECUTION_PREFIX = "[処刑] "
 _VOTE_PREFIX = "[投票] "
 _ATTACK_PREFIX = "[襲撃] "
+_THINKING_PREFIX = "[思考] "
+
+
+def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
+    """デバッグモード用のAI内部情報を収集する。"""
+    debug_players: dict[str, dict[str, Any]] = {}
+    for p in session.game.players:
+        if p.name == session.human_player_name:
+            continue
+        provider = session.providers.get(p.name)
+        if provider is None:
+            continue
+        # MetricsCollectingProvider があれば累計、なければ last_ を使用
+        metrics = session.player_metrics.get(p.name)
+        if metrics is not None:
+            input_tokens = metrics.total_input_tokens
+            output_tokens = metrics.total_output_tokens
+            cache_read = metrics.total_cache_read_input_tokens
+        else:
+            input_tokens = getattr(provider, "last_input_tokens", 0)
+            output_tokens = getattr(provider, "last_output_tokens", 0)
+            cache_read = getattr(provider, "last_cache_read_input_tokens", 0)
+        cost = estimate_cost(llm_config.model_name, input_tokens, output_tokens, cache_read)
+        debug_players[p.name] = {
+            "role": p.role.value,
+            "personality": getattr(provider, "_personality", ""),
+            "last_thinking": getattr(provider, "last_thinking", ""),
+            "last_input_tokens": input_tokens,
+            "last_output_tokens": output_tokens,
+            "last_cache_read_input_tokens": cache_read,
+            "last_cost": f"${cost:.6f}" if cost is not None else "N/A",
+        }
+    result: dict[str, Any] = {"players": debug_players}
+
+    gm = session.gm_provider
+    gm_input = 0
+    gm_output = 0
+    gm_cache = 0
+    gm_cost: float | None = None
+    if gm is not None:
+        gm_input = gm.last_input_tokens
+        gm_output = gm.last_output_tokens
+        gm_cache = gm.last_cache_read_input_tokens
+        gm_cost = estimate_cost(gm_config.model_name, gm_input, gm_output, gm_cache)
+        result["gm"] = {
+            "last_input_tokens": gm_input,
+            "last_output_tokens": gm_output,
+            "last_cache_read_input_tokens": gm_cache,
+            "last_cost": f"${gm_cost:.6f}" if gm_cost is not None else "N/A",
+        }
+
+    # 合計の計算
+    total_input = sum(pi["last_input_tokens"] for pi in debug_players.values())
+    total_output = sum(pi["last_output_tokens"] for pi in debug_players.values())
+    total_cache = sum(pi["last_cache_read_input_tokens"] for pi in debug_players.values())
+    total_cost_usd = 0.0
+    cost_available = True
+    for pi in debug_players.values():
+        c = estimate_cost(
+            llm_config.model_name, pi["last_input_tokens"], pi["last_output_tokens"], pi["last_cache_read_input_tokens"]
+        )
+        if c is not None:
+            total_cost_usd += c
+        else:
+            cost_available = False
+    if gm is not None:
+        total_input += gm_input
+        total_output += gm_output
+        total_cache += gm_cache
+        if gm_cost is not None:
+            total_cost_usd += gm_cost
+        else:
+            cost_available = False
+    result["totals"] = {
+        "input_tokens": total_input,
+        "output_tokens": total_output,
+        "cache_read_input_tokens": total_cache,
+        "cost": f"${total_cost_usd:.6f}" if cost_available else "N/A",
+    }
+
+    return result
+
+
+def _format_cost(provider: object) -> str:
+    """プロバイダーのトークン情報からコスト文字列を生成する。"""
+    input_tokens = getattr(provider, "last_input_tokens", 0)
+    output_tokens = getattr(provider, "last_output_tokens", 0)
+    cache_read = getattr(provider, "last_cache_read_input_tokens", 0)
+    cost = estimate_cost(llm_config.model_name, input_tokens, output_tokens, cache_read)
+    return f"${cost:.6f}" if cost is not None else "N/A"
+
+
+def _extract_thinking_map(game: GameState) -> dict[str, list[str]]:
+    """ゲームログから発言順に対応する思考ログを抽出する。
+
+    Returns:
+        {player_name: [thinking_text, ...]} の辞書。議論の発言順に対応。
+    """
+    thinking_map: dict[str, list[str]] = {}
+    current_day = 0
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+        elif entry.startswith(_THINKING_PREFIX) and current_day == game.day:
+            # "[思考] PlayerName: thinking text"
+            rest = entry[len(_THINKING_PREFIX) :]
+            if ": " in rest:
+                name, text = rest.split(": ", 1)
+                thinking_map.setdefault(name, []).append(text)
+    return thinking_map
+
+
+def _extract_vote_thinking(game: GameState) -> dict[str, str]:
+    """当日の投票フェーズの思考を抽出する。
+
+    ゲームログの投票フェーズでは [思考] が先に記録され、その後 [投票] が記録される。
+    当日の [投票] ログより前にある [思考] のうち、[発言] 以降のものを投票思考として返す。
+
+    Returns:
+        {player_name: thinking_text} の辞書
+    """
+    vote_thinking: dict[str, str] = {}
+    current_day = 0
+    in_vote_phase = False
+    pending_thinking: dict[str, str] = {}
+
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+            in_vote_phase = False
+            pending_thinking = {}
+        elif entry.startswith(_NIGHT_HEADER_PREFIX):
+            in_vote_phase = False
+            pending_thinking = {}
+        elif current_day == game.day:
+            if entry.startswith(_VOTE_PREFIX):
+                # 投票ログに到達 → pending_thinking を確定
+                in_vote_phase = True
+                if pending_thinking:
+                    vote_thinking.update(pending_thinking)
+                    pending_thinking = {}
+            elif entry.startswith(_THINKING_PREFIX) and not in_vote_phase:
+                rest = entry[len(_THINKING_PREFIX) :]
+                if ": " in rest:
+                    name, text = rest.split(": ", 1)
+                    # 最後の思考を保持（議論中の思考は発言で上書きされる）
+                    pending_thinking[name] = text
+            elif entry.startswith(_SPEECH_PREFIX):
+                # 発言ログ → 議論中の思考をクリアして投票思考の開始を待つ
+                speaker = entry[len(_SPEECH_PREFIX) :].split(": ", 1)[0]
+                pending_thinking.pop(speaker, None)
+
+    return vote_thinking
+
+
+def _extract_night_thinking(game: GameState, night_number: int) -> dict[str, str]:
+    """指定された夜フェーズの思考を抽出する。
+
+    Returns:
+        {player_name: thinking_text} の辞書
+    """
+    night_thinking: dict[str, str] = {}
+    in_target_night = False
+
+    for entry in game.log:
+        if entry.startswith(_NIGHT_HEADER_PREFIX):
+            parts = entry[len(_NIGHT_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                night_num = int(parts[0])
+            except (ValueError, IndexError):
+                night_num = -1
+            in_target_night = night_num == night_number
+        elif entry.startswith(_DAY_HEADER_PREFIX):
+            if in_target_night:
+                break  # 対象の夜が終わった
+        elif in_target_night and entry.startswith(_THINKING_PREFIX):
+            rest = entry[len(_THINKING_PREFIX) :]
+            if ": " in rest:
+                name, text = rest.split(": ", 1)
+                night_thinking[name] = text
+
+    return night_thinking
+
+
+def _extract_thinking_by_day(game: GameState) -> dict[int, dict[str, Any]]:
+    """全日の思考ログを日別に抽出する。
+
+    議論中の思考は [発言] が続いた場合のみ discussion に確定する。
+    [発言] なしで [投票] が来た場合は vote に分類される。
+
+    Returns:
+        {day: {"discussion": {name: [text, ...]}, "vote": {name: text}, "night": {name: text}}}
+    """
+    result: dict[int, dict[str, Any]] = {}
+    current_day = 0
+    current_night = 0
+    in_night = False
+    in_vote_phase = False
+    # pending_thinking: 思考を一時保持し、[発言] or [投票] で確定先を決める
+    pending_thinking: dict[str, str] = {}
+
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+            in_night = False
+            in_vote_phase = False
+            pending_thinking = {}
+            if current_day not in result:
+                result[current_day] = {"discussion": {}, "vote": {}, "night": {}}
+        elif entry.startswith(_NIGHT_HEADER_PREFIX):
+            parts = entry[len(_NIGHT_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_night = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+            in_night = True
+            in_vote_phase = False
+            pending_thinking = {}
+        elif in_night:
+            if entry.startswith(_THINKING_PREFIX):
+                rest = entry[len(_THINKING_PREFIX) :]
+                if ": " in rest:
+                    name, text = rest.split(": ", 1)
+                    day_data = result.get(current_night, {"discussion": {}, "vote": {}, "night": {}})
+                    result[current_night] = day_data
+                    day_data["night"][name] = text
+        elif current_day > 0:
+            if entry.startswith(_VOTE_PREFIX):
+                in_vote_phase = True
+                if pending_thinking:
+                    day_data = result[current_day]
+                    day_data["vote"].update(pending_thinking)
+                    pending_thinking = {}
+            elif entry.startswith(_THINKING_PREFIX) and not in_vote_phase:
+                rest = entry[len(_THINKING_PREFIX) :]
+                if ": " in rest:
+                    name, text = rest.split(": ", 1)
+                    pending_thinking[name] = text
+            elif entry.startswith(_SPEECH_PREFIX):
+                speaker = entry[len(_SPEECH_PREFIX) :].split(": ", 1)[0]
+                # 発言が来たので、その話者の pending_thinking を discussion に確定
+                if speaker in pending_thinking:
+                    day_data = result[current_day]
+                    day_data["discussion"].setdefault(speaker, []).append(pending_thinking.pop(speaker))
+
+    return result
 
 
 def _extract_discussions_by_day(game: GameState) -> dict[int, list[str]]:
@@ -301,11 +560,13 @@ async def create_interactive_game(player_name: str = Form(...), role: str = Form
 
 
 @app.get("/play/{game_id}", response_class=HTMLResponse)
-async def play_game(request: Request, game_id: str) -> HTMLResponse:
+async def play_game(request: Request, game_id: str, debug: str = "") -> HTMLResponse:
     """ゲーム画面を表示する。"""
     session = interactive_store.get(game_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Game not found")
+
+    debug_mode = debug == "1"
 
     human_player = session.game.find_player(session.human_player_name)
     human_is_alive = human_player is not None and human_player.is_alive
@@ -347,27 +608,33 @@ async def play_game(request: Request, game_id: str) -> HTMLResponse:
     if human_player and human_player.role == Role.WEREWOLF:
         werewolf_allies = [p for p in session.game.alive_werewolves if p.name != session.human_player_name]
 
-    return templates.TemplateResponse(
-        request,
-        "game.html",
-        {
-            "session": session,
-            "game": session.game,
-            "step": session.step.value,
-            "human_player": human_player,
-            "human_is_alive": human_is_alive,
-            "vote_candidates": vote_candidates,
-            "night_action_type": night_action_type,
-            "night_action_candidates": night_action_candidates,
-            "game_id": game_id,
-            "ordered_players": ordered_players,
-            "current_execution_logs": current_execution_logs,
-            "past_discussions": past_discussions,
-            "past_events": past_events,
-            "past_days": past_days,
-            "werewolf_allies": werewolf_allies,
-        },
-    )
+    context: dict[str, Any] = {
+        "session": session,
+        "game": session.game,
+        "step": session.step.value,
+        "human_player": human_player,
+        "human_is_alive": human_is_alive,
+        "vote_candidates": vote_candidates,
+        "night_action_type": night_action_type,
+        "night_action_candidates": night_action_candidates,
+        "game_id": game_id,
+        "ordered_players": ordered_players,
+        "current_execution_logs": current_execution_logs,
+        "past_discussions": past_discussions,
+        "past_events": past_events,
+        "past_days": past_days,
+        "werewolf_allies": werewolf_allies,
+        "debug_mode": debug_mode,
+    }
+    if debug_mode:
+        context["debug_info"] = _collect_debug_info(session)
+        context["thinking_map"] = _extract_thinking_map(session.game)
+        context["vote_thinking"] = _extract_vote_thinking(session.game)
+        context["night_thinking"] = _extract_night_thinking(session.game, session.game.day - 1)
+        all_thinking = _extract_thinking_by_day(session.game)
+        context["past_thinking"] = {day: data for day, data in all_thinking.items() if day < session.game.day}
+
+    return templates.TemplateResponse(request, "game.html", context)
 
 
 @app.post("/play/{game_id}/next")
@@ -495,11 +762,15 @@ def _get_session_or_raise(game_id: str) -> InteractiveSession:
 
 
 def _make_sse_callbacks(
-    loop: asyncio.AbstractEventLoop, queue: asyncio.Queue[dict[str, Any] | None]
+    loop: asyncio.AbstractEventLoop,
+    queue: asyncio.Queue[dict[str, Any] | None],
+    session: InteractiveSession | None = None,
+    debug_mode: bool = False,
 ) -> tuple[Any, Any, Any]:
     """SSE 用の on_progress / on_message / on_token_chunk コールバックを生成する。
 
     コールバックはワーカースレッドから呼ばれるため loop.call_soon_threadsafe を使用する。
+    debug_mode が有効な場合、on_message 後に debug イベントを送信する。
     """
 
     def on_progress(player_name: str, action_type: str) -> None:
@@ -507,6 +778,21 @@ def _make_sse_callbacks(
 
     def on_message(player_name: str, text: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, {"event": "message", "player": player_name, "text": text})
+        if debug_mode and session is not None:
+            provider = session.providers.get(player_name)
+            if provider is not None:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {
+                        "event": "debug",
+                        "player": player_name,
+                        "thinking": getattr(provider, "last_thinking", ""),
+                        "input_tokens": getattr(provider, "last_input_tokens", 0),
+                        "output_tokens": getattr(provider, "last_output_tokens", 0),
+                        "cache_read_tokens": getattr(provider, "last_cache_read_input_tokens", 0),
+                        "cost": _format_cost(provider),
+                    },
+                )
 
     def on_token_chunk(player_name: str, chunk: str) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, {"event": "token", "player": player_name, "chunk": chunk})
@@ -526,16 +812,17 @@ async def _sse_stream(queue: asyncio.Queue[dict[str, Any] | None]) -> AsyncGener
 
 
 @app.post("/play/{game_id}/sse/next")
-async def sse_advance_game(game_id: str) -> StreamingResponse:
+async def sse_advance_game(request: Request, game_id: str) -> StreamingResponse:
     """次のステップへ進む（SSE ストリーム版）。"""
     session = _get_session_or_raise(game_id)
+    debug_mode = request.query_params.get("debug") == "1"
 
     human_player = session.game.find_player(session.human_player_name)
     human_is_alive = human_player is not None and human_player.is_alive
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue)
+    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue, session, debug_mode)
 
     def process() -> None:
         try:
@@ -562,9 +849,10 @@ async def sse_advance_game(game_id: str) -> StreamingResponse:
 
 
 @app.post("/play/{game_id}/sse/discuss")
-async def sse_submit_discussion(game_id: str, message: str = Form("")) -> StreamingResponse:
+async def sse_submit_discussion(request: Request, game_id: str, message: str = Form("")) -> StreamingResponse:
     """ユーザー発言を送信する（SSE ストリーム版）。"""
     session = _get_session_or_raise(game_id)
+    debug_mode = request.query_params.get("debug") == "1"
 
     if session.step != GameStep.DISCUSSION:
         raise HTTPException(status_code=400, detail="Invalid step")
@@ -575,7 +863,7 @@ async def sse_submit_discussion(game_id: str, message: str = Form("")) -> Stream
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue)
+    on_progress, on_message, on_token_chunk = _make_sse_callbacks(loop, queue, session, debug_mode)
 
     def process() -> None:
         try:
@@ -591,9 +879,10 @@ async def sse_submit_discussion(game_id: str, message: str = Form("")) -> Stream
 
 
 @app.post("/play/{game_id}/sse/vote")
-async def sse_submit_vote(game_id: str, target: str = Form(...)) -> StreamingResponse:
+async def sse_submit_vote(request: Request, game_id: str, target: str = Form(...)) -> StreamingResponse:
     """ユーザー投票を送信する（SSE ストリーム版）。"""
     session = _get_session_or_raise(game_id)
+    debug_mode = request.query_params.get("debug") == "1"
 
     if session.step != GameStep.VOTE:
         raise HTTPException(status_code=400, detail="Invalid step")
@@ -606,7 +895,7 @@ async def sse_submit_vote(game_id: str, target: str = Form(...)) -> StreamingRes
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, _, _ = _make_sse_callbacks(loop, queue)
+    on_progress, _, _ = _make_sse_callbacks(loop, queue, session, debug_mode)
 
     def process() -> None:
         try:
@@ -620,9 +909,10 @@ async def sse_submit_vote(game_id: str, target: str = Form(...)) -> StreamingRes
 
 
 @app.post("/play/{game_id}/sse/night-action")
-async def sse_submit_night_action(game_id: str, target: str = Form(...)) -> StreamingResponse:
+async def sse_submit_night_action(request: Request, game_id: str, target: str = Form(...)) -> StreamingResponse:
     """ユーザーの夜行動を送信する（SSE ストリーム版）。"""
     session = _get_session_or_raise(game_id)
+    debug_mode = request.query_params.get("debug") == "1"
 
     if session.step != GameStep.NIGHT_ACTION:
         raise HTTPException(status_code=400, detail="Invalid step")
@@ -634,7 +924,7 @@ async def sse_submit_night_action(game_id: str, target: str = Form(...)) -> Stre
 
     queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    on_progress, _, _ = _make_sse_callbacks(loop, queue)
+    on_progress, _, _ = _make_sse_callbacks(loop, queue, session, debug_mode)
 
     def process() -> None:
         try:
