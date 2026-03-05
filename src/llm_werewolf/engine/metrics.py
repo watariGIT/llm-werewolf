@@ -18,7 +18,15 @@ from llm_werewolf.engine.action_provider import ActionProvider, DiscussResult
 MODEL_PRICING: dict[str, dict[str, float]] = {
     "gpt-4o": {"input": 2.50, "cached_input": 1.25, "output": 10.00},
     "gpt-4o-mini": {"input": 0.15, "cached_input": 0.075, "output": 0.60},
-    "gpt-5-mini": {"input": 0.25, "cached_input": 0.125, "output": 2.00},
+    "gpt-4.1": {"input": 2.00, "cached_input": 0.50, "output": 8.00},
+    "gpt-4.1-mini": {"input": 0.40, "cached_input": 0.10, "output": 1.60},
+    "gpt-4.1-nano": {"input": 0.10, "cached_input": 0.025, "output": 0.40},
+    "gpt-5": {"input": 1.25, "cached_input": 0.125, "output": 10.00},
+    "gpt-5-mini": {"input": 0.25, "cached_input": 0.025, "output": 2.00},
+    "gpt-5-nano": {"input": 0.05, "cached_input": 0.005, "output": 0.40},
+    "gpt-5.1": {"input": 1.25, "cached_input": 0.125, "output": 10.00},
+    "o3-mini": {"input": 1.10, "cached_input": 0.55, "output": 4.40},
+    "o4-mini": {"input": 1.10, "cached_input": 0.275, "output": 4.40},
 }
 
 

@@ -51,6 +51,12 @@ class TestRunSingleGame:
             "total_output_tokens",
             "total_cache_read_input_tokens",
             "total_tokens",
+            "player_input_tokens",
+            "player_output_tokens",
+            "player_cache_read_input_tokens",
+            "gm_input_tokens",
+            "gm_output_tokens",
+            "gm_cache_read_input_tokens",
             "log",
         }
         assert set(result.keys()) == expected_keys
