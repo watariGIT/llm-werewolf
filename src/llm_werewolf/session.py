@@ -27,6 +27,7 @@ from llm_werewolf.engine.interactive_engine import (
 )
 from llm_werewolf.engine.llm_config import LLMConfig, load_gm_config, load_prompt_config
 from llm_werewolf.engine.llm_provider import LLMActionProvider
+from llm_werewolf.engine.metrics import GameMetrics, MetricsCollectingProvider
 from llm_werewolf.engine.prompts import assign_personalities, build_personality
 from llm_werewolf.engine.random_provider import RandomActionProvider
 
@@ -73,6 +74,7 @@ class InteractiveSession:
     discussion_round: int = 0
     winner: Team | None = None
     gm_provider: GameMasterProvider | None = None
+    player_metrics: dict[str, GameMetrics] = field(default_factory=dict)
 
 
 class GameSessionStore:
@@ -200,10 +202,11 @@ class InteractiveSessionStore:
 
         providers: dict[str, ActionProvider]
         gm_provider: GameMasterProvider | None = None
+        player_metrics: dict[str, GameMetrics] = {}
         if config is not None:
             prompt_config = load_prompt_config()
             personalities = assign_personalities(len(AI_NAMES), rng)
-            providers = {
+            base_providers: dict[str, ActionProvider] = {
                 name: LLMActionProvider(
                     config,
                     rng=random.Random(rng.randint(0, 2**32)),
@@ -211,6 +214,11 @@ class InteractiveSessionStore:
                     prompt_config=prompt_config,
                 )
                 for name, traits in zip(AI_NAMES, personalities)
+            }
+            player_metrics = {name: GameMetrics() for name in AI_NAMES}
+            providers = {
+                name: MetricsCollectingProvider(base_providers[name], player_metrics[name])  # type: ignore[misc]
+                for name in AI_NAMES
             }
             try:
                 gm_config = load_gm_config()
@@ -236,6 +244,7 @@ class InteractiveSessionStore:
             speaking_order=speaking_order,
             display_order=speaking_order,
             gm_provider=gm_provider,
+            player_metrics=player_metrics,
         )
         self._sessions[game_id] = session
         return session

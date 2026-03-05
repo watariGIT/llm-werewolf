@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
@@ -160,3 +161,7 @@ class MetricsCollectingProvider:
 
     def set_speaking_context(self, speaking_order: tuple[str, ...], current_speaker_index: int) -> None:
         self._inner.set_speaking_context(speaking_order, current_speaker_index)
+
+    def __getattr__(self, name: str) -> Any:
+        """内部プロバイダーの属性を透過的に公開する。"""
+        return getattr(self._inner, name)

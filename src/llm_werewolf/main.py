@@ -134,9 +134,16 @@ def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
         provider = session.providers.get(p.name)
         if provider is None:
             continue
-        input_tokens = getattr(provider, "last_input_tokens", 0)
-        output_tokens = getattr(provider, "last_output_tokens", 0)
-        cache_read = getattr(provider, "last_cache_read_input_tokens", 0)
+        # MetricsCollectingProvider があれば累計、なければ last_ を使用
+        metrics = session.player_metrics.get(p.name)
+        if metrics is not None:
+            input_tokens = metrics.total_input_tokens
+            output_tokens = metrics.total_output_tokens
+            cache_read = metrics.total_cache_read_input_tokens
+        else:
+            input_tokens = getattr(provider, "last_input_tokens", 0)
+            output_tokens = getattr(provider, "last_output_tokens", 0)
+            cache_read = getattr(provider, "last_cache_read_input_tokens", 0)
         cost = estimate_cost(llm_config.model_name, input_tokens, output_tokens, cache_read)
         debug_players[p.name] = {
             "role": p.role.value,
