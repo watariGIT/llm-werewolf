@@ -18,6 +18,7 @@ from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.services import REQUIRED_PLAYER_COUNT
 from llm_werewolf.domain.value_objects import Role
 from llm_werewolf.engine.llm_config import LLMConfig, PromptConfig, load_gm_config, load_llm_config, load_prompt_config
+from llm_werewolf.engine.metrics import estimate_cost
 from llm_werewolf.session import (
     GameSessionStore,
     GameStep,
@@ -133,15 +134,29 @@ def _collect_debug_info(session: InteractiveSession) -> dict[str, Any]:
         provider = session.providers.get(p.name)
         if provider is None:
             continue
+        input_tokens = getattr(provider, "last_input_tokens", 0)
+        output_tokens = getattr(provider, "last_output_tokens", 0)
+        cache_read = getattr(provider, "last_cache_read_input_tokens", 0)
+        cost = estimate_cost(llm_config.model_name, input_tokens, output_tokens, cache_read)
         debug_players[p.name] = {
             "role": p.role.value,
             "personality": getattr(provider, "_personality", ""),
             "last_thinking": getattr(provider, "last_thinking", ""),
-            "last_input_tokens": getattr(provider, "last_input_tokens", 0),
-            "last_output_tokens": getattr(provider, "last_output_tokens", 0),
-            "last_cache_read_input_tokens": getattr(provider, "last_cache_read_input_tokens", 0),
+            "last_input_tokens": input_tokens,
+            "last_output_tokens": output_tokens,
+            "last_cache_read_input_tokens": cache_read,
+            "last_cost": f"${cost:.6f}" if cost is not None else "N/A",
         }
     return {"players": debug_players}
+
+
+def _format_cost(provider: object) -> str:
+    """プロバイダーのトークン情報からコスト文字列を生成する。"""
+    input_tokens = getattr(provider, "last_input_tokens", 0)
+    output_tokens = getattr(provider, "last_output_tokens", 0)
+    cache_read = getattr(provider, "last_cache_read_input_tokens", 0)
+    cost = estimate_cost(llm_config.model_name, input_tokens, output_tokens, cache_read)
+    return f"${cost:.6f}" if cost is not None else "N/A"
 
 
 def _extract_thinking_map(game: GameState) -> dict[str, list[str]]:
@@ -166,6 +181,82 @@ def _extract_thinking_map(game: GameState) -> dict[str, list[str]]:
                 name, text = rest.split(": ", 1)
                 thinking_map.setdefault(name, []).append(text)
     return thinking_map
+
+
+def _extract_vote_thinking(game: GameState) -> dict[str, str]:
+    """当日の投票フェーズの思考を抽出する。
+
+    ゲームログの投票フェーズでは [思考] が先に記録され、その後 [投票] が記録される。
+    当日の [投票] ログより前にある [思考] のうち、[発言] 以降のものを投票思考として返す。
+
+    Returns:
+        {player_name: thinking_text} の辞書
+    """
+    vote_thinking: dict[str, str] = {}
+    current_day = 0
+    in_vote_phase = False
+    pending_thinking: dict[str, str] = {}
+
+    for entry in game.log:
+        if entry.startswith(_DAY_HEADER_PREFIX):
+            parts = entry[len(_DAY_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                current_day = int(parts[0])
+            except (ValueError, IndexError):
+                pass
+            in_vote_phase = False
+            pending_thinking = {}
+        elif entry.startswith(_NIGHT_HEADER_PREFIX):
+            in_vote_phase = False
+            pending_thinking = {}
+        elif current_day == game.day:
+            if entry.startswith(_VOTE_PREFIX):
+                # 投票ログに到達 → pending_thinking を確定
+                in_vote_phase = True
+                if pending_thinking:
+                    vote_thinking.update(pending_thinking)
+                    pending_thinking = {}
+            elif entry.startswith(_THINKING_PREFIX) and not in_vote_phase:
+                rest = entry[len(_THINKING_PREFIX) :]
+                if ": " in rest:
+                    name, text = rest.split(": ", 1)
+                    # 最後の思考を保持（議論中の思考は発言で上書きされる）
+                    pending_thinking[name] = text
+            elif entry.startswith(_SPEECH_PREFIX):
+                # 発言ログ → 議論中の思考をクリアして投票思考の開始を待つ
+                speaker = entry[len(_SPEECH_PREFIX) :].split(": ", 1)[0]
+                pending_thinking.pop(speaker, None)
+
+    return vote_thinking
+
+
+def _extract_night_thinking(game: GameState, night_number: int) -> dict[str, str]:
+    """指定された夜フェーズの思考を抽出する。
+
+    Returns:
+        {player_name: thinking_text} の辞書
+    """
+    night_thinking: dict[str, str] = {}
+    in_target_night = False
+
+    for entry in game.log:
+        if entry.startswith(_NIGHT_HEADER_PREFIX):
+            parts = entry[len(_NIGHT_HEADER_PREFIX) :].split(" ", 1)
+            try:
+                night_num = int(parts[0])
+            except (ValueError, IndexError):
+                night_num = -1
+            in_target_night = night_num == night_number
+        elif entry.startswith(_DAY_HEADER_PREFIX):
+            if in_target_night:
+                break  # 対象の夜が終わった
+        elif in_target_night and entry.startswith(_THINKING_PREFIX):
+            rest = entry[len(_THINKING_PREFIX) :]
+            if ": " in rest:
+                name, text = rest.split(": ", 1)
+                night_thinking[name] = text
+
+    return night_thinking
 
 
 def _extract_discussions_by_day(game: GameState) -> dict[int, list[str]]:
@@ -415,6 +506,8 @@ async def play_game(request: Request, game_id: str, debug: str = "") -> HTMLResp
     if debug_mode:
         context["debug_info"] = _collect_debug_info(session)
         context["thinking_map"] = _extract_thinking_map(session.game)
+        context["vote_thinking"] = _extract_vote_thinking(session.game)
+        context["night_thinking"] = _extract_night_thinking(session.game, session.game.day - 1)
 
     return templates.TemplateResponse(request, "game.html", context)
 
@@ -572,6 +665,7 @@ def _make_sse_callbacks(
                         "input_tokens": getattr(provider, "last_input_tokens", 0),
                         "output_tokens": getattr(provider, "last_output_tokens", 0),
                         "cache_read_tokens": getattr(provider, "last_cache_read_input_tokens", 0),
+                        "cost": _format_cost(provider),
                     },
                 )
 

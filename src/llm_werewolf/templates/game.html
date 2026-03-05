@@ -499,7 +499,15 @@
             {% if session.current_votes %}
             <ul class="vote-list">
                 {% for voter, target in session.current_votes.items() %}
-                <li>{{ voter }} <span class="vote-arrow">&rarr;</span> {{ target }}</li>
+                <li>
+                    {{ voter }} <span class="vote-arrow">&rarr;</span> {{ target }}
+                    {% if debug_mode and vote_thinking is defined and vote_thinking.get(voter) %}
+                    <details class="debug-thinking">
+                        <summary>思考を表示</summary>
+                        <div class="debug-thinking-text">{{ vote_thinking[voter] }}</div>
+                    </details>
+                    {% endif %}
+                </li>
                 {% endfor %}
             </ul>
             {% endif %}
@@ -643,6 +651,17 @@
                 {% endif %}
             {% endif %}
 
+            {% if debug_mode and night_thinking is defined and night_thinking %}
+            <div style="margin-top: 1rem;">
+                {% for name, thinking in night_thinking.items() %}
+                <details class="debug-thinking">
+                    <summary>{{ name }} の思考</summary>
+                    <div class="debug-thinking-text">{{ thinking }}</div>
+                </details>
+                {% endfor %}
+            </div>
+            {% endif %}
+
             <div class="actions">
                 <form action="/play/{{ game_id }}/next" method="post">
                     <button type="submit" class="btn">次の日へ</button>
@@ -691,6 +710,7 @@
                         <th>入力</th>
                         <th>出力</th>
                         <th>キャッシュ</th>
+                        <th>コスト</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -702,6 +722,7 @@
                         <td>{{ info.last_input_tokens }}</td>
                         <td>{{ info.last_output_tokens }}</td>
                         <td>{{ info.last_cache_read_input_tokens }}</td>
+                        <td>{{ info.last_cost }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -805,7 +826,7 @@
         }
 
         // デバッグ: 直前の発言要素に思考情報を追記
-        function appendDebugThinking(player, thinking, inputTokens, outputTokens) {
+        function appendDebugThinking(player, thinking, inputTokens, outputTokens, cost) {
             if (!DEBUG_MODE || !thinking) return;
             var list = document.getElementById('current-discussion-list');
             if (!list) return;
@@ -819,7 +840,7 @@
                     var details = document.createElement('details');
                     details.className = 'debug-thinking';
                     var summary = document.createElement('summary');
-                    summary.textContent = '思考を表示 (in:' + inputTokens + ' out:' + outputTokens + ')';
+                    summary.textContent = '思考を表示 (in:' + inputTokens + ' out:' + outputTokens + ' ' + (cost || '') + ')';
                     details.appendChild(summary);
                     var div = document.createElement('div');
                     div.className = 'debug-thinking-text';
@@ -947,7 +968,7 @@
                                     appendMessage(ev.data.player, ev.data.text);
                                 }
                             } else if (ev.type === 'debug') {
-                                appendDebugThinking(ev.data.player, ev.data.thinking, ev.data.input_tokens, ev.data.output_tokens);
+                                appendDebugThinking(ev.data.player, ev.data.thinking, ev.data.input_tokens, ev.data.output_tokens, ev.data.cost);
                             } else if (ev.type === 'done') {
                                 setTimeout(function() { if (DEBUG_MODE && location.search.indexOf('debug=1') < 0) { location.href = location.pathname + '?debug=1'; } else { location.reload(); } }, 500);
                                 return;
