@@ -307,10 +307,8 @@
             color: #a0a0b0;
             font-weight: bold;
         }
-        .debug-token-info {
+        .debug-personality {
             font-size: 0.75rem;
-            color: #888;
-            margin-top: 0.2rem;
         }
         @media (max-width: 600px) {
             .header {
@@ -700,7 +698,7 @@
                     <tr>
                         <td>{{ name }}</td>
                         <td><span class="role-badge role-{{ info.role }}">{{ info.role }}</span></td>
-                        <td style="font-size:0.75rem;">{{ info.personality }}</td>
+                        <td class="debug-personality">{{ info.personality }}</td>
                         <td>{{ info.last_input_tokens }}</td>
                         <td>{{ info.last_output_tokens }}</td>
                         <td>{{ info.last_cache_read_input_tokens }}</td>
