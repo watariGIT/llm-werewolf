@@ -157,6 +157,27 @@ class TestEstimateCost:
         assert cost is not None
         assert abs(cost - (0.25 + 2.00)) < 0.001
 
+    def test_gpt_5_1(self) -> None:
+        # gpt-5.1: input $1.25/1M, output $10.00/1M
+        cost = estimate_cost("gpt-5.1", 1_000_000, 100_000)
+        assert cost is not None
+        expected = 1.25 + 100_000 * 10.00 / 1_000_000
+        assert abs(cost - expected) < 0.001
+
+    def test_gpt_4_1(self) -> None:
+        # gpt-4.1: input $2.00/1M, cached_input $0.50/1M, output $8.00/1M
+        cost = estimate_cost("gpt-4.1", 1_000_000, 100_000, cache_read_input_tokens=400_000)
+        assert cost is not None
+        expected = 600_000 * 2.00 / 1_000_000 + 400_000 * 0.50 / 1_000_000 + 100_000 * 8.00 / 1_000_000
+        assert abs(cost - expected) < 0.001
+
+    def test_o4_mini(self) -> None:
+        # o4-mini: input $1.10/1M, cached_input $0.275/1M, output $4.40/1M
+        cost = estimate_cost("o4-mini", 1_000_000, 500_000)
+        assert cost is not None
+        expected = 1.10 + 500_000 * 4.40 / 1_000_000
+        assert abs(cost - expected) < 0.001
+
     def test_with_cache_read_tokens(self) -> None:
         """キャッシュトークンがある場合、割引料金が適用されること。"""
         # gpt-4o: input $2.50/1M, cached_input $1.25/1M, output $10.00/1M
