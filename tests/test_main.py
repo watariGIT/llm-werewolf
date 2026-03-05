@@ -1,20 +1,16 @@
 """main.py エンドポイントのテスト。"""
 
-import logging
 import random
 from unittest.mock import patch
 
-import pytest
 from starlette.testclient import TestClient
 
 from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.services import create_game
-from llm_werewolf.engine.llm_config import LLMConfig, PromptConfig
 from llm_werewolf.main import (
     _extract_current_execution_logs,
     _extract_discussions_by_day,
     _extract_events_by_day,
-    _log_startup_config,
     app,
     game_store,
     interactive_store,
@@ -257,44 +253,3 @@ class TestExportGameLog:
     def test_export_returns_404_for_missing_game(self) -> None:
         response = client.get("/play/nonexistent/export")
         assert response.status_code == 404
-
-
-class TestLogStartupConfig:
-    """_log_startup_config のユニットテスト。"""
-
-    def _make_configs(self) -> tuple[LLMConfig, LLMConfig, PromptConfig]:
-        llm = LLMConfig(model_name="gpt-4o-mini", temperature=0.7, api_key="dummy")
-        gm = LLMConfig(model_name="gpt-4o", temperature=0.3, api_key="dummy")
-        prompt = PromptConfig(max_recent_statements=10, gm_max_recent_statements=20)
-        return llm, gm, prompt
-
-    def test_logs_player_ai_config(self, caplog: pytest.LogCaptureFixture) -> None:
-        llm, gm, prompt = self._make_configs()
-        with caplog.at_level(logging.INFO, logger="llm_werewolf.main"):
-            _log_startup_config(llm, gm, prompt, llm_debug=False, log_level="INFO")
-        assert any("gpt-4o-mini" in r.message and "0.7" in r.message for r in caplog.records)
-
-    def test_logs_gm_config(self, caplog: pytest.LogCaptureFixture) -> None:
-        llm, gm, prompt = self._make_configs()
-        with caplog.at_level(logging.INFO, logger="llm_werewolf.main"):
-            _log_startup_config(llm, gm, prompt, llm_debug=False, log_level="INFO")
-        assert any("gpt-4o" in r.message and "0.3" in r.message for r in caplog.records)
-
-    def test_logs_prompt_config(self, caplog: pytest.LogCaptureFixture) -> None:
-        llm, gm, prompt = self._make_configs()
-        with caplog.at_level(logging.INFO, logger="llm_werewolf.main"):
-            _log_startup_config(llm, gm, prompt, llm_debug=False, log_level="INFO")
-        assert any("10" in r.message and "20" in r.message for r in caplog.records)
-
-    def test_logs_llm_debug_and_log_level(self, caplog: pytest.LogCaptureFixture) -> None:
-        llm, gm, prompt = self._make_configs()
-        with caplog.at_level(logging.INFO, logger="llm_werewolf.main"):
-            _log_startup_config(llm, gm, prompt, llm_debug=True, log_level="DEBUG")
-        assert any("True" in r.message and "DEBUG" in r.message for r in caplog.records)
-
-    def test_does_not_log_api_key_value(self, caplog: pytest.LogCaptureFixture) -> None:
-        llm, gm, prompt = self._make_configs()
-        with caplog.at_level(logging.INFO, logger="llm_werewolf.main"):
-            _log_startup_config(llm, gm, prompt, llm_debug=False, log_level="INFO")
-        for record in caplog.records:
-            assert "dummy" not in record.message

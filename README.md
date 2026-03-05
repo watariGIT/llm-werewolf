@@ -82,6 +82,9 @@ uv run python -m llm_werewolf --llm-debug --reload
 
 # env ファイルを指定して起動（複数環境の切り替え）
 uv run python -m llm_werewolf --env-file .env.prod
+
+# ランダムモードで起動（OPENAI_API_KEY 不要、AI はランダムに行動）
+uv run python -m llm_werewolf --random
 ```
 
 サーバー起動後、ブラウザで http://127.0.0.1:8000 にアクセスしてゲームをプレイできます。
