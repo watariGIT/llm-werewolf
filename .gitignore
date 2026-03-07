@@ -36,6 +36,9 @@ benchmark_results/
 # Git worktrees
 .worktrees/
 
+# Screenshots
+screenshots/
+
 # OS
 .DS_Store
 Thumbs.db

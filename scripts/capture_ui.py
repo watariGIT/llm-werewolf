@@ -1,0 +1,189 @@
+"""Web UI スクリーンショット自動キャプチャスクリプト。
+
+--random モードでサーバーを起動し、Playwright で全 GameStep の
+スクリーンショットを撮影する。
+
+Usage::
+
+    uv run playwright install chromium
+    uv run python scripts/capture_ui.py
+    uv run python scripts/capture_ui.py --role seer
+    uv run python scripts/capture_ui.py --role werewolf --output-dir my_screenshots
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from playwright.sync_api import Page, sync_playwright
+
+SERVER_PORT = 8765
+BASE_URL = f"http://127.0.0.1:{SERVER_PORT}"
+MAX_STEPS = 200  # 無限ループ防止
+
+
+def wait_for_server(timeout: int = 30) -> None:
+    """サーバーが起動するまでポーリングで待機する。"""
+    import urllib.request
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"{BASE_URL}/", timeout=2):
+                return
+        except Exception:
+            time.sleep(0.5)
+    raise TimeoutError(f"サーバーが {timeout} 秒以内に起動しませんでした")
+
+
+def get_step(page: Page) -> str:
+    """現在の GameStep を data-step 属性から取得する。"""
+    return page.get_attribute("body", "data-step") or ""
+
+
+def capture(page: Page, output_dir: Path, index: int, name: str) -> Path:
+    """スクリーンショットを撮影して保存する。"""
+    filename = f"{index:02d}_{name}.png"
+    filepath = output_dir / filename
+    page.screenshot(path=str(filepath), full_page=True)
+    print(f"  captured: {filepath}")
+    return filepath
+
+
+def select_first_candidate(page: Page, selector: str) -> str | None:
+    """ラジオボタンまたは select の最初の候補を選択し、その値を返す。"""
+    radio = page.query_selector(f'{selector} input[type="radio"]')
+    if radio:
+        value = radio.get_attribute("value") or ""
+        radio.check()
+        return value
+    select = page.query_selector(f"{selector} select")
+    if select:
+        option = page.query_selector(f"{selector} select option:not([value=''])")
+        if option:
+            value = option.get_attribute("value") or ""
+            select.select_option(value)
+            return value
+    return None
+
+
+def run_capture(role: str, output_dir: Path) -> list[Path]:
+    """Playwright でゲームを自動操作しスクリーンショットを撮影する。"""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    captured: list[Path] = []
+    idx = 1
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        page = context.new_page()
+
+        # 1. トップページ
+        page.goto(BASE_URL)
+        page.wait_for_load_state("networkidle")
+        captured.append(capture(page, output_dir, idx, "index"))
+        idx += 1
+
+        # 2. ゲーム作成
+        page.fill('input[name="player_name"]', "テストプレイヤー")
+        role_select = page.query_selector('select[name="role"]')
+        if role_select:
+            role_select.select_option(role)
+        page.click('button[type="submit"]')
+        page.wait_for_load_state("networkidle")
+
+        # 3. ゲームループ
+        captured_steps: set[str] = set()
+        for _ in range(MAX_STEPS):
+            step = get_step(page)
+            if not step:
+                break
+
+            # 各ステップで最初の1回だけキャプチャ
+            step_name = step
+            if step_name not in captured_steps:
+                captured.append(capture(page, output_dir, idx, step_name))
+                captured_steps.add(step_name)
+                idx += 1
+
+            if step == "game_over":
+                break
+
+            # ステップに応じた操作
+            if step == "role_reveal":
+                page.click('button[type="submit"]')
+            elif step == "discussion":
+                # 発言フォームがあれば入力して送信
+                textarea = page.query_selector('textarea[name="message"]')
+                if textarea:
+                    textarea.fill("テスト発言です。")
+                    page.click('form[action*="discuss"] button[type="submit"]')
+                else:
+                    # 人間が死亡している場合は next ボタン
+                    page.click('button[type="submit"]')
+            elif step == "vote":
+                form = page.query_selector('form[action*="vote"]')
+                if form:
+                    select_first_candidate(page, 'form[action*="vote"]')
+                    form.query_selector('button[type="submit"]').click()  # type: ignore[union-attr]
+                else:
+                    page.click('button[type="submit"]')
+            elif step == "execution_result":
+                page.click('button[type="submit"]')
+            elif step == "night_action":
+                form = page.query_selector('form[action*="night-action"]')
+                if form:
+                    select_first_candidate(page, 'form[action*="night-action"]')
+                    form.query_selector('button[type="submit"]').click()  # type: ignore[union-attr]
+                else:
+                    page.click('button[type="submit"]')
+            elif step == "night_result":
+                page.click('button[type="submit"]')
+            else:
+                # 未知のステップ
+                break
+
+            page.wait_for_load_state("networkidle")
+
+        browser.close()
+
+    return captured
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Web UI スクリーンショットキャプチャ")
+    parser.add_argument("--role", default="villager", help="プレイヤー役職 (default: villager)")
+    parser.add_argument("--output-dir", default="screenshots", help="出力ディレクトリ (default: screenshots)")
+    args = parser.parse_args()
+
+    output_dir = Path(args.output_dir) / args.role
+
+    # サーバーをサブプロセスで起動
+    print(f"サーバーを --random モードでポート {SERVER_PORT} で起動中...")
+    server_proc = subprocess.Popen(
+        [sys.executable, "-m", "llm_werewolf", "--random", "--port", str(SERVER_PORT)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    try:
+        wait_for_server()
+        print("サーバー起動完了")
+
+        print(f"キャプチャ開始 (role={args.role}, output={output_dir})")
+        captured = run_capture(args.role, output_dir)
+        print(f"\n完了: {len(captured)} 枚のスクリーンショットを保存しました")
+        for path in captured:
+            print(f"  {path}")
+    finally:
+        server_proc.terminate()
+        server_proc.wait(timeout=10)
+        print("サーバー停止")
+
+
+if __name__ == "__main__":
+    main()
