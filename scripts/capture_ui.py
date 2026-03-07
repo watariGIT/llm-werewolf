@@ -71,6 +71,18 @@ def select_first_candidate(page: Page, selector: str) -> str | None:
     return None
 
 
+def _click_submit_in(form: object, page: Page) -> None:
+    """フォーム内の submit ボタンをクリックする。見つからなければフォールバック。"""
+    from playwright.sync_api import ElementHandle
+
+    if isinstance(form, ElementHandle):
+        btn = form.query_selector('button[type="submit"]')
+        if btn:
+            btn.click()
+            return
+    page.click('button[type="submit"]')
+
+
 def run_capture(role: str, output_dir: Path) -> list[Path]:
     """Playwright でゲームを自動操作しスクリーンショットを撮影する。"""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -129,7 +141,7 @@ def run_capture(role: str, output_dir: Path) -> list[Path]:
                 form = page.query_selector('form[action*="vote"]')
                 if form:
                     select_first_candidate(page, 'form[action*="vote"]')
-                    form.query_selector('button[type="submit"]').click()  # type: ignore[union-attr]
+                    _click_submit_in(form, page)
                 else:
                     page.click('button[type="submit"]')
             elif step == "execution_result":
@@ -138,7 +150,7 @@ def run_capture(role: str, output_dir: Path) -> list[Path]:
                 form = page.query_selector('form[action*="night-action"]')
                 if form:
                     select_first_candidate(page, 'form[action*="night-action"]')
-                    form.query_selector('button[type="submit"]').click()  # type: ignore[union-attr]
+                    _click_submit_in(form, page)
                 else:
                     page.click('button[type="submit"]')
             elif step == "night_result":
@@ -148,6 +160,11 @@ def run_capture(role: str, output_dir: Path) -> list[Path]:
                 break
 
             page.wait_for_load_state("networkidle")
+
+        if not captured_steps or "game_over" not in captured_steps:
+            print(
+                f"警告: ゲームが正常に終了しませんでした（{len(captured_steps)} ステップをキャプチャ）", file=sys.stderr
+            )
 
         browser.close()
 
