@@ -21,19 +21,18 @@ from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-SERVER_PORT = 8765
-BASE_URL = f"http://127.0.0.1:{SERVER_PORT}"
+DEFAULT_PORT = 8765
 MAX_STEPS = 200  # 無限ループ防止
 
 
-def wait_for_server(timeout: int = 30) -> None:
+def wait_for_server(base_url: str, timeout: int = 30) -> None:
     """サーバーが起動するまでポーリングで待機する。"""
     import urllib.request
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(f"{BASE_URL}/", timeout=2):
+            with urllib.request.urlopen(f"{base_url}/", timeout=2):
                 return
         except Exception:
             time.sleep(0.5)
@@ -92,7 +91,7 @@ def _submit_and_wait(page: Page, click_fn: object = None) -> None:
             page.click('button[type="submit"]')
 
 
-def run_capture(role: str, output_dir: Path) -> list[Path]:
+def run_capture(role: str, output_dir: Path, base_url: str) -> list[Path]:
     """Playwright でゲームを自動操作しスクリーンショットを撮影する。"""
     output_dir.mkdir(parents=True, exist_ok=True)
     captured: list[Path] = []
@@ -104,16 +103,15 @@ def run_capture(role: str, output_dir: Path) -> list[Path]:
         page = context.new_page()
 
         # 1. トップページ
-        page.goto(BASE_URL)
+        page.goto(base_url)
         page.wait_for_load_state("networkidle")
         captured.append(capture(page, output_dir, idx, "index"))
         idx += 1
 
         # 2. ゲーム作成
         page.fill('input[name="player_name"]', "テストプレイヤー")
-        role_select = page.query_selector('select[name="role"]')
-        if role_select:
-            role_select.select_option(role)
+        # ラジオボタンは display:none なので、親の label をクリックして選択する
+        page.click(f'label:has(input[name="role"][value="{role}"])')
         _submit_and_wait(page)
 
         # 3. ゲームループ
@@ -178,24 +176,27 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Web UI スクリーンショットキャプチャ")
     parser.add_argument("--role", default="villager", help="プレイヤー役職 (default: villager)")
     parser.add_argument("--output-dir", default="screenshots", help="出力ディレクトリ (default: screenshots)")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"サーバーポート (default: {DEFAULT_PORT})")
     args = parser.parse_args()
 
+    port: int = args.port
+    base_url = f"http://127.0.0.1:{port}"
     output_dir = Path(args.output_dir) / args.role
 
     # サーバーをサブプロセスで起動
-    print(f"サーバーを --random モードでポート {SERVER_PORT} で起動中...")
+    print(f"サーバーを --random モードでポート {port} で起動中...")
     server_proc = subprocess.Popen(
-        [sys.executable, "-m", "llm_werewolf", "--random", "--port", str(SERVER_PORT)],
+        [sys.executable, "-m", "llm_werewolf", "--random", "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
 
     try:
-        wait_for_server()
+        wait_for_server(base_url)
         print("サーバー起動完了")
 
         print(f"キャプチャ開始 (role={args.role}, output={output_dir})")
-        captured = run_capture(args.role, output_dir)
+        captured = run_capture(args.role, output_dir, base_url)
         print(f"\n完了: {len(captured)} 枚のスクリーンショットを保存しました")
         for path in captured:
             print(f"  {path}")
