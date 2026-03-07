@@ -35,6 +35,8 @@ uv run python -m llm_werewolf              # Start web server
 uv run python -m llm_werewolf --llm-debug  # Start with LLM prompt/response/token logging
 uv run python -m llm_werewolf --env-file .env.prod  # Specify env file to load
 uv run python -m llm_werewolf --random     # Start in random mode (no OPENAI_API_KEY needed)
+uv run playwright install chromium         # Install Playwright browser (for UI capture)
+uv run python scripts/capture_ui.py        # Capture UI screenshots (requires Playwright)
 ```
 
 ## Development Workflow

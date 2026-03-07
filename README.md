@@ -173,3 +173,4 @@ uv run python scripts/benchmark.py --games 10 --env-file .env.prod
 | `/fix-review` | レビュー指摘の修正・プッシュ、対応困難な問題はIssue作成 |
 | `/run-benchmark` | ベンチマーク実行（環境チェック→実行→結果表示） |
 | `/analyze-benchmark` | ベンチマーク結果の分析・改善提案 |
+| `/review-ui` | Web UI のスクリーンショット撮影・デザイン/UXレビュー |

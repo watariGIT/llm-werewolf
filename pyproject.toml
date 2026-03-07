@@ -23,6 +23,7 @@ dev = [
     "tox",
     "tox-uv",
     "pytest-timeout",
+    "playwright",
 ]
 
 [build-system]
