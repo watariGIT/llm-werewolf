@@ -83,6 +83,15 @@ def _click_submit_in(form: object, page: Page) -> None:
     page.click('button[type="submit"]')
 
 
+def _submit_and_wait(page: Page, click_fn: object = None) -> None:
+    """フォーム送信してナビゲーション完了を待つ。"""
+    with page.expect_navigation(wait_until="networkidle"):
+        if callable(click_fn):
+            click_fn()
+        else:
+            page.click('button[type="submit"]')
+
+
 def run_capture(role: str, output_dir: Path) -> list[Path]:
     """Playwright でゲームを自動操作しスクリーンショットを撮影する。"""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -105,8 +114,7 @@ def run_capture(role: str, output_dir: Path) -> list[Path]:
         role_select = page.query_selector('select[name="role"]')
         if role_select:
             role_select.select_option(role)
-        page.click('button[type="submit"]')
-        page.wait_for_load_state("networkidle")
+        _submit_and_wait(page)
 
         # 3. ゲームループ
         captured_steps: set[str] = set()
@@ -125,41 +133,36 @@ def run_capture(role: str, output_dir: Path) -> list[Path]:
             if step == "game_over":
                 break
 
-            # ステップに応じた操作
+            # ステップに応じた操作（フォーム送信 → ナビゲーション完了待ち）
             if step == "role_reveal":
-                page.click('button[type="submit"]')
+                _submit_and_wait(page)
             elif step == "discussion":
-                # 発言フォームがあれば入力して送信
                 textarea = page.query_selector('textarea[name="message"]')
                 if textarea:
                     textarea.fill("テスト発言です。")
-                    page.click('form[action*="discuss"] button[type="submit"]')
+                    _submit_and_wait(page, lambda: page.click('form[action*="discuss"] button[type="submit"]'))
                 else:
-                    # 人間が死亡している場合は next ボタン
-                    page.click('button[type="submit"]')
+                    _submit_and_wait(page)
             elif step == "vote":
                 form = page.query_selector('form[action*="vote"]')
                 if form:
                     select_first_candidate(page, 'form[action*="vote"]')
-                    _click_submit_in(form, page)
+                    _submit_and_wait(page, lambda: _click_submit_in(form, page))
                 else:
-                    page.click('button[type="submit"]')
+                    _submit_and_wait(page)
             elif step == "execution_result":
-                page.click('button[type="submit"]')
+                _submit_and_wait(page)
             elif step == "night_action":
                 form = page.query_selector('form[action*="night-action"]')
                 if form:
                     select_first_candidate(page, 'form[action*="night-action"]')
-                    _click_submit_in(form, page)
+                    _submit_and_wait(page, lambda: _click_submit_in(form, page))
                 else:
-                    page.click('button[type="submit"]')
+                    _submit_and_wait(page)
             elif step == "night_result":
-                page.click('button[type="submit"]')
+                _submit_and_wait(page)
             else:
-                # 未知のステップ
                 break
-
-            page.wait_for_load_state("networkidle")
 
         if not captured_steps or "game_over" not in captured_steps:
             print(
