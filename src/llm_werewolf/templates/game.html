@@ -1,3 +1,22 @@
+{% macro chat_message(speaker_name, msg_text, is_self, color_idx, thinking_text=none, data_player=false) %}
+<li class="chat-msg {{ 'chat-msg--self' if is_self }}"{{ ' data-player="' ~ speaker_name ~ '"' if data_player }}>
+    {% if not is_self %}
+    <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
+    {% endif %}
+    <div class="chat-bubble">
+        {% if not is_self %}
+        <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
+        {% endif %}
+        <div class="chat-text">{{ msg_text }}</div>
+        {% if thinking_text %}
+        <details class="debug-thinking">
+            <summary>思考を表示</summary>
+            <div class="debug-thinking-text">{{ thinking_text }}</div>
+        </details>
+        {% endif %}
+    </div>
+</li>
+{% endmacro %}
 {% macro past_day_details(past_days, past_discussions, past_events, past_thinking=none, debug_mode=false, player_colors={}, human_player_name='') %}
 {% if past_days %}
 <div class="past-discussion">
@@ -17,27 +36,12 @@
                 {% set msg_text = msg.split(': ', 1)[1] if ': ' in msg else msg %}
                 {% set is_self = speaker_name == human_player_name %}
                 {% set color_idx = player_colors.get(speaker_name, 0) %}
-                <li class="chat-msg {{ 'chat-msg--self' if is_self }}">
-                    {% if not is_self %}
-                    <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
-                    {% endif %}
-                    <div class="chat-bubble">
-                        {% if not is_self %}
-                        <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
-                        {% endif %}
-                        <div class="chat-text">{{ msg_text }}</div>
-                        {% if debug_mode and disc_thinking.get(speaker_name) %}
-                            {% set idx = thinking_counters.get(speaker_name, 0) %}
-                            {% if idx < disc_thinking[speaker_name]|length %}
-                            <details class="debug-thinking">
-                                <summary>思考を表示</summary>
-                                <div class="debug-thinking-text">{{ disc_thinking[speaker_name][idx] }}</div>
-                            </details>
-                            {% endif %}
-                            {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
-                        {% endif %}
-                    </div>
-                </li>
+                {% set idx = thinking_counters.get(speaker_name, 0) %}
+                {% set t_text = disc_thinking[speaker_name][idx] if debug_mode and disc_thinking.get(speaker_name) and idx < disc_thinking[speaker_name]|length else none %}
+                {{ chat_message(speaker_name, msg_text, is_self, color_idx, t_text) }}
+                {% if t_text is not none %}
+                    {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                {% endif %}
                 {% endfor %}
             </ul>
             {% endif %}
@@ -585,27 +589,12 @@
                 {% set msg_text = msg.split(': ', 1)[1] if ': ' in msg else msg %}
                 {% set is_self = speaker_name == session.human_player_name %}
                 {% set color_idx = player_colors.get(speaker_name, 0) %}
-                <li class="chat-msg {{ 'chat-msg--self' if is_self }}" data-player="{{ speaker_name }}">
-                    {% if not is_self %}
-                    <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
-                    {% endif %}
-                    <div class="chat-bubble">
-                        {% if not is_self %}
-                        <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
-                        {% endif %}
-                        <div class="chat-text">{{ msg_text }}</div>
-                        {% if debug_mode and thinking_map is defined and thinking_map.get(speaker_name) %}
-                            {% set idx = thinking_counters.get(speaker_name, 0) %}
-                            {% if idx < thinking_map[speaker_name]|length %}
-                            <details class="debug-thinking">
-                                <summary>思考を表示</summary>
-                                <div class="debug-thinking-text">{{ thinking_map[speaker_name][idx] }}</div>
-                            </details>
-                            {% endif %}
-                            {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
-                        {% endif %}
-                    </div>
-                </li>
+                {% set idx = thinking_counters.get(speaker_name, 0) %}
+                {% set t_text = thinking_map[speaker_name][idx] if debug_mode and thinking_map is defined and thinking_map.get(speaker_name) and idx < thinking_map[speaker_name]|length else none %}
+                {{ chat_message(speaker_name, msg_text, is_self, color_idx, t_text, data_player=true) }}
+                {% if t_text is not none %}
+                    {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                {% endif %}
                 {% endfor %}
             </ul>
         </div>
@@ -640,19 +629,7 @@
                 {% for msg in session.current_discussion %}
                 {% set speaker_name = msg.split(': ', 1)[0] %}
                 {% set msg_text = msg.split(': ', 1)[1] if ': ' in msg else msg %}
-                {% set is_self = speaker_name == session.human_player_name %}
-                {% set color_idx = player_colors.get(speaker_name, 0) %}
-                <li class="chat-msg {{ 'chat-msg--self' if is_self }}">
-                    {% if not is_self %}
-                    <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
-                    {% endif %}
-                    <div class="chat-bubble">
-                        {% if not is_self %}
-                        <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
-                        {% endif %}
-                        <div class="chat-text">{{ msg_text }}</div>
-                    </div>
-                </li>
+                {{ chat_message(speaker_name, msg_text, speaker_name == session.human_player_name, player_colors.get(speaker_name, 0)) }}
                 {% endfor %}
             </ul>
         </div>
@@ -729,19 +706,7 @@
                         {% for msg in session.current_discussion %}
                         {% set speaker_name = msg.split(': ', 1)[0] %}
                         {% set msg_text = msg.split(': ', 1)[1] if ': ' in msg else msg %}
-                        {% set is_self = speaker_name == session.human_player_name %}
-                        {% set color_idx = player_colors.get(speaker_name, 0) %}
-                        <li class="chat-msg {{ 'chat-msg--self' if is_self }}">
-                            {% if not is_self %}
-                            <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
-                            {% endif %}
-                            <div class="chat-bubble">
-                                {% if not is_self %}
-                                <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
-                                {% endif %}
-                                <div class="chat-text">{{ msg_text }}</div>
-                            </div>
-                        </li>
+                        {{ chat_message(speaker_name, msg_text, speaker_name == session.human_player_name, player_colors.get(speaker_name, 0)) }}
                         {% endfor %}
                     </ul>
                     {% endif %}
