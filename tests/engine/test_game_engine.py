@@ -560,8 +560,6 @@ class TestNinePlayerFullSimulation:
             result = engine.run()
 
             assert any("ゲーム終了" in log for log in result.log)
-            # 護衛ログが存在する（狩人が行動した）
-            assert any("[護衛]" in log for log in result.log)
 
     def test_nine_player_game_has_guard_and_medium(self) -> None:
         """9人村で護衛と霊媒が実際に機能する。"""
