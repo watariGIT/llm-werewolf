@@ -77,23 +77,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM人狼 - ゲーム</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Noto+Serif+JP:wght@700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: "Helvetica Neue", Arial, "Yu Gothic", "Hiragino Kaku Gothic ProN", "メイリオ", Meiryo, sans-serif;
-            background-color: #1a1a2e;
+            font-family: "Noto Sans JP", "Helvetica Neue", Arial, "Yu Gothic", "Hiragino Kaku Gothic ProN", "メイリオ", Meiryo, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            background-attachment: fixed;
             color: #e0e0e0;
             min-height: 100vh;
         }
         .header {
-            background-color: #16213e;
+            background: rgba(22, 33, 62, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 2px solid #e94560;
         }
-        .header h1 { font-size: 1.5rem; }
+        .header h1 { font-family: "Noto Serif JP", serif; font-size: 1.5rem; }
         .header .info { color: #a0a0b0; font-size: 0.9rem; }
         .main {
             max-width: 800px;
@@ -101,12 +107,16 @@
             padding: 0 1rem;
         }
         .panel {
-            background-color: #16213e;
+            background: rgba(22, 33, 62, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
             padding: 1.5rem;
             margin-bottom: 1.5rem;
         }
         .panel h2 {
+            font-family: "Noto Serif JP", serif;
             font-size: 1.3rem;
             margin-bottom: 1rem;
             color: #e94560;
@@ -230,7 +240,10 @@
             margin-bottom: 1rem;
         }
         .past-discussion details {
-            background-color: #16213e;
+            background: rgba(22, 33, 62, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
             margin-bottom: 0.5rem;
         }
@@ -330,7 +343,9 @@
             white-space: pre-wrap;
         }
         .debug-panel {
-            background-color: #16213e;
+            background: rgba(22, 33, 62, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border: 1px solid #f59e0b;
             border-radius: 8px;
             padding: 1.5rem;

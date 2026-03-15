@@ -4,22 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM人狼</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Noto+Serif+JP:wght@700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: "Helvetica Neue", Arial, "Yu Gothic", "Hiragino Kaku Gothic ProN", "メイリオ", Meiryo, sans-serif;
+            font-family: "Noto Sans JP", "Helvetica Neue", Arial, "Yu Gothic", "Hiragino Kaku Gothic ProN", "メイリオ", Meiryo, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             margin: 0;
-            background-color: #1a1a2e;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            background-attachment: fixed;
             color: #e0e0e0;
         }
         .container {
             text-align: center;
             padding: 2rem;
+            background: rgba(22, 33, 62, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
         }
         h1 {
+            font-family: "Noto Serif JP", serif;
             font-size: 3rem;
             margin-bottom: 0.5rem;
         }
