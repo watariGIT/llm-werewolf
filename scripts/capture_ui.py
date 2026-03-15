@@ -17,9 +17,11 @@ import argparse
 import subprocess
 import sys
 import time
+import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import ElementHandle, Page, sync_playwright
 
 DEFAULT_PORT = 8765
 MAX_STEPS = 200  # 無限ループ防止
@@ -27,8 +29,6 @@ MAX_STEPS = 200  # 無限ループ防止
 
 def wait_for_server(base_url: str, timeout: int = 30) -> None:
     """サーバーが起動するまでポーリングで待機する。"""
-    import urllib.request
-
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -53,16 +53,16 @@ def capture(page: Page, output_dir: Path, index: int, name: str) -> Path:
     return filepath
 
 
-def select_first_candidate(page: Page, selector: str) -> str | None:
-    """ラジオボタンまたは select の最初の候補を選択し、その値を返す。"""
-    radio = page.query_selector(f'{selector} input[type="radio"]')
+def select_first_candidate(form: ElementHandle) -> str | None:
+    """フォーム内のラジオボタンまたは select の最初の候補を選択し、その値を返す。"""
+    radio = form.query_selector('input[type="radio"]')
     if radio:
         value = radio.get_attribute("value") or ""
         radio.check()
         return value
-    select = page.query_selector(f"{selector} select")
+    select = form.query_selector("select")
     if select:
-        option = page.query_selector(f"{selector} select option:not([value=''])")
+        option = form.query_selector("select option:not([value=''])")
         if option:
             value = option.get_attribute("value") or ""
             select.select_option(value)
@@ -70,25 +70,32 @@ def select_first_candidate(page: Page, selector: str) -> str | None:
     return None
 
 
-def _click_submit_in(form: object, page: Page) -> None:
+def _click_submit_in(form: ElementHandle, page: Page) -> None:
     """フォーム内の submit ボタンをクリックする。見つからなければフォールバック。"""
-    from playwright.sync_api import ElementHandle
-
-    if isinstance(form, ElementHandle):
-        btn = form.query_selector('button[type="submit"]')
-        if btn:
-            btn.click()
-            return
+    btn = form.query_selector('button[type="submit"]')
+    if btn:
+        btn.click()
+        return
     page.click('button[type="submit"]')
 
 
-def _submit_and_wait(page: Page, click_fn: object = None) -> None:
+def _submit_and_wait(page: Page, click_fn: Callable[[], None] | None = None) -> None:
     """フォーム送信してナビゲーション完了を待つ。"""
     with page.expect_navigation(wait_until="networkidle"):
-        if callable(click_fn):
+        if click_fn is not None:
             click_fn()
         else:
             page.click('button[type="submit"]')
+
+
+def _select_and_submit(page: Page, form_selector: str) -> None:
+    """フォーム内の最初の候補を選択して送信する。"""
+    form = page.query_selector(form_selector)
+    if form:
+        select_first_candidate(form)
+        _submit_and_wait(page, lambda: _click_submit_in(form, page))
+    else:
+        _submit_and_wait(page)
 
 
 def run_capture(role: str, output_dir: Path, base_url: str) -> list[Path]:
@@ -122,10 +129,9 @@ def run_capture(role: str, output_dir: Path, base_url: str) -> list[Path]:
                 break
 
             # 各ステップで最初の1回だけキャプチャ
-            step_name = step
-            if step_name not in captured_steps:
-                captured.append(capture(page, output_dir, idx, step_name))
-                captured_steps.add(step_name)
+            if step not in captured_steps:
+                captured.append(capture(page, output_dir, idx, step))
+                captured_steps.add(step)
                 idx += 1
 
             if step == "game_over":
@@ -142,21 +148,11 @@ def run_capture(role: str, output_dir: Path, base_url: str) -> list[Path]:
                 else:
                     _submit_and_wait(page)
             elif step == "vote":
-                form = page.query_selector('form[action*="vote"]')
-                if form:
-                    select_first_candidate(page, 'form[action*="vote"]')
-                    _submit_and_wait(page, lambda: _click_submit_in(form, page))
-                else:
-                    _submit_and_wait(page)
+                _select_and_submit(page, 'form[action*="vote"]')
             elif step == "execution_result":
                 _submit_and_wait(page)
             elif step == "night_action":
-                form = page.query_selector('form[action*="night-action"]')
-                if form:
-                    select_first_candidate(page, 'form[action*="night-action"]')
-                    _submit_and_wait(page, lambda: _click_submit_in(form, page))
-                else:
-                    _submit_and_wait(page)
+                _select_and_submit(page, 'form[action*="night-action"]')
             elif step == "night_result":
                 _submit_and_wait(page)
             else:
@@ -202,7 +198,11 @@ def main() -> None:
             print(f"  {path}")
     finally:
         server_proc.terminate()
-        server_proc.wait(timeout=10)
+        try:
+            server_proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server_proc.kill()
+            server_proc.wait(timeout=5)
         print("サーバー停止")
 
 
