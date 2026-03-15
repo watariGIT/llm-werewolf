@@ -458,7 +458,9 @@ def _build_situation_emotion_hint(game: GameState, player: Player, personality_t
     return "\n".join(lines)
 
 
-def _build_private_info(game: GameState, player: Player, *, personality_tag: str = "") -> str:
+def _build_private_info(
+    game: GameState, player: Player, *, personality_tag: str = "", include_advice: bool = True
+) -> str:
     """プレイヤーの秘密情報を生成する。
 
     GM 要約には含まれないプレイヤー固有の秘密情報を返す。
@@ -468,6 +470,8 @@ def _build_private_info(game: GameState, player: Player, *, personality_tag: str
         game: ゲーム状態
         player: 対象プレイヤー
         personality_tag: 人格タグ文字列（stance に応じた戦略指向の注入用）
+        include_advice: True の場合、GM 要約から役職別アドバイスを抽出して含める。
+            投票・夜行動など簡潔なコンテキストが望ましい場面では False を指定する。
 
     Returns:
         秘密情報文字列。情報がない場合は空文字列。
@@ -504,7 +508,7 @@ def _build_private_info(game: GameState, player: Player, *, personality_tag: str
         if guard_targets:
             lines.append(f"## あなたの護衛履歴\n{', '.join(guard_targets)}")
 
-    if game.gm_summary:
+    if include_advice and game.gm_summary:
         advice = _extract_role_advice(game.gm_summary, player.role, personality_tag=personality_tag)
         if advice:
             lines.append(advice)
@@ -513,6 +517,52 @@ def _build_private_info(game: GameState, player: Player, *, personality_tag: str
 
 
 _MAX_RECENT_STATEMENTS = DEFAULT_MAX_RECENT_STATEMENTS
+
+# vote/night action 用に除外するフィールド
+_ACTION_EXCLUDE_FIELDS: frozenset[str] = frozenset({"role_advice", "vote_history", "claims", "contradictions"})
+
+
+def _strip_gm_fields(
+    gm_summary: str,
+    *,
+    exclude_fields: frozenset[str] = frozenset({"role_advice"}),
+    compress_vote_history: bool = False,
+) -> str:
+    """GM要約JSONから不要フィールドを除外する。
+
+    Args:
+        gm_summary: GM 要約の JSON 文字列
+        exclude_fields: 除外するフィールド名のセット
+        compress_vote_history: True の場合、直近1日分のみ投票詳細を保持し、
+            それ以前は処刑結果のみに圧縮する
+
+    Returns:
+        フィルタ済みの JSON 文字列。パース失敗時は元の文字列をそのまま返す。
+    """
+    try:
+        data = json.loads(gm_summary)
+    except (json.JSONDecodeError, TypeError):
+        return gm_summary
+
+    for field in exclude_fields:
+        data.pop(field, None)
+
+    if compress_vote_history and "vote_history" in data:
+        vote_history = data["vote_history"]
+        if isinstance(vote_history, list) and len(vote_history) > 1:
+            compressed: list[dict[str, object]] = []
+            for day_votes in vote_history[:-1]:
+                if isinstance(day_votes, dict):
+                    summary: dict[str, object] = {"day": day_votes.get("day")}
+                    if "executed" in day_votes:
+                        summary["executed"] = day_votes["executed"]
+                    compressed.append(summary)
+                else:
+                    compressed.append(day_votes)
+            compressed.append(vote_history[-1])
+            data["vote_history"] = compressed
+
+    return json.dumps(data, ensure_ascii=False)
 
 
 def _extract_execution_budget(gm_summary: str) -> str:
@@ -548,12 +598,28 @@ def _extract_execution_budget(gm_summary: str) -> str:
 
 
 def _build_context(
-    game: GameState, player: Player, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS, personality_tag: str = ""
+    game: GameState,
+    player: Player,
+    *,
+    max_recent_statements: int = _MAX_RECENT_STATEMENTS,
+    personality_tag: str = "",
+    exclude_fields: frozenset[str] = frozenset({"role_advice"}),
+    compress_vote_history: bool = True,
+    include_advice: bool = True,
 ) -> str:
     """ゲームコンテキスト（状況 + ログ）を生成する。
 
     GM 要約がある場合はそれを活用し、新しいログのみを追加する。
     GM 要約がない場合は従来通りフルログを返す（発言ログは直近 N 件に制限）。
+
+    Args:
+        game: ゲーム状態
+        player: 視点プレイヤー
+        max_recent_statements: 保持する直近の発言ログ件数
+        personality_tag: 人格タグ文字列
+        exclude_fields: GM 要約 JSON から除外するフィールド名のセット
+        compress_vote_history: True の場合、古い投票詳細を圧縮する
+        include_advice: True の場合、GM 要約から役職別アドバイスを秘密情報に含める
     """
     alive_names = "、".join(p.name for p in game.alive_players)
 
@@ -563,13 +629,16 @@ def _build_context(
     ]
 
     if game.gm_summary:
-        parts.append(f"\n## 盤面情報\n{game.gm_summary}")
+        filtered_summary = _strip_gm_fields(
+            game.gm_summary, exclude_fields=exclude_fields, compress_vote_history=compress_vote_history
+        )
+        parts.append(f"\n## 盤面情報\n{filtered_summary}")
 
         budget_info = _extract_execution_budget(game.gm_summary)
         if budget_info:
             parts.append(f"\n{budget_info}")
 
-        private_info = _build_private_info(game, player, personality_tag=personality_tag)
+        private_info = _build_private_info(game, player, personality_tag=personality_tag, include_advice=include_advice)
         if private_info:
             parts.append(f"\n{private_info}")
 
@@ -584,6 +653,23 @@ def _build_context(
             parts.append(f"\n## これまでのログ\n{game_log}")
 
     return "\n".join(parts)
+
+
+def _build_action_context(game: GameState, player: Player, *, personality_tag: str = "") -> str:
+    """投票・夜行動用の軽量コンテキストを生成する。
+
+    ``_build_context`` のラッパー。候補者選択に不要なフィールド
+    （role_advice, vote_history, claims, contradictions）を GM 要約から除外し、
+    role_advice テキストの注入もスキップすることでトークン数を削減する。
+    """
+    return _build_context(
+        game,
+        player,
+        personality_tag=personality_tag,
+        exclude_fields=_ACTION_EXCLUDE_FIELDS,
+        compress_vote_history=False,
+        include_advice=False,
+    )
 
 
 def _build_speaking_status(speaking_order: tuple[str, ...], current_speaker_index: int) -> str:
@@ -722,7 +808,7 @@ def build_vote_prompt(
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, player, personality_tag=personality_tag)
+    context = _build_action_context(game, player, personality_tag=personality_tag)
     candidate_list = _format_candidates(candidates)
     return f"""{context}
 
@@ -755,7 +841,7 @@ def build_divine_prompt(
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, seer, personality_tag=personality_tag)
+    context = _build_action_context(game, seer, personality_tag=personality_tag)
     candidate_list = _format_candidates(candidates)
     return f"""{context}
 
@@ -785,7 +871,7 @@ def build_attack_prompt(
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, werewolf, personality_tag=personality_tag)
+    context = _build_action_context(game, werewolf, personality_tag=personality_tag)
     candidate_list = _format_candidates(candidates)
     allies = [p.name for p in game.alive_werewolves if p.name != werewolf.name]
     ally_section = ""
@@ -824,7 +910,7 @@ def build_guard_prompt(
     Returns:
         ユーザープロンプト文字列
     """
-    context = _build_context(game, knight, personality_tag=personality_tag)
+    context = _build_action_context(game, knight, personality_tag=personality_tag)
     candidate_list = _format_candidates(candidates)
     return f"""{context}
 

@@ -1,5 +1,6 @@
 """プロンプトテンプレートのテスト。"""
 
+import json
 import random
 from dataclasses import replace as dc_replace
 
@@ -7,6 +8,7 @@ from llm_werewolf.domain.game import GameState
 from llm_werewolf.domain.player import Player
 from llm_werewolf.domain.value_objects import Phase, Role
 from llm_werewolf.engine.prompts import (
+    _ACTION_EXCLUDE_FIELDS,
     _SITUATION_ENDGAME,
     _SITUATION_FIRST_DAY,
     _SITUATION_GUARD_SUCCESS,
@@ -15,6 +17,7 @@ from llm_werewolf.engine.prompts import (
     REACTIVITY_LEVELS,
     TRAIT_CATEGORIES,
     VOLATILITY_LEVELS,
+    _build_action_context,
     _build_context,
     _build_private_info,
     _build_situation_emotion_hint,
@@ -22,6 +25,7 @@ from llm_werewolf.engine.prompts import (
     _detect_situation,
     _extract_numeric_trait,
     _extract_role_advice,
+    _strip_gm_fields,
     assign_personalities,
     build_attack_prompt,
     build_discuss_continuation_prompt,
@@ -506,7 +510,9 @@ class TestBuildContextWithGmSummary:
         player = game.players[1]  # Bob
         result = _build_context(game, player)
         assert "盤面情報" in result
-        assert gm_json in result
+        # role_advice は _strip_gm_fields で除外されるため、フィルタ済みJSONを検証
+        assert '"alive"' in result
+        assert '"role_advice"' not in result
 
     def test_falls_back_to_full_log_without_gm_summary(self) -> None:
         game = _create_game()
@@ -1273,3 +1279,217 @@ class TestBuildDiscussPromptWithSituation:
         # 通常状況（投票なし・護衛成功なし）
         result = build_discuss_prompt(game, player)
         assert "## 現在の状況" not in result
+
+
+def _make_gm_summary(**overrides: object) -> str:
+    """テスト用の GM 要約 JSON を生成する。"""
+    data: dict[str, object] = {
+        "alive": ["Alice", "Bob", "Charlie"],
+        "dead": [],
+        "vote_history": [
+            {"day": 1, "votes": {"Alice": "Bob", "Bob": "Charlie"}, "executed": "Charlie"},
+            {"day": 2, "votes": {"Alice": "Dave", "Dave": "Alice"}, "executed": "Dave"},
+        ],
+        "claims": [{"player": "Alice", "role": "占い師", "results": []}],
+        "contradictions": ["AliceとBobの占い結果が矛盾"],
+        "player_summaries": [{"name": "Alice", "summary": "占いCO済み"}],
+        "role_advice": [
+            {
+                "role": "村人",
+                "options": [
+                    {"action": "投票", "merit": "安全", "demerit": "なし", "risk": 2, "reward": 5},
+                    {"action": "様子見", "merit": "情報収集", "demerit": "遅れ", "risk": 3, "reward": 4},
+                ],
+            },
+            {
+                "role": "占い師",
+                "options": [
+                    {"action": "占いCO", "merit": "情報共有", "demerit": "狙われる", "risk": 7, "reward": 8},
+                    {"action": "潜伏", "merit": "安全", "demerit": "情報遅延", "risk": 3, "reward": 5},
+                ],
+            },
+        ],
+        "execution_budget": {
+            "alive_count": 7,
+            "total_executions": 1,
+            "margin_if_two_wolves": 0,
+            "margin_if_one_wolf": 2,
+        },
+    }
+    data.update(overrides)
+    return json.dumps(data, ensure_ascii=False)
+
+
+class TestStripGmFields:
+    """_strip_gm_fields のテスト。"""
+
+    def test_removes_role_advice_by_default(self) -> None:
+        gm_json = _make_gm_summary()
+        result = _strip_gm_fields(gm_json)
+        data = json.loads(result)
+        assert "role_advice" not in data
+        assert "alive" in data
+        assert "player_summaries" in data
+
+    def test_removes_multiple_fields(self) -> None:
+        gm_json = _make_gm_summary()
+        result = _strip_gm_fields(gm_json, exclude_fields=_ACTION_EXCLUDE_FIELDS)
+        data = json.loads(result)
+        assert "role_advice" not in data
+        assert "vote_history" not in data
+        assert "claims" not in data
+        assert "contradictions" not in data
+        assert "alive" in data
+        assert "player_summaries" in data
+        assert "execution_budget" in data
+
+    def test_returns_original_on_invalid_json(self) -> None:
+        result = _strip_gm_fields("not json")
+        assert result == "not json"
+
+    def test_compress_vote_history_keeps_latest_day(self) -> None:
+        gm_json = _make_gm_summary()
+        result = _strip_gm_fields(gm_json, exclude_fields=frozenset(), compress_vote_history=True)
+        data = json.loads(result)
+        vote_history = data["vote_history"]
+        assert len(vote_history) == 2
+        # 古い日は圧縮（votes なし、executed のみ）
+        assert "votes" not in vote_history[0]
+        assert vote_history[0]["executed"] == "Charlie"
+        # 最新日はそのまま
+        assert "votes" in vote_history[1]
+
+    def test_compress_vote_history_noop_for_single_day(self) -> None:
+        gm_json = _make_gm_summary(vote_history=[{"day": 1, "votes": {"A": "B"}, "executed": "B"}])
+        result = _strip_gm_fields(gm_json, exclude_fields=frozenset(), compress_vote_history=True)
+        data = json.loads(result)
+        assert "votes" in data["vote_history"][0]
+
+
+class TestBuildActionContext:
+    """_build_action_context のテスト。"""
+
+    def test_excludes_role_advice_and_vote_history(self) -> None:
+        """GM 要約から role_advice, vote_history, claims, contradictions が除外されること。"""
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        player = game.players[1]  # Bob (villager)
+        result = _build_action_context(game, player)
+        assert "盤面情報" in result
+        assert '"role_advice"' not in result
+        assert '"vote_history"' not in result
+        assert '"claims"' not in result
+        assert '"contradictions"' not in result
+        assert '"player_summaries"' in result
+
+    def test_includes_execution_budget(self) -> None:
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        player = game.players[1]
+        result = _build_action_context(game, player)
+        assert "処刑予算" in result
+
+    def test_excludes_role_advice_text(self) -> None:
+        """_build_private_info が include_advice=False で呼ばれ、アドバイステキストが含まれないこと。"""
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        player = game.players[0]  # Alice (seer)
+        result = _build_action_context(game, player)
+        assert "GMからのアドバイス" not in result
+
+    def test_falls_back_to_full_log_without_gm_summary(self) -> None:
+        game = _create_game()
+        player = game.players[1]
+        result = _build_action_context(game, player)
+        assert "これまでのログ" in result
+        assert "盤面情報" not in result
+
+
+class TestBuildPrivateInfoIncludeAdvice:
+    """_build_private_info の include_advice パラメータのテスト。"""
+
+    def test_include_advice_true_contains_advice(self) -> None:
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json)
+        player = game.players[0]  # Alice (seer)
+        result = _build_private_info(game, player, include_advice=True)
+        assert "GMからのアドバイス" in result
+
+    def test_include_advice_false_excludes_advice(self) -> None:
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json)
+        player = game.players[0]  # Alice (seer)
+        result = _build_private_info(game, player, include_advice=False)
+        assert "GMからのアドバイス" not in result
+
+    def test_include_advice_false_keeps_other_private_info(self) -> None:
+        """include_advice=False でも占い結果などの秘密情報は含まれること。"""
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, divined_history=(("Alice", "Bob"),))
+        player = game.players[0]  # Alice (seer)
+        result = _build_private_info(game, player, include_advice=False)
+        assert "あなたの占い結果" in result
+        assert "GMからのアドバイス" not in result
+
+
+class TestVoteNightPromptsUseLightweightContext:
+    """vote/night action プロンプトが軽量コンテキストを使用していることの検証。"""
+
+    def test_vote_prompt_excludes_role_advice(self) -> None:
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        player = game.players[1]  # Bob
+        candidates = tuple(p for p in game.alive_players if p.name != player.name)
+        result = build_vote_prompt(game, player, candidates)
+        assert '"role_advice"' not in result
+        assert '"vote_history"' not in result
+        assert "GMからのアドバイス" not in result
+
+    def test_divine_prompt_excludes_role_advice(self) -> None:
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        seer = game.players[0]  # Alice (seer)
+        candidates = tuple(p for p in game.alive_players if p.name != seer.name)
+        result = build_divine_prompt(game, seer, candidates)
+        assert '"role_advice"' not in result
+        assert "GMからのアドバイス" not in result
+
+    def test_attack_prompt_excludes_role_advice(self) -> None:
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        werewolf = game.players[2]  # Charlie (werewolf)
+        candidates = tuple(p for p in game.alive_players if p.name != werewolf.name and p.role != Role.WEREWOLF)
+        result = build_attack_prompt(game, werewolf, candidates)
+        assert '"role_advice"' not in result
+        # 「## GMからのアドバイス」セクションが含まれないこと（テンプレート固定文言は除外対象外）
+        assert "## GMからのアドバイス" not in result
+
+    def test_guard_prompt_excludes_role_advice(self) -> None:
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        knight = game.players[4]  # Eve (knight)
+        candidates = tuple(p for p in game.alive_players if p.name != knight.name)
+        result = build_guard_prompt(game, knight, candidates)
+        assert '"role_advice"' not in result
+        assert "GMからのアドバイス" not in result
+
+    def test_discuss_prompt_still_includes_role_advice_text(self) -> None:
+        """議論プロンプトは引き続き role_advice テキストを含むこと。"""
+        game = _create_game()
+        gm_json = _make_gm_summary()
+        game = dc_replace(game, gm_summary=gm_json, gm_summary_log_offset=len(game.log))
+        seer = game.players[0]  # Alice (seer)
+        result = build_discuss_prompt(game, seer)
+        assert "GMからのアドバイス" in result
+        # ただし JSON 内の role_advice は除外されている
+        assert '"role_advice"' not in result
