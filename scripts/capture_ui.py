@@ -58,7 +58,12 @@ def select_first_candidate(form: ElementHandle) -> str | None:
     radio = form.query_selector('input[type="radio"]')
     if radio:
         value = radio.get_attribute("value") or ""
-        radio.check()
+        # カードUI では radio が非表示のため、親 label をクリックして選択する
+        label = form.query_selector("label")
+        if label:
+            label.click()
+        else:
+            radio.check(force=True)
         return value
     select = form.query_selector("select")
     if select:
