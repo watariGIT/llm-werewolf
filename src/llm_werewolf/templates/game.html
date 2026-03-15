@@ -167,7 +167,7 @@
             text-align: center;
         }
         .avatar-item.dead .avatar-circle { background-color: #555 !important; opacity: 0.5; }
-        .avatar-item.dead .avatar-name { color: #888; text-decoration: line-through; }
+        .avatar-item.dead .avatar-name { color: #999; text-decoration: line-through; }
         .avatar-item.you .avatar-circle { box-shadow: 0 0 0 3px #e94560; }
         .role-badge {
             display: inline-block;
@@ -449,7 +449,7 @@
             <h2>プレイヤー</h2>
             <div class="avatar-bar">
                 {% for p in ordered_players %}
-                <div class="avatar-item {{ 'alive' if p.is_alive else 'dead' }} {{ 'you' if p.name == session.human_player_name else '' }}">
+                <div class="avatar-item {{ 'alive' if p.is_alive else 'dead' }} {{ 'you' if p.name == session.human_player_name else '' }}" title="{{ p.name }}">
                     <div class="avatar-circle" style="background-color: var(--avatar-color-{{ loop.index0 }})">
                         {{ p.name[:1] }}
                     </div>
@@ -792,7 +792,7 @@
                 <h2 style="margin: 1.5rem 0 1rem;">配役公開</h2>
                 <div class="avatar-bar">
                     {% for p in ordered_players %}
-                    <div class="avatar-item {{ 'alive' if p.is_alive else 'dead' }}">
+                    <div class="avatar-item {{ 'alive' if p.is_alive else 'dead' }}" title="{{ p.name }}">
                         <div class="avatar-circle" style="background-color: var(--avatar-color-{{ loop.index0 }})">
                             {{ p.name[:1] }}
                         </div>
