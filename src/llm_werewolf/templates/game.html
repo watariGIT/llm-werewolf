@@ -1,3 +1,29 @@
+{% macro vote_result_entry(voter_name, target_name, player_colors, thinking_text=none) %}
+<div class="vote-result-row">
+    <div class="vote-result-card">
+        <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(voter_name, 0) }})">{{ voter_name[:1] }}</div>
+        <span class="vr-name">{{ voter_name }}</span>
+    </div>
+    <span class="vote-result-arrow">&rarr;</span>
+    <div class="vote-result-card">
+        <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(target_name, 0) }})">{{ target_name[:1] }}</div>
+        <span class="vr-name">{{ target_name }}</span>
+    </div>
+    {% if thinking_text %}
+    <details class="debug-thinking" style="flex-basis: 100%;">
+        <summary>思考を表示</summary>
+        <div class="debug-thinking-text">{{ thinking_text }}</div>
+    </details>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro candidate_card(player_name, player_colors) %}
+<label class="vote-card">
+    <input type="radio" name="target" value="{{ player_name }}" required>
+    <div class="vote-card-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(player_name, 0) }})">{{ player_name[:1] }}</div>
+    <div class="vote-card-name">{{ player_name }}</div>
+</label>
+{% endmacro %}
 {% macro chat_message(speaker_name, msg_text, is_self, color_idx, thinking_text=none, data_player=false) %}
 <li class="chat-msg {{ 'chat-msg--self' if is_self }}"{{ ' data-player="' ~ speaker_name ~ '"' if data_player }}>
     {% if not is_self %}
@@ -51,25 +77,7 @@
                     {% if event_type == "vote" %}
                     {% set voter_name = event_text.split(' → ', 1)[0] if ' → ' in event_text else '' %}
                     {% set target_name = event_text.split(' → ', 1)[1] if ' → ' in event_text else event_text %}
-                    <div class="vote-result-row">
-                        <div class="vote-result-card">
-                            <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(voter_name, 0) }})">{{ voter_name[:1] }}</div>
-                            <span class="vr-name">{{ voter_name }}</span>
-                        </div>
-                        <span class="vote-result-arrow">&rarr;</span>
-                        <div class="vote-result-card">
-                            <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(target_name, 0) }})">{{ target_name[:1] }}</div>
-                            <span class="vr-name">{{ target_name }}</span>
-                        </div>
-                        {% if debug_mode and v_thinking %}
-                            {% if v_thinking.get(voter_name) %}
-                            <details class="debug-thinking" style="flex-basis: 100%;">
-                                <summary>思考を表示</summary>
-                                <div class="debug-thinking-text">{{ v_thinking[voter_name] }}</div>
-                            </details>
-                            {% endif %}
-                        {% endif %}
-                    </div>
+                    {{ vote_result_entry(voter_name, target_name, player_colors, v_thinking.get(voter_name) if debug_mode and v_thinking else none) }}
                     {% elif event_type == "execution" %}
                     <div class="event-msg execution">{{ event_text }}</div>
                     {% elif event_type == "attack" %}
@@ -259,10 +267,6 @@
             line-height: 1.6;
             word-break: break-word;
         }
-        .vote-list { list-style: none; }
-        .vote-list li { padding: 0.4rem 0; }
-        .vote-arrow { color: #e94560; margin: 0 0.3rem; }
-
         /* 投票カード選択UI */
         .vote-card-grid {
             display: flex;
@@ -808,11 +812,7 @@
             <form action="/play/{{ game_id }}/vote" method="post">
                 <div class="vote-card-grid">
                     {% for p in vote_candidates %}
-                    <label class="vote-card">
-                        <input type="radio" name="target" value="{{ p.name }}" required>
-                        <div class="vote-card-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(p.name, 0) }})">{{ p.name[:1] }}</div>
-                        <div class="vote-card-name">{{ p.name }}</div>
-                    </label>
+                    {{ candidate_card(p.name, player_colors) }}
                     {% endfor %}
                 </div>
                 <div class="actions">
@@ -837,23 +837,7 @@
             {% if session.current_votes %}
             <div>
                 {% for voter, target in session.current_votes.items() %}
-                <div class="vote-result-row">
-                    <div class="vote-result-card">
-                        <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(voter, 0) }})">{{ voter[:1] }}</div>
-                        <span class="vr-name">{{ voter }}</span>
-                    </div>
-                    <span class="vote-result-arrow">&rarr;</span>
-                    <div class="vote-result-card">
-                        <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(target, 0) }})">{{ target[:1] }}</div>
-                        <span class="vr-name">{{ target }}</span>
-                    </div>
-                    {% if debug_mode and vote_thinking is defined and vote_thinking.get(voter) %}
-                    <details class="debug-thinking" style="flex-basis: 100%;">
-                        <summary>思考を表示</summary>
-                        <div class="debug-thinking-text">{{ vote_thinking[voter] }}</div>
-                    </details>
-                    {% endif %}
-                </div>
+                {{ vote_result_entry(voter, target, player_colors, vote_thinking[voter] if debug_mode and vote_thinking is defined and vote_thinking.get(voter) else none) }}
                 {% endfor %}
             </div>
             {% set vote_counts = {} %}
@@ -909,17 +893,7 @@
                     {% if session.current_votes %}
                     <div class="past-events-section">
                         {% for voter, target in session.current_votes.items() %}
-                        <div class="vote-result-row">
-                            <div class="vote-result-card">
-                                <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(voter, 0) }})">{{ voter[:1] }}</div>
-                                <span class="vr-name">{{ voter }}</span>
-                            </div>
-                            <span class="vote-result-arrow">&rarr;</span>
-                            <div class="vote-result-card">
-                                <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(target, 0) }})">{{ target[:1] }}</div>
-                                <span class="vr-name">{{ target }}</span>
-                            </div>
-                        </div>
+                        {{ vote_result_entry(voter, target, player_colors) }}
                         {% endfor %}
                         {% for log_line in current_execution_logs %}
                         <div class="event-msg execution">{{ log_line }}</div>
@@ -936,11 +910,7 @@
             <form action="/play/{{ game_id }}/night-action" method="post">
                 <div class="vote-card-grid">
                     {% for p in night_action_candidates %}
-                    <label class="vote-card">
-                        <input type="radio" name="target" value="{{ p.name }}" required>
-                        <div class="vote-card-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(p.name, 0) }})">{{ p.name[:1] }}</div>
-                        <div class="vote-card-name">{{ p.name }}</div>
-                    </label>
+                    {{ candidate_card(p.name, player_colors) }}
                     {% endfor %}
                 </div>
                 <div class="actions">
@@ -958,11 +928,7 @@
             <form action="/play/{{ game_id }}/night-action" method="post">
                 <div class="vote-card-grid">
                     {% for p in night_action_candidates %}
-                    <label class="vote-card">
-                        <input type="radio" name="target" value="{{ p.name }}" required>
-                        <div class="vote-card-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(p.name, 0) }})">{{ p.name[:1] }}</div>
-                        <div class="vote-card-name">{{ p.name }}</div>
-                    </label>
+                    {{ candidate_card(p.name, player_colors) }}
                     {% endfor %}
                 </div>
                 <div class="actions">
@@ -975,11 +941,7 @@
             <form action="/play/{{ game_id }}/night-action" method="post">
                 <div class="vote-card-grid">
                     {% for p in night_action_candidates %}
-                    <label class="vote-card">
-                        <input type="radio" name="target" value="{{ p.name }}" required>
-                        <div class="vote-card-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(p.name, 0) }})">{{ p.name[:1] }}</div>
-                        <div class="vote-card-name">{{ p.name }}</div>
-                    </label>
+                    {{ candidate_card(p.name, player_colors) }}
                     {% endfor %}
                 </div>
                 <div class="actions">
