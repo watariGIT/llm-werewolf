@@ -1,4 +1,4 @@
-{% macro past_day_details(past_days, past_discussions, past_events, past_thinking=none, debug_mode=false) %}
+{% macro past_day_details(past_days, past_discussions, past_events, past_thinking=none, debug_mode=false, player_colors={}, human_player_name='') %}
 {% if past_days %}
 <div class="past-discussion">
     {% for day in past_days %}
@@ -14,19 +14,29 @@
                 {% set thinking_counters = {} %}
                 {% for msg in past_discussions[day] %}
                 {% set speaker_name = msg.split(': ', 1)[0] %}
-                <li>
-                    <span class="speaker">{{ speaker_name }}</span>:
-                    {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
-                    {% if debug_mode and disc_thinking.get(speaker_name) %}
-                        {% set idx = thinking_counters.get(speaker_name, 0) %}
-                        {% if idx < disc_thinking[speaker_name]|length %}
-                        <details class="debug-thinking">
-                            <summary>思考を表示</summary>
-                            <div class="debug-thinking-text">{{ disc_thinking[speaker_name][idx] }}</div>
-                        </details>
-                        {% endif %}
-                        {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                {% set msg_text = msg.split(': ', 1)[1] if ': ' in msg else msg %}
+                {% set is_self = speaker_name == human_player_name %}
+                {% set color_idx = player_colors.get(speaker_name, 0) %}
+                <li class="chat-msg {{ 'chat-msg--self' if is_self }}">
+                    {% if not is_self %}
+                    <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
                     {% endif %}
+                    <div class="chat-bubble">
+                        {% if not is_self %}
+                        <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
+                        {% endif %}
+                        <div class="chat-text">{{ msg_text }}</div>
+                        {% if debug_mode and disc_thinking.get(speaker_name) %}
+                            {% set idx = thinking_counters.get(speaker_name, 0) %}
+                            {% if idx < disc_thinking[speaker_name]|length %}
+                            <details class="debug-thinking">
+                                <summary>思考を表示</summary>
+                                <div class="debug-thinking-text">{{ disc_thinking[speaker_name][idx] }}</div>
+                            </details>
+                            {% endif %}
+                            {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                        {% endif %}
+                    </div>
                 </li>
                 {% endfor %}
             </ul>
@@ -189,6 +199,53 @@
         }
         .message-list li:last-child { border-bottom: none; }
         .speaker { font-weight: bold; color: #e94560; }
+        /* チャット吹き出し */
+        .chat-msg {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.4rem 0;
+        }
+        .message-list .chat-msg { border-bottom: none; }
+        .chat-msg--self {
+            flex-direction: row-reverse;
+        }
+        .chat-avatar {
+            width: 32px;
+            height: 32px;
+            min-width: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.85rem;
+            color: #fff;
+            flex-shrink: 0;
+        }
+        .chat-bubble {
+            max-width: 80%;
+            padding: 0.5rem 0.8rem;
+            border-radius: 12px;
+            border-top-left-radius: 4px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .chat-msg--self .chat-bubble {
+            border-radius: 12px;
+            border-top-right-radius: 4px;
+            background: rgba(233, 69, 96, 0.15);
+            border-color: rgba(233, 69, 96, 0.3);
+        }
+        .chat-speaker {
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin-bottom: 0.2rem;
+        }
+        .chat-text {
+            line-height: 1.6;
+            word-break: break-word;
+        }
         .vote-list { list-style: none; }
         .vote-list li { padding: 0.4rem 0; }
         .vote-arrow { color: #e94560; margin: 0 0.3rem; }
@@ -428,6 +485,8 @@
                 padding: 0.6rem 0.8rem;
                 font-size: 0.9rem;
             }
+            .chat-bubble { max-width: 90%; }
+            .chat-avatar { width: 28px; height: 28px; min-width: 28px; font-size: 0.75rem; }
         }
     </style>
 </head>
@@ -444,6 +503,10 @@
     </div>
 
     <div class="main">
+        {% set player_colors = {} %}
+        {% for p in ordered_players %}
+            {% if player_colors.update({p.name: loop.index0}) %}{% endif %}
+        {% endfor %}
         <!-- プレイヤーパネル -->
         <div class="panel">
             <h2>プレイヤー</h2>
@@ -512,26 +575,36 @@
 
         <!-- DISCUSSION: 議論フェーズ -->
         {% if step == "discussion" %}
-        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode, player_colors, session.human_player_name) }}
         <div class="panel" id="current-discussion-panel">
             <h2>議論 - Day {{ game.day }}</h2>
             <ul class="message-list" id="current-discussion-list">
                 {% set thinking_counters = {} %}
                 {% for msg in session.current_discussion %}
                 {% set speaker_name = msg.split(': ', 1)[0] %}
-                <li>
-                    <span class="speaker">{{ speaker_name }}</span>:
-                    {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
-                    {% if debug_mode and thinking_map is defined and thinking_map.get(speaker_name) %}
-                        {% set idx = thinking_counters.get(speaker_name, 0) %}
-                        {% if idx < thinking_map[speaker_name]|length %}
-                        <details class="debug-thinking">
-                            <summary>思考を表示</summary>
-                            <div class="debug-thinking-text">{{ thinking_map[speaker_name][idx] }}</div>
-                        </details>
-                        {% endif %}
-                        {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                {% set msg_text = msg.split(': ', 1)[1] if ': ' in msg else msg %}
+                {% set is_self = speaker_name == session.human_player_name %}
+                {% set color_idx = player_colors.get(speaker_name, 0) %}
+                <li class="chat-msg {{ 'chat-msg--self' if is_self }}" data-player="{{ speaker_name }}">
+                    {% if not is_self %}
+                    <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
                     {% endif %}
+                    <div class="chat-bubble">
+                        {% if not is_self %}
+                        <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
+                        {% endif %}
+                        <div class="chat-text">{{ msg_text }}</div>
+                        {% if debug_mode and thinking_map is defined and thinking_map.get(speaker_name) %}
+                            {% set idx = thinking_counters.get(speaker_name, 0) %}
+                            {% if idx < thinking_map[speaker_name]|length %}
+                            <details class="debug-thinking">
+                                <summary>思考を表示</summary>
+                                <div class="debug-thinking-text">{{ thinking_map[speaker_name][idx] }}</div>
+                            </details>
+                            {% endif %}
+                            {% if thinking_counters.update({speaker_name: idx + 1}) %}{% endif %}
+                        {% endif %}
+                    </div>
                 </li>
                 {% endfor %}
             </ul>
@@ -559,15 +632,26 @@
 
         <!-- VOTE: 投票フェーズ -->
         {% if step == "vote" %}
-        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode, player_colors, session.human_player_name) }}
         {% if session.current_discussion %}
         <div class="panel">
             <h2>議論 - Day {{ game.day }}</h2>
             <ul class="message-list">
                 {% for msg in session.current_discussion %}
-                <li>
-                    <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
-                    {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                {% set speaker_name = msg.split(': ', 1)[0] %}
+                {% set msg_text = msg.split(': ', 1)[1] if ': ' in msg else msg %}
+                {% set is_self = speaker_name == session.human_player_name %}
+                {% set color_idx = player_colors.get(speaker_name, 0) %}
+                <li class="chat-msg {{ 'chat-msg--self' if is_self }}">
+                    {% if not is_self %}
+                    <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
+                    {% endif %}
+                    <div class="chat-bubble">
+                        {% if not is_self %}
+                        <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
+                        {% endif %}
+                        <div class="chat-text">{{ msg_text }}</div>
+                    </div>
                 </li>
                 {% endfor %}
             </ul>
@@ -635,7 +719,7 @@
 
         <!-- NIGHT_ACTION: 夜行動選択 -->
         {% if step == "night_action" %}
-        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode) }}
+        {{ past_day_details(past_days, past_discussions, past_events, past_thinking, debug_mode, player_colors, session.human_player_name) }}
         <div class="past-discussion">
             <details>
                 <summary>Day {{ game.day }}（今日）</summary>
@@ -643,9 +727,20 @@
                     {% if session.current_discussion %}
                     <ul class="message-list">
                         {% for msg in session.current_discussion %}
-                        <li>
-                            <span class="speaker">{{ msg.split(': ', 1)[0] }}</span>:
-                            {{ msg.split(': ', 1)[1] if ': ' in msg else msg }}
+                        {% set speaker_name = msg.split(': ', 1)[0] %}
+                        {% set msg_text = msg.split(': ', 1)[1] if ': ' in msg else msg %}
+                        {% set is_self = speaker_name == session.human_player_name %}
+                        {% set color_idx = player_colors.get(speaker_name, 0) %}
+                        <li class="chat-msg {{ 'chat-msg--self' if is_self }}">
+                            {% if not is_self %}
+                            <div class="chat-avatar" style="background-color: var(--avatar-color-{{ color_idx }})">{{ speaker_name[:1] }}</div>
+                            {% endif %}
+                            <div class="chat-bubble">
+                                {% if not is_self %}
+                                <div class="chat-speaker" style="color: var(--avatar-color-{{ color_idx }})">{{ speaker_name }}</div>
+                                {% endif %}
+                                <div class="chat-text">{{ msg_text }}</div>
+                            </div>
                         </li>
                         {% endfor %}
                     </ul>
@@ -891,6 +986,9 @@
     <script>
         var HUMAN_PLAYER_NAME = "{{ session.human_player_name }}";
         var DEBUG_MODE = {% if debug_mode %}true{% else %}false{% endif %};
+        var PLAYER_COLOR_MAP = {
+            {% for p in ordered_players %}"{{ p.name }}": {{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}
+        };
 
         // SSE エンドポイントのマッピング
         var SSE_ENDPOINTS = {
@@ -925,17 +1023,43 @@
             return events;
         }
 
+        // チャット吹き出し要素を生成するヘルパー
+        function createChatLi(player) {
+            var isSelf = (player === HUMAN_PLAYER_NAME);
+            var colorIdx = PLAYER_COLOR_MAP[player] !== undefined ? PLAYER_COLOR_MAP[player] : 0;
+            var li = document.createElement('li');
+            li.className = 'chat-msg' + (isSelf ? ' chat-msg--self' : '');
+            li.setAttribute('data-player', player);
+            if (!isSelf) {
+                var avatar = document.createElement('div');
+                avatar.className = 'chat-avatar';
+                avatar.style.backgroundColor = 'var(--avatar-color-' + colorIdx + ')';
+                avatar.textContent = player.charAt(0);
+                li.appendChild(avatar);
+            }
+            var bubble = document.createElement('div');
+            bubble.className = 'chat-bubble';
+            if (!isSelf) {
+                var speakerDiv = document.createElement('div');
+                speakerDiv.className = 'chat-speaker';
+                speakerDiv.style.color = 'var(--avatar-color-' + colorIdx + ')';
+                speakerDiv.textContent = player;
+                bubble.appendChild(speakerDiv);
+            }
+            li.appendChild(bubble);
+            return { li: li, bubble: bubble };
+        }
+
         // 議論リストに発言を追加
         function appendMessage(player, text) {
             var list = document.getElementById('current-discussion-list');
             if (!list) return;
-            var li = document.createElement('li');
-            var speaker = document.createElement('span');
-            speaker.className = 'speaker';
-            speaker.textContent = player;
-            li.appendChild(speaker);
-            li.appendChild(document.createTextNode(': ' + text));
-            list.appendChild(li);
+            var els = createChatLi(player);
+            var textDiv = document.createElement('div');
+            textDiv.className = 'chat-text';
+            textDiv.textContent = text;
+            els.bubble.appendChild(textDiv);
+            list.appendChild(els.li);
         }
 
         // --- トークンストリーミング表示 ---
@@ -944,22 +1068,20 @@
         function startStreamingMessage(player) {
             var list = document.getElementById('current-discussion-list');
             if (!list) return;
-            var li = document.createElement('li');
-            var speaker = document.createElement('span');
-            speaker.className = 'speaker';
-            speaker.textContent = player;
-            li.appendChild(speaker);
+            var els = createChatLi(player);
+            var textDiv = document.createElement('div');
+            textDiv.className = 'chat-text';
             var textSpan = document.createElement('span');
             textSpan.className = 'streaming-text';
-            textSpan.textContent = ': ';
-            li.appendChild(textSpan);
+            textDiv.appendChild(textSpan);
             var cursor = document.createElement('span');
             cursor.className = 'typing-cursor';
             cursor.setAttribute('aria-hidden', 'true');
-            li.appendChild(cursor);
-            list.appendChild(li);
-            streamingElements[player] = { li: li, textSpan: textSpan, cursor: cursor };
-            li.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            textDiv.appendChild(cursor);
+            els.bubble.appendChild(textDiv);
+            list.appendChild(els.li);
+            streamingElements[player] = { li: els.li, bubble: els.bubble, textSpan: textSpan, cursor: cursor };
+            els.li.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
 
         function appendTokenChunk(player, chunk) {
@@ -974,7 +1096,7 @@
             if (el) {
                 if (el.cursor) el.cursor.remove();
                 // 確定テキストで差し替え
-                el.textSpan.textContent = ': ' + finalText;
+                el.textSpan.textContent = finalText;
                 delete streamingElements[player];
             }
         }
@@ -984,13 +1106,14 @@
             if (!DEBUG_MODE || !thinking) return;
             var list = document.getElementById('current-discussion-list');
             if (!list) return;
-            // 最後の li を探す（直前のメッセージ）
-            var items = list.querySelectorAll('li');
+            // 最後の該当プレイヤーの li を探す
+            var items = list.querySelectorAll('li.chat-msg');
             for (var i = items.length - 1; i >= 0; i--) {
-                var speakerEl = items[i].querySelector('.speaker');
-                if (speakerEl && speakerEl.textContent === player) {
+                if (items[i].getAttribute('data-player') === player) {
+                    var bubble = items[i].querySelector('.chat-bubble');
+                    if (!bubble) break;
                     // 既にデバッグ情報がある場合はスキップ
-                    if (items[i].querySelector('.debug-thinking')) break;
+                    if (bubble.querySelector('.debug-thinking')) break;
                     var details = document.createElement('details');
                     details.className = 'debug-thinking';
                     var summary = document.createElement('summary');
@@ -1000,7 +1123,7 @@
                     div.className = 'debug-thinking-text';
                     div.textContent = thinking;
                     details.appendChild(div);
-                    items[i].appendChild(details);
+                    bubble.appendChild(details);
                     break;
                 }
             }
