@@ -123,7 +123,7 @@
             background-color: #1a1a2e;
         }
         .player-tag.alive { border-left: 3px solid #4ade80; }
-        .player-tag.dead { border-left: 3px solid #ef4444; color: #999; text-decoration: line-through; }
+        .player-tag.dead { border-left: 3px solid #ef4444; color: #aaa; text-decoration: line-through; }
         .player-tag.you { font-weight: bold; }
         .role-badge {
             display: inline-block;
@@ -161,6 +161,10 @@
             outline: none;
         }
         textarea:focus { border-color: #e94560; }
+        textarea:focus-visible {
+            outline: 2px solid #e94560;
+            outline-offset: -2px;
+        }
         .btn {
             display: inline-block;
             padding: 0.8rem 2rem;
@@ -174,6 +178,10 @@
             text-decoration: none;
         }
         .btn:hover { background-color: #c73650; }
+        .btn:focus-visible {
+            outline: 2px solid #e94560;
+            outline-offset: 2px;
+        }
         .btn-secondary {
             background-color: #333;
         }
@@ -188,6 +196,11 @@
             transition: background-color 0.2s;
         }
         .radio-group label:hover { background-color: #222244; }
+        .radio-group label:has(input:focus-visible) {
+            background-color: #222244;
+            outline: 2px solid #e94560;
+            outline-offset: -2px;
+        }
         .radio-group input[type="radio"] { margin-right: 0.5rem; }
         .result-box {
             text-align: center;
@@ -476,7 +489,7 @@
         <div class="panel">
             <h2>あなたの発言</h2>
             <form action="/play/{{ game_id }}/discuss" method="post">
-                <textarea name="message" placeholder="発言を入力してください..."></textarea>
+                <textarea name="message" placeholder="発言を入力してください..." aria-label="発言を入力"></textarea>
                 <div class="actions">
                     <button type="submit" class="btn">発言する</button>
                 </div>

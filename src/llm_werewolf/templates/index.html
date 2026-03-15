@@ -45,6 +45,10 @@
         input[type="text"]:focus {
             border-color: #e94560;
         }
+        input[type="text"]:focus-visible {
+            outline: 2px solid #e94560;
+            outline-offset: -2px;
+        }
         .btn {
             display: inline-block;
             padding: 1rem 2.5rem;
@@ -59,6 +63,10 @@
         }
         .btn:hover {
             background-color: #c73650;
+        }
+        .btn:focus-visible {
+            outline: 2px solid #e94560;
+            outline-offset: 2px;
         }
         .role-select {
             display: flex;
@@ -78,8 +86,21 @@
         .role-select label:hover {
             border-color: #e94560;
         }
+        .role-select label:has(input:focus-visible) {
+            border-color: #e94560;
+            outline: 2px solid #e94560;
+            outline-offset: 2px;
+        }
         .role-select input[type="radio"] {
-            display: none;
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
         .role-select input[type="radio"]:checked + span {
             color: #e94560;
@@ -107,10 +128,11 @@
         <p>AIと対戦する人狼ゲーム</p>
         <form action="/play" method="post">
             <div class="form-group">
-                <input type="text" name="player_name" placeholder="あなたの名前を入力" required maxlength="50">
+                <label for="player-name" class="form-label">名前</label>
+                <input type="text" id="player-name" name="player_name" placeholder="あなたの名前を入力" required maxlength="50">
             </div>
-            <div class="form-group">
-                <span class="form-label">役職</span>
+            <div class="form-group" role="group" aria-labelledby="role-label">
+                <span class="form-label" id="role-label">役職</span>
                 <div class="role-select">
                     <label class="selected"><input type="radio" name="role" value="random" checked><span>ランダム</span></label>
                     <label><input type="radio" name="role" value="villager"><span>村人</span></label>
