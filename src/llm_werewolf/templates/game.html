@@ -1,3 +1,29 @@
+{% macro vote_result_entry(voter_name, target_name, player_colors, thinking_text=none) %}
+<div class="vote-result-row">
+    <div class="vote-result-card">
+        <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(voter_name, 0) }})">{{ voter_name[:1] }}</div>
+        <span class="vr-name">{{ voter_name }}</span>
+    </div>
+    <span class="vote-result-arrow">&rarr;</span>
+    <div class="vote-result-card">
+        <div class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(target_name, 0) }})">{{ target_name[:1] }}</div>
+        <span class="vr-name">{{ target_name }}</span>
+    </div>
+    {% if thinking_text %}
+    <details class="debug-thinking" style="flex-basis: 100%;">
+        <summary>思考を表示</summary>
+        <div class="debug-thinking-text">{{ thinking_text }}</div>
+    </details>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro candidate_card(player_name, player_colors) %}
+<label class="vote-card">
+    <input type="radio" name="target" value="{{ player_name }}" required>
+    <div class="vote-card-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(player_name, 0) }})">{{ player_name[:1] }}</div>
+    <div class="vote-card-name">{{ player_name }}</div>
+</label>
+{% endmacro %}
 {% macro chat_message(speaker_name, msg_text, is_self, color_idx, thinking_text=none, data_player=false) %}
 <li class="chat-msg {{ 'chat-msg--self' if is_self }}"{{ ' data-player="' ~ speaker_name ~ '"' if data_player }}>
     {% if not is_self %}
@@ -49,18 +75,9 @@
             <div class="past-events-section">
                 {% for event_type, event_text in past_events[day] %}
                     {% if event_type == "vote" %}
-                    <div class="past-vote-entry">
-                        <span class="vote-arrow">&rarr;</span> {{ event_text }}
-                        {% if debug_mode and v_thinking %}
-                            {% set voter_name = event_text.split(' → ', 1)[0] if ' → ' in event_text else '' %}
-                            {% if v_thinking.get(voter_name) %}
-                            <details class="debug-thinking">
-                                <summary>思考を表示</summary>
-                                <div class="debug-thinking-text">{{ v_thinking[voter_name] }}</div>
-                            </details>
-                            {% endif %}
-                        {% endif %}
-                    </div>
+                    {% set voter_name = event_text.split(' → ', 1)[0] if ' → ' in event_text else '' %}
+                    {% set target_name = event_text.split(' → ', 1)[1] if ' → ' in event_text else event_text %}
+                    {{ vote_result_entry(voter_name, target_name, player_colors, v_thinking.get(voter_name) if debug_mode and v_thinking else none) }}
                     {% elif event_type == "execution" %}
                     <div class="event-msg execution">{{ event_text }}</div>
                     {% elif event_type == "attack" %}
@@ -250,9 +267,162 @@
             line-height: 1.6;
             word-break: break-word;
         }
-        .vote-list { list-style: none; }
-        .vote-list li { padding: 0.4rem 0; }
-        .vote-arrow { color: #e94560; margin: 0 0.3rem; }
+        /* 投票カード選択UI */
+        .vote-card-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+            justify-content: center;
+            margin-bottom: 1.2rem;
+        }
+        .vote-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 1.2rem;
+            background: rgba(22, 33, 62, 0.7);
+            border: 2px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.2s, border-color 0.2s, background 0.2s;
+            min-width: 80px;
+        }
+        .vote-card:hover {
+            background: rgba(40, 50, 80, 0.8);
+            border-color: rgba(233, 69, 96, 0.4);
+        }
+        .vote-card:has(input:checked) {
+            border-color: #e94560;
+            transform: scale(1.08);
+            background: rgba(233, 69, 96, 0.15);
+            box-shadow: 0 0 16px rgba(233, 69, 96, 0.3);
+        }
+        .vote-card:has(input:focus-visible) {
+            outline: 2px solid #e94560;
+            outline-offset: 2px;
+        }
+        .vote-card input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .vote-card-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            color: #fff;
+        }
+        .vote-card-name {
+            font-size: 0.85rem;
+            color: #e0e0e0;
+            text-align: center;
+            word-break: keep-all;
+        }
+
+        /* 投票結果行 */
+        .vote-result-row {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.5rem 0;
+            flex-wrap: wrap;
+        }
+        .vote-result-card {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.3rem 0.6rem;
+            background: rgba(22, 33, 62, 0.5);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .vote-result-card .vr-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.75rem;
+            color: #fff;
+            flex-shrink: 0;
+        }
+        .vote-result-card .vr-name {
+            font-size: 0.85rem;
+            color: #e0e0e0;
+        }
+        .vote-result-arrow {
+            color: #e94560;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        /* 得票集計 */
+        .vote-tally {
+            margin-top: 1.2rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .vote-tally h3 {
+            font-size: 0.9rem;
+            color: #aaa;
+            margin-bottom: 0.6rem;
+            font-family: 'Noto Serif JP', serif;
+        }
+        .vote-tally-row {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-bottom: 0.4rem;
+        }
+        .vote-tally-name {
+            min-width: 70px;
+            font-size: 0.85rem;
+            color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .vote-tally-name .vr-avatar {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.6rem;
+            color: #fff;
+            flex-shrink: 0;
+        }
+        .vote-tally-bar-bg {
+            flex: 1;
+            height: 20px;
+            background: rgba(22, 33, 62, 0.5);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .vote-tally-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #c73650);
+            border-radius: 4px;
+            transition: width 0.3s;
+            min-width: 2px;
+        }
+        .vote-tally-count {
+            min-width: 28px;
+            text-align: right;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #e94560;
+        }
         textarea {
             width: 100%;
             padding: 0.8rem;
@@ -359,11 +529,6 @@
             margin-top: 0.8rem;
             padding-top: 0.8rem;
             border-top: 1px solid #333;
-        }
-        .past-vote-entry {
-            padding: 0.2rem 0;
-            color: #c0c0d0;
-            font-size: 0.95rem;
         }
         .dead-notice {
             text-align: center;
@@ -491,6 +656,12 @@
             }
             .chat-bubble { max-width: 90%; }
             .chat-avatar { width: 28px; height: 28px; min-width: 28px; font-size: 0.75rem; }
+            .vote-card { padding: 0.7rem 0.8rem; min-width: 64px; }
+            .vote-card-avatar { width: 36px; height: 36px; font-size: 1rem; }
+            .vote-card-name { font-size: 0.75rem; }
+            .vote-result-card .vr-avatar { width: 22px; height: 22px; font-size: 0.6rem; }
+            .vote-result-card .vr-name { font-size: 0.75rem; }
+            .vote-tally-name { min-width: 55px; font-size: 0.75rem; }
         }
     </style>
 </head>
@@ -639,12 +810,9 @@
             {% if human_is_alive %}
             <p style="margin-bottom: 1rem;">処刑する人を選んでください:</p>
             <form action="/play/{{ game_id }}/vote" method="post">
-                <div class="radio-group">
+                <div class="vote-card-grid">
                     {% for p in vote_candidates %}
-                    <label>
-                        <input type="radio" name="target" value="{{ p.name }}" required>
-                        {{ p.name }}
-                    </label>
+                    {{ candidate_card(p.name, player_colors) }}
                     {% endfor %}
                 </div>
                 <div class="actions">
@@ -667,19 +835,31 @@
         <div class="panel">
             <h2>投票結果 - Day {{ game.day }}</h2>
             {% if session.current_votes %}
-            <ul class="vote-list">
+            <div>
                 {% for voter, target in session.current_votes.items() %}
-                <li>
-                    {{ voter }} <span class="vote-arrow">&rarr;</span> {{ target }}
-                    {% if debug_mode and vote_thinking is defined and vote_thinking.get(voter) %}
-                    <details class="debug-thinking">
-                        <summary>思考を表示</summary>
-                        <div class="debug-thinking-text">{{ vote_thinking[voter] }}</div>
-                    </details>
-                    {% endif %}
-                </li>
+                {{ vote_result_entry(voter, target, player_colors, vote_thinking[voter] if debug_mode and vote_thinking is defined and vote_thinking.get(voter) else none) }}
                 {% endfor %}
-            </ul>
+            </div>
+            {% set vote_counts = {} %}
+            {% for voter, target in session.current_votes.items() %}
+                {% if vote_counts.update({target: vote_counts.get(target, 0) + 1}) %}{% endif %}
+            {% endfor %}
+            {% set max_votes = vote_counts.values() | max if vote_counts else 1 %}
+            <div class="vote-tally">
+                <h3>得票数</h3>
+                {% for target, count in vote_counts.items() | sort(attribute='1', reverse=true) %}
+                <div class="vote-tally-row">
+                    <div class="vote-tally-name">
+                        <span class="vr-avatar" style="background-color: var(--avatar-color-{{ player_colors.get(target, 0) }})">{{ target[:1] }}</span>
+                        {{ target }}
+                    </div>
+                    <div class="vote-tally-bar-bg">
+                        <div class="vote-tally-bar" style="width: {{ (count / max_votes * 100) | int }}%"></div>
+                    </div>
+                    <span class="vote-tally-count">{{ count }}</span>
+                </div>
+                {% endfor %}
+            </div>
             {% endif %}
             <div style="margin-top: 1rem;">
                 {% for log_line in current_execution_logs %}
@@ -713,9 +893,7 @@
                     {% if session.current_votes %}
                     <div class="past-events-section">
                         {% for voter, target in session.current_votes.items() %}
-                        <div class="past-vote-entry">
-                            <span class="vote-arrow">&rarr;</span> {{ voter }} → {{ target }}
-                        </div>
+                        {{ vote_result_entry(voter, target, player_colors) }}
                         {% endfor %}
                         {% for log_line in current_execution_logs %}
                         <div class="event-msg execution">{{ log_line }}</div>
@@ -730,12 +908,9 @@
             <h2>占い - Night {{ game.day }}</h2>
             <p style="margin-bottom: 1rem;">占う対象を選んでください:</p>
             <form action="/play/{{ game_id }}/night-action" method="post">
-                <div class="radio-group">
+                <div class="vote-card-grid">
                     {% for p in night_action_candidates %}
-                    <label>
-                        <input type="radio" name="target" value="{{ p.name }}" required>
-                        {{ p.name }}
-                    </label>
+                    {{ candidate_card(p.name, player_colors) }}
                     {% endfor %}
                 </div>
                 <div class="actions">
@@ -751,12 +926,9 @@
             {% endif %}
             <p style="margin-bottom: 1rem;">襲撃する対象を選んでください:</p>
             <form action="/play/{{ game_id }}/night-action" method="post">
-                <div class="radio-group">
+                <div class="vote-card-grid">
                     {% for p in night_action_candidates %}
-                    <label>
-                        <input type="radio" name="target" value="{{ p.name }}" required>
-                        {{ p.name }}
-                    </label>
+                    {{ candidate_card(p.name, player_colors) }}
                     {% endfor %}
                 </div>
                 <div class="actions">
@@ -767,12 +939,9 @@
             <h2>護衛 - Night {{ game.day }}</h2>
             <p style="margin-bottom: 1rem;">護衛する対象を選んでください:</p>
             <form action="/play/{{ game_id }}/night-action" method="post">
-                <div class="radio-group">
+                <div class="vote-card-grid">
                     {% for p in night_action_candidates %}
-                    <label>
-                        <input type="radio" name="target" value="{{ p.name }}" required>
-                        {{ p.name }}
-                    </label>
+                    {{ candidate_card(p.name, player_colors) }}
                     {% endfor %}
                 </div>
                 <div class="actions">
