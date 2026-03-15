@@ -598,12 +598,28 @@ def _extract_execution_budget(gm_summary: str) -> str:
 
 
 def _build_context(
-    game: GameState, player: Player, *, max_recent_statements: int = _MAX_RECENT_STATEMENTS, personality_tag: str = ""
+    game: GameState,
+    player: Player,
+    *,
+    max_recent_statements: int = _MAX_RECENT_STATEMENTS,
+    personality_tag: str = "",
+    exclude_fields: frozenset[str] = frozenset({"role_advice"}),
+    compress_vote_history: bool = True,
+    include_advice: bool = True,
 ) -> str:
     """ゲームコンテキスト（状況 + ログ）を生成する。
 
     GM 要約がある場合はそれを活用し、新しいログのみを追加する。
     GM 要約がない場合は従来通りフルログを返す（発言ログは直近 N 件に制限）。
+
+    Args:
+        game: ゲーム状態
+        player: 視点プレイヤー
+        max_recent_statements: 保持する直近の発言ログ件数
+        personality_tag: 人格タグ文字列
+        exclude_fields: GM 要約 JSON から除外するフィールド名のセット
+        compress_vote_history: True の場合、古い投票詳細を圧縮する
+        include_advice: True の場合、GM 要約から役職別アドバイスを秘密情報に含める
     """
     alive_names = "、".join(p.name for p in game.alive_players)
 
@@ -614,7 +630,7 @@ def _build_context(
 
     if game.gm_summary:
         filtered_summary = _strip_gm_fields(
-            game.gm_summary, exclude_fields=frozenset({"role_advice"}), compress_vote_history=True
+            game.gm_summary, exclude_fields=exclude_fields, compress_vote_history=compress_vote_history
         )
         parts.append(f"\n## 盤面情報\n{filtered_summary}")
 
@@ -622,7 +638,7 @@ def _build_context(
         if budget_info:
             parts.append(f"\n{budget_info}")
 
-        private_info = _build_private_info(game, player, personality_tag=personality_tag)
+        private_info = _build_private_info(game, player, personality_tag=personality_tag, include_advice=include_advice)
         if private_info:
             parts.append(f"\n{private_info}")
 
@@ -642,40 +658,18 @@ def _build_context(
 def _build_action_context(game: GameState, player: Player, *, personality_tag: str = "") -> str:
     """投票・夜行動用の軽量コンテキストを生成する。
 
-    議論プロンプト用の ``_build_context`` と同じ構造だが、候補者選択に不要な
-    フィールド（role_advice, vote_history, claims, contradictions）を GM 要約から
-    除外し、role_advice テキストの注入もスキップすることでトークン数を削減する。
+    ``_build_context`` のラッパー。候補者選択に不要なフィールド
+    （role_advice, vote_history, claims, contradictions）を GM 要約から除外し、
+    role_advice テキストの注入もスキップすることでトークン数を削減する。
     """
-    alive_names = "、".join(p.name for p in game.alive_players)
-
-    parts = [
-        f"現在: {game.day}日目の{'昼' if game.phase.value == 'day' else '夜'}フェーズ",
-        f"生存者: {alive_names}",
-    ]
-
-    if game.gm_summary:
-        filtered_summary = _strip_gm_fields(game.gm_summary, exclude_fields=_ACTION_EXCLUDE_FIELDS)
-        parts.append(f"\n## 盤面情報\n{filtered_summary}")
-
-        budget_info = _extract_execution_budget(game.gm_summary)
-        if budget_info:
-            parts.append(f"\n{budget_info}")
-
-        private_info = _build_private_info(game, player, personality_tag=personality_tag, include_advice=False)
-        if private_info:
-            parts.append(f"\n{private_info}")
-
-        new_entries = game.log[game.gm_summary_log_offset :]
-        if new_entries:
-            new_log = filter_log_entries(new_entries, player, max_recent_statements=_MAX_RECENT_STATEMENTS)
-            if new_log:
-                parts.append(f"\n## 本日の出来事\n{new_log}")
-    else:
-        game_log = format_log_for_context(game, player.name, max_recent_statements=_MAX_RECENT_STATEMENTS)
-        if game_log:
-            parts.append(f"\n## これまでのログ\n{game_log}")
-
-    return "\n".join(parts)
+    return _build_context(
+        game,
+        player,
+        personality_tag=personality_tag,
+        exclude_fields=_ACTION_EXCLUDE_FIELDS,
+        compress_vote_history=False,
+        include_advice=False,
+    )
 
 
 def _build_speaking_status(speaking_order: tuple[str, ...], current_speaker_index: int) -> str:
